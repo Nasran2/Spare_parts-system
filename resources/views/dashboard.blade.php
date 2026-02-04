@@ -72,8 +72,8 @@
                 <div>
                     <p class="text-sm text-gray-600 mb-1">Total Sales</p>
                     <h3 class="text-2xl md:text-3xl font-bold text-gray-800">{{ $currency }} {{ number_format($totalSales ?? 0, 2) }}</h3>
-                    <p class="text-xs text-green-600 mt-2">
-                        <i class="fas fa-arrow-up mr-1"></i> 12% from last month
+                    <p class="text-xs {{ $salesChangePercent >= 0 ? 'text-green-600' : 'text-red-600' }} mt-2">
+                        <i class="fas fa-arrow-{{ $salesChangePercent >= 0 ? 'up' : 'down' }} mr-1"></i> {{ abs($salesChangePercent) }}% {{ $salesChangePercent >= 0 ? 'increase' : 'decrease' }} from last period
                     </p>
                 </div>
                 <div class="w-14 h-14 gradient-blue rounded-full flex items-center justify-center shadow-lg">
@@ -88,8 +88,8 @@
                 <div>
                     <p class="text-sm text-gray-600 mb-1">Total Purchase</p>
                     <h3 class="text-2xl md:text-3xl font-bold text-gray-800">{{ $currency }} {{ number_format($totalPurchase ?? 0, 2) }}</h3>
-                    <p class="text-xs text-orange-600 mt-2">
-                        <i class="fas fa-arrow-up mr-1"></i> 8% from last month
+                    <p class="text-xs {{ $purchaseChangePercent >= 0 ? 'text-orange-600' : 'text-green-600' }} mt-2">
+                        <i class="fas fa-arrow-{{ $purchaseChangePercent >= 0 ? 'up' : 'down' }} mr-1"></i> {{ abs($purchaseChangePercent) }}% {{ $purchaseChangePercent >= 0 ? 'increase' : 'decrease' }} from last period
                     </p>
                 </div>
                 <div class="w-14 h-14 gradient-orange rounded-full flex items-center justify-center shadow-lg">
@@ -104,8 +104,8 @@
                 <div>
                     <p class="text-sm text-gray-600 mb-1">Net Profit</p>
                     <h3 class="text-2xl md:text-3xl font-bold text-gray-800">{{ $currency }} {{ number_format($netProfit ?? 0, 2) }}</h3>
-                    <p class="text-xs text-green-600 mt-2">
-                        <i class="fas fa-arrow-up mr-1"></i> 15% from last month
+                    <p class="text-xs {{ $profitChangePercent >= 0 ? 'text-green-600' : 'text-red-600' }} mt-2">
+                        <i class="fas fa-arrow-{{ $profitChangePercent >= 0 ? 'up' : 'down' }} mr-1"></i> {{ abs($profitChangePercent) }}% {{ $profitChangePercent >= 0 ? 'increase' : 'decrease' }} from last period
                     </p>
                 </div>
                 <div class="w-14 h-14 gradient-green rounded-full flex items-center justify-center shadow-lg">

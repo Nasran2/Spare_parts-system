@@ -243,14 +243,14 @@
 
             <!-- Product Management -->
             <div class="nav-group">
-                <button onclick="toggleDropdown('product-menu')" class="nav-item flex items-center justify-between w-full px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('products.*') || request()->routeIs('categories.*') || request()->routeIs('brands.*') || request()->routeIs('units.*') ? 'active' : '' }}">
+                <button onclick="toggleDropdown('product-menu')" class="nav-item flex items-center justify-between w-full px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('products.*') || request()->routeIs('products.import*') || request()->routeIs('categories.*') || request()->routeIs('brands.*') || request()->routeIs('units.*') ? 'active' : '' }}">
                     <div class="flex items-center space-x-3">
                         <i class="fas fa-box w-5"></i>
                         <span>Products</span>
                     </div>
-                    <i class="fas fa-chevron-down transition-transform {{ request()->routeIs('products.*') || request()->routeIs('categories.*') || request()->routeIs('brands.*') || request()->routeIs('units.*') ? 'rotate-180' : '' }}" id="product-menu-icon"></i>
+                    <i class="fas fa-chevron-down transition-transform {{ request()->routeIs('products.*') || request()->routeIs('products.import*') || request()->routeIs('categories.*') || request()->routeIs('brands.*') || request()->routeIs('units.*') ? 'rotate-180' : '' }}" id="product-menu-icon"></i>
                 </button>
-                <div id="product-menu" class="dropdown-menu ml-4 mt-1 space-y-1 {{ request()->routeIs('products.*') || request()->routeIs('categories.*') || request()->routeIs('brands.*') || request()->routeIs('units.*') ? 'open' : '' }}">
+                <div id="product-menu" class="dropdown-menu ml-4 mt-1 space-y-1 {{ request()->routeIs('products.*') || request()->routeIs('products.import*') || request()->routeIs('categories.*') || request()->routeIs('brands.*') || request()->routeIs('units.*') ? 'open' : '' }}">
                     <a href="{{ route('products.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('products.*') ? 'active' : '' }}">
                         <i class="fas fa-list w-4"></i>
                         <span>Product List</span>
@@ -258,6 +258,10 @@
                     <a href="{{ route('products.create') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600">
                         <i class="fas fa-plus-circle w-4"></i>
                         <span>Add Product</span>
+                    </a>
+                    <a href="{{ route('products.import') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('products.import*') ? 'active' : '' }}">
+                        <i class="fas fa-file-import w-4"></i>
+                        <span>Import Products</span>
                     </a>
                     <a href="{{ route('categories.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('categories.*') ? 'active' : '' }}">
                         <i class="fas fa-tags w-4"></i>
@@ -620,13 +624,35 @@
     @endif
 
     <script>
+        let skipPageLoader = false;
+
+        document.querySelectorAll('[data-skip-page-loader]').forEach(link => {
+            link.addEventListener('click', () => {
+                skipPageLoader = true;
+                setTimeout(() => {
+                    skipPageLoader = false;
+                    document.body.classList.add('loaded');
+                }, 2000);
+            });
+        });
+
         // Page loaded - hide loader
         window.addEventListener('load', function() {
             document.body.classList.add('loaded');
         });
+
+        // Fix for back-button (BFcache)
+        window.addEventListener('pageshow', function(event) {
+            if (event.persisted || (typeof window.performance != "undefined" && window.performance.navigation.type === 2)) {
+                document.body.classList.add('loaded');
+            }
+        });
         
         // Show loader on page navigation
         window.addEventListener('beforeunload', function() {
+            if (skipPageLoader) {
+                return;
+            }
             document.body.classList.remove('loaded');
         });
         

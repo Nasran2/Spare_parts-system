@@ -20,13 +20,23 @@
         </button>
     </div>
 
+    <div>
+        <label class="text-xs font-semibold text-gray-600">Quick search</label>
+        <input type="search" id="brandSearchInput" placeholder="Search brands" class="mt-2 w-full px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring focus:ring-blue-100">
+    </div>
+
     <!-- Brands Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         @if(isset($brands) && $brands->count())
             @foreach($brands as $brand)
-                <div class="bg-white rounded-lg shadow p-4 flex flex-col justify-between">
+                <div data-brand-card class="bg-white rounded-lg shadow p-4 flex flex-col justify-between" data-search-text="{{ strtolower($brand->name . ' ' . ($brand->description ?? '')) }}">
                     <div>
-                        <h4 class="text-lg font-semibold text-gray-800">{{ $brand->name }}</h4>
+                        <div class="flex justify-between items-start">
+                            <h4 class="text-lg font-semibold text-gray-800">{{ $brand->name }}</h4>
+                            <span class="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
+                                {{ $brand->products_count }} Products
+                            </span>
+                        </div>
                         @if($brand->description)
                             <p class="text-sm text-gray-500 mt-2">{{ Str::limit($brand->description, 120) }}</p>
                         @endif
@@ -35,6 +45,9 @@
                     <div class="mt-4 flex items-center justify-between">
                         <div class="text-sm text-gray-500">Created: {{ $brand->created_at->format('Y-m-d') }}</div>
                         <div class="flex items-center gap-2">
+                            <a href="{{ route('products.index', ['brand_id' => $brand->id]) }}" class="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm" title="View Products">
+                                <i class="fas fa-eye"></i>
+                            </a>
                             <a href="{{ route('brands.edit', $brand->id) }}" class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">Edit</a>
                             <form action="{{ route('brands.destroy', $brand->id) }}" method="POST" onsubmit="return confirm('Delete this brand?');">
                                 @csrf
@@ -88,7 +101,7 @@
             </div>
         </form>
     </div>
-}</div>
+</div>
 
 <script>
 function openCreateModal() {
@@ -132,15 +145,25 @@ document.getElementById('createBrandForm')?.addEventListener('submit', async fun
             // Append new brand card to the grid
             const grid = document.querySelector('.grid');
             const card = document.createElement('div');
+            card.setAttribute('data-brand-card', '');
+            card.setAttribute('data-search-text', (data.brand.name + ' ' + (data.brand.description || '')).toLowerCase());
             card.className = 'bg-white rounded-lg shadow p-4 flex flex-col justify-between';
             card.innerHTML = `
                 <div>
-                    <h4 class="text-lg font-semibold text-gray-800">${data.brand.name}</h4>
-                    ${data.brand.description ? `<p class=\"text-sm text-gray-500 mt-2\">${data.brand.description}</p>` : ''}
+                    <div class="flex justify-between items-start">
+                        <h4 class="text-lg font-semibold text-gray-800">${data.brand.name}</h4>
+                        <span class="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
+                            0 Products
+                        </span>
+                    </div>
+                    ${data.brand.description ? `<p class="text-sm text-gray-500 mt-2">${data.brand.description}</p>` : ''}
                 </div>
                 <div class="mt-4 flex items-center justify-between">
                     <div class="text-sm text-gray-500">Created: ${new Date(data.brand.created_at).toISOString().slice(0,10)}</div>
                     <div class="flex items-center gap-2">
+                        <a href="{{ url('products') }}?brand_id=${data.brand.id}" class="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm" title="View Products">
+                            <i class="fas fa-eye"></i>
+                        </a>
                         <a href="${`{{ url('brands') }}`}/${data.brand.id}/edit" class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">Edit</a>
                         <form action="${`{{ url('brands') }}`}/${data.brand.id}" method="POST" onsubmit="return confirm('Delete this brand?');">
                             <input type="hidden" name="_token" value="{{ csrf_token() }}" />
@@ -160,6 +183,16 @@ document.getElementById('createBrandForm')?.addEventListener('submit', async fun
         alert('Failed to create brand. Please try again.');
         console.error(err);
     }
+});
+
+const brandSearchInput = document.getElementById('brandSearchInput');
+const brandCards = document.querySelectorAll('[data-brand-card]');
+brandSearchInput?.addEventListener('input', function () {
+    const term = this.value.trim().toLowerCase();
+    brandCards.forEach(card => {
+        const text = card.dataset.searchText || '';
+        card.style.display = text.includes(term) ? '' : 'none';
+    });
 });
 </script>
 @endsection

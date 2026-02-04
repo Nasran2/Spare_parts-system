@@ -179,7 +179,9 @@
                         @foreach($units as $u)
                             <label class="flex items-center space-x-2 px-2 py-1 border rounded">
                                 <input type="checkbox" name="visible_units[]" value="{{ $u->id }}" class="text-blue-600 rounded" checked>
-                                @php($m = rtrim(rtrim(number_format((float)$u->base_unit_multiplier, 3, '.', ''), '0'), '.'))
+                                @php
+                                    $m = rtrim(rtrim(number_format((float)$u->base_unit_multiplier, 3, '.', ''), '0'), '.');
+                                @endphp
                                 <span class="text-xs text-gray-700">{{ $u->short_name }} (x{{ $m }})</span>
                             </label>
                         @endforeach
@@ -298,6 +300,25 @@
                     @error('stock_quantity')
                         <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
                     @enderror
+                </div>
+
+                <!-- Per-brand Pricing (creates one product per brand) -->
+                <div id="per-brand-pricing-section" class="md:col-span-2 hidden">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">
+                        <i class="fas fa-layer-group text-blue-600 mr-2"></i>Per Brand Prices
+                    </label>
+                    <p class="text-xs text-gray-500 mb-2">When you select one or more brands above, the system will create one product per brand with name: <span class="font-semibold">Product Name (Brand)</span>. If you leave any brand price blank, it will use the main Cost/Selling Price.</p>
+                    <div id="per-brand-pricing-rows" class="space-y-2"></div>
+                    @php
+                        $perBrandCostError = $errors->first('brand_cost_price.*');
+                        $perBrandSellError = $errors->first('brand_selling_price.*');
+                    @endphp
+                    @if($perBrandCostError)
+                        <p class="text-red-500 text-xs mt-1">{{ $perBrandCostError }}</p>
+                    @endif
+                    @if($perBrandSellError)
+                        <p class="text-red-500 text-xs mt-1">{{ $perBrandSellError }}</p>
+                    @endif
                 </div>
 
                 <!-- Alert Quantity -->
@@ -519,6 +540,100 @@ function addBrandRow() {
     
     wrapper.appendChild(newRow);
     updateRemoveButtons('brands-wrapper');
+    updatePerBrandPricing();
+}
+
+function parseNumber(value) {
+    if (value === undefined || value === null || value === '') {
+        return NaN;
+    }
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : NaN;
+}
+
+function formatNumber(value) {
+    return Number.isFinite(value) ? value.toFixed(2) : '';
+}
+
+function computeMarginFixed(cost, sell) {
+    const costNum = parseNumber(cost);
+    const sellNum = parseNumber(sell);
+    if (Number.isFinite(costNum) && Number.isFinite(sellNum)) {
+        return formatNumber(sellNum - costNum);
+    }
+    return '';
+}
+
+function computeMarginPercent(cost, sell) {
+    const costNum = parseNumber(cost);
+    const sellNum = parseNumber(sell);
+    if (Number.isFinite(costNum) && costNum !== 0 && Number.isFinite(sellNum)) {
+        const fixed = sellNum - costNum;
+        return formatNumber((fixed / costNum) * 100);
+    }
+    return '';
+}
+
+function handleBrandPercentChange(costInput, percentInput, fixedInput, sellInput) {
+    const costVal = parseNumber(costInput?.value ?? '');
+    const percentVal = parseNumber(percentInput?.value ?? '');
+    if (!Number.isFinite(costVal) || !Number.isFinite(percentVal)) {
+        return;
+    }
+
+    const fixed = costVal * (percentVal / 100);
+    const selling = costVal + fixed;
+    fixedInput.value = formatNumber(fixed);
+    sellInput.value = formatNumber(selling);
+}
+
+function handleBrandFixedChange(costInput, percentInput, fixedInput, sellInput) {
+    const costVal = parseNumber(costInput?.value ?? '');
+    const fixedVal = parseNumber(fixedInput?.value ?? '');
+    if (!Number.isFinite(costVal) || !Number.isFinite(fixedVal)) {
+        return;
+    }
+
+    const selling = costVal + fixedVal;
+    sellInput.value = formatNumber(selling);
+    if (costVal !== 0) {
+        percentInput.value = formatNumber((fixedVal / costVal) * 100);
+    } else {
+        percentInput.value = '';
+    }
+}
+
+function handleBrandSellingChange(costInput, percentInput, fixedInput, sellInput) {
+    const costVal = parseNumber(costInput?.value ?? '');
+    const sellingVal = parseNumber(sellInput?.value ?? '');
+    if (!Number.isFinite(costVal) || !Number.isFinite(sellingVal)) {
+        return;
+    }
+
+    const fixed = sellingVal - costVal;
+    fixedInput.value = formatNumber(fixed);
+    if (costVal !== 0) {
+        percentInput.value = formatNumber((fixed / costVal) * 100);
+    } else {
+        percentInput.value = '';
+    }
+}
+
+function handleBrandCostChange(costInput, percentInput, fixedInput, sellInput) {
+    if (!costInput) {
+        return;
+    }
+    if (percentInput && percentInput.value !== '') {
+        handleBrandPercentChange(costInput, percentInput, fixedInput, sellInput);
+        return;
+    }
+    if (fixedInput && fixedInput.value !== '') {
+        handleBrandFixedChange(costInput, percentInput, fixedInput, sellInput);
+        return;
+    }
+    if (sellInput) {
+        handleBrandSellingChange(costInput, percentInput, fixedInput, sellInput);
+    }
 }
 
 function removeRow(btn) {
@@ -527,7 +642,207 @@ function removeRow(btn) {
     if (wrapper.children.length > 1) {
         row.remove();
         updateRemoveButtons(wrapper.id);
+        if (wrapper.id === 'brands-wrapper') {
+            updatePerBrandPricing();
+        }
     }
+}
+
+function getSelectedBrandIds() {
+    const selects = document.querySelectorAll('#brands-wrapper .brand-select');
+    const ids = [];
+    const seen = new Set();
+    selects.forEach(select => {
+        const val = (select.value || '').trim();
+        if (val && !seen.has(val)) {
+            ids.push(val);
+            seen.add(val);
+        }
+    });
+    return ids;
+}
+
+function getBrandNameById(brandId) {
+    const option = document.querySelector(`#brands-wrapper .brand-select option[value="${CSS.escape(brandId)}"]`);
+    return option ? option.textContent.trim() : `Brand #${brandId}`;
+}
+
+function updatePerBrandPricing() {
+    const section = document.getElementById('per-brand-pricing-section');
+    const rowsWrapper = document.getElementById('per-brand-pricing-rows');
+    if (!section || !rowsWrapper) return;
+
+    const brandIds = getSelectedBrandIds();
+    if (brandIds.length === 0) {
+        section.classList.add('hidden');
+        rowsWrapper.innerHTML = '';
+        return;
+    }
+
+    const currentValues = new Map();
+    rowsWrapper.querySelectorAll('[data-brand-id]').forEach(row => {
+        const bid = row.getAttribute('data-brand-id');
+        const costInput = row.querySelector('input[data-role="brand-cost"]');
+        const sellInput = row.querySelector('input[data-role="brand-sell"]');
+        const stockInput = row.querySelector('input[data-role="brand-stock"]');
+        const percentInput = row.querySelector('input[data-role="brand-margin-percent"]');
+        const fixedInput = row.querySelector('input[data-role="brand-margin-fixed"]');
+        currentValues.set(bid, {
+            costValue: costInput ? costInput.value : '',
+            sellValue: sellInput ? sellInput.value : '',
+            stockValue: stockInput ? stockInput.value : '',
+            percentValue: percentInput ? percentInput.value : '',
+            fixedValue: fixedInput ? fixedInput.value : '',
+            costTouched: costInput?.dataset.touchedCost === 'true',
+            sellTouched: sellInput?.dataset.touchedSell === 'true',
+            stockTouched: stockInput?.dataset.touchedStock === 'true',
+            percentTouched: percentInput?.dataset.touchedPercent === 'true',
+            fixedTouched: fixedInput?.dataset.touchedFixed === 'true',
+        });
+    });
+
+    const baseCost = (document.getElementById('cost_price')?.value ?? '').trim();
+    const baseSell = (document.getElementById('selling_price')?.value ?? '').trim();
+    const baseStock = (document.getElementById('stock_quantity')?.value ?? '').trim();
+
+    const oldBrandCost = @json(old('brand_cost_price', []));
+    const oldBrandSell = @json(old('brand_selling_price', []));
+    const oldBrandStock = @json(old('brand_stock_quantity', []));
+    const oldBrandPercent = @json(old('brand_profit_margin_percent', []));
+    const oldBrandFixed = @json(old('brand_profit_margin_fixed', []));
+
+    rowsWrapper.innerHTML = '';
+    section.classList.remove('hidden');
+
+    brandIds.forEach(brandId => {
+        const brandName = getBrandNameById(brandId);
+        const existing = currentValues.get(brandId);
+        const costTouched = existing?.costTouched;
+        const sellTouched = existing?.sellTouched;
+        const stockTouched = existing?.stockTouched;
+        const percentTouched = existing?.percentTouched;
+        const fixedTouched = existing?.fixedTouched;
+
+        const defaultCost = oldBrandCost?.[brandId] ?? baseCost;
+        const defaultSell = oldBrandSell?.[brandId] ?? baseSell;
+        const defaultStock = oldBrandStock?.[brandId] ?? baseStock;
+        const defaultPercent = oldBrandPercent?.[brandId] ?? computeMarginPercent(defaultCost, defaultSell);
+        const defaultFixed = oldBrandFixed?.[brandId] ?? computeMarginFixed(defaultCost, defaultSell);
+
+        const costVal = costTouched ? (existing?.costValue ?? '') : (defaultCost ?? '');
+        const sellVal = sellTouched ? (existing?.sellValue ?? '') : (defaultSell ?? '');
+        const stockVal = stockTouched ? (existing?.stockValue ?? '') : (defaultStock ?? '');
+        const percentVal = percentTouched ? (existing?.percentValue ?? '') : (defaultPercent ?? '');
+        const fixedVal = fixedTouched ? (existing?.fixedValue ?? '') : (defaultFixed ?? '');
+
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-1 md:grid-cols-6 gap-3 p-3 border border-gray-200 rounded-lg bg-gray-50';
+        row.setAttribute('data-brand-id', brandId);
+        row.innerHTML = `
+            <div class="flex items-center text-sm font-semibold text-gray-700">${brandName}</div>
+            <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Cost Price</label>
+                <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    data-role="brand-cost"
+                    name="brand_cost_price[${brandId}]"
+                    value="${String(costVal).replace(/"/g, '&quot;')}"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="(uses main cost if blank)"
+                />
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Profit Margin %</label>
+                <input
+                    type="number"
+                    step="0.01"
+                    min="-999999"
+                    data-role="brand-margin-percent"
+                    name="brand_profit_margin_percent[${brandId}]"
+                    value="${String(percentVal).replace(/"/g, '&quot;')}"
+                    class="w-full px-3 py-2 border border-blue-300 rounded-lg bg-blue-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-blue-700"
+                    placeholder="e.g., 10"
+                />
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Profit Margin Fixed</label>
+                <input
+                    type="number"
+                    step="0.01"
+                    min="-999999"
+                    data-role="brand-margin-fixed"
+                    name="brand_profit_margin_fixed[${brandId}]"
+                    value="${String(fixedVal).replace(/"/g, '&quot;')}"
+                    class="w-full px-3 py-2 border border-blue-300 rounded-lg bg-blue-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-blue-700"
+                    placeholder="e.g., 50"
+                />
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Stock Quantity</label>
+                <input
+                    type="number"
+                    step="1"
+                    min="0"
+                    data-role="brand-stock"
+                    name="brand_stock_quantity[${brandId}]"
+                    value="${String(stockVal).replace(/"/g, '&quot;')}"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="(uses main stock if blank)"
+                />
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Selling Price</label>
+                <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    data-role="brand-sell"
+                    name="brand_selling_price[${brandId}]"
+                    value="${String(sellVal).replace(/"/g, '&quot;')}"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="(uses main selling if blank)"
+                />
+            </div>
+        `;
+
+        rowsWrapper.appendChild(row);
+
+        const costInput = row.querySelector('input[data-role="brand-cost"]');
+        const sellInput = row.querySelector('input[data-role="brand-sell"]');
+        const stockInput = row.querySelector('input[data-role="brand-stock"]');
+        const percentInput = row.querySelector('input[data-role="brand-margin-percent"]');
+        const fixedInput = row.querySelector('input[data-role="brand-margin-fixed"]');
+        if (costInput) {
+            costInput.dataset.touchedCost = costTouched ? 'true' : 'false';
+            costInput.addEventListener('input', () => {
+                costInput.dataset.touchedCost = 'true';
+                handleBrandCostChange(costInput, percentInput, fixedInput, sellInput);
+            });
+        }
+        if (percentInput) {
+            percentInput.dataset.touchedPercent = percentTouched ? 'true' : 'false';
+            percentInput.addEventListener('input', () => {
+                percentInput.dataset.touchedPercent = 'true';
+                handleBrandPercentChange(costInput, percentInput, fixedInput, sellInput);
+            });
+        }
+        if (fixedInput) {
+            fixedInput.dataset.touchedFixed = fixedTouched ? 'true' : 'false';
+            fixedInput.addEventListener('input', () => {
+                fixedInput.dataset.touchedFixed = 'true';
+                handleBrandFixedChange(costInput, percentInput, fixedInput, sellInput);
+            });
+        }
+        if (sellInput) {
+            sellInput.dataset.touchedSell = sellTouched ? 'true' : 'false';
+            sellInput.addEventListener('input', () => {
+                sellInput.dataset.touchedSell = 'true';
+                handleBrandSellingChange(costInput, percentInput, fixedInput, sellInput);
+            });
+        }
+    });
 }
 
 function updateRemoveButtons(wrapperId) {
@@ -655,6 +970,8 @@ document.getElementById('brandForm').addEventListener('submit', async function(e
             } else {
                 lastSelect.value = data.brand.id;
             }
+
+            updatePerBrandPricing();
             
             closeBrandModal();
             if(typeof showToast === 'function') {
@@ -740,9 +1057,11 @@ function onPercentageChange() {
             }
         }
         document.getElementById('selling_price').value = finalSelling.toFixed(2);
+        updatePerBrandPricing();
     } else {
         document.getElementById('profit_margin_fixed').value = '';
         document.getElementById('selling_price').value = costPrice.toFixed(2);
+        updatePerBrandPricing();
     }
 }
 
@@ -769,9 +1088,11 @@ function onFixedAmountChange() {
             }
         }
         document.getElementById('selling_price').value = finalSelling.toFixed(2);
+        updatePerBrandPricing();
     } else {
         document.getElementById('profit_margin_percent').value = '';
         document.getElementById('selling_price').value = costPrice.toFixed(2);
+        updatePerBrandPricing();
     }
 }
 
@@ -794,6 +1115,15 @@ function onCostPriceChange() {
 }
 
 document.getElementById('cost_price').addEventListener('input', onCostPriceChange);
+document.getElementById('cost_price').addEventListener('input', updatePerBrandPricing);
+document.getElementById('selling_price').addEventListener('input', updatePerBrandPricing);
+document.getElementById('stock_quantity').addEventListener('input', updatePerBrandPricing);
+
+document.getElementById('brands-wrapper').addEventListener('change', (e) => {
+    if (e.target && e.target.classList && e.target.classList.contains('brand-select')) {
+        updatePerBrandPricing();
+    }
+});
 const vatTypeEl = document.getElementById('vat_type');
 if (vatTypeEl) {
     vatTypeEl.addEventListener('change', () => {
@@ -831,5 +1161,8 @@ function onSellingPriceChange() {
 }
 
 document.getElementById('selling_price').addEventListener('input', onSellingPriceChange);
+
+// Initial render
+updatePerBrandPricing();
 </script>
 @endsection

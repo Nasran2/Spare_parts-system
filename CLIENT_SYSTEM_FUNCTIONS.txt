@@ -1,0 +1,273 @@
+VEHICLE POS SYSTEM – CLIENT FUNCTION LIST
+Date: 28 Jan 2026
+
+This document describes the main functions/features available in the Vehicle POS System (Auto Parts POS).
+
+============================================================
+1) ACCESS & SECURITY
+============================================================
+1.1 Login & Session
+- Secure login for staff users.
+- Logout.
+
+1.2 Roles & Permissions
+- Role-based access control (e.g., Admin / Manager / Cashier).
+- Permission-based menu access (based on assigned role).
+
+1.3 Activity Log (Audit Trail)
+- Records important actions (create/update/delete/returns/write-offs, etc.) for tracking.
+
+1.4 “Secret POS” (4-Digit Code Protected)
+- A special “Information” page protected by a 4-digit code.
+- Can configure hidden sales ranges and other secret settings.
+- Hidden bills can be excluded or masked in listings/reports (for privacy/internal controls).
+
+============================================================
+2) DASHBOARD (BUSINESS OVERVIEW)
+============================================================
+- KPI summary: sales/purchases/expenses/profit-style insights.
+- Charts and quick statistics.
+- Low stock alert indicators.
+- Quick access shortcuts to key modules.
+
+============================================================
+3) PRODUCT & INVENTORY MANAGEMENT
+============================================================
+3.1 Products
+- Add / edit / delete products.
+- Product image upload.
+- Cost price and selling price management.
+- SKU and barcode supported.
+- Stock quantity management + alert (low stock threshold).
+- Active/inactive products.
+
+3.2 Categories
+- Create / edit / delete product categories.
+
+3.3 Brands
+- Create / edit / delete brands.
+- Support for assigning products to one or multiple brands (system can create brand-specific product variants).
+
+3.4 Units
+- Create / edit / delete unit types (e.g., Piece, Set of 2, Set of 4, Dozen).
+- POS can sell items using selectable units when configured per product (visible units).
+
+3.5 Product Import
+- Download product import template.
+- Import products from file (Excel-based import support).
+
+3.6 Product Price Update
+- Update prices for products via dedicated action.
+
+3.7 Product Write-Off (Damaged/Expired Stock)
+- Write-off stock quantity with reason/date.
+- Automatically records the write-off as an expense entry.
+- Enforces expense category limit rules if configured.
+
+============================================================
+4) CUSTOMER MANAGEMENT
+============================================================
+- Add / edit / delete customers.
+- Track customer balances (due amounts from invoices).
+
+4.1 Customer Self-Service (Public Pages – No Login Required)
+- Shareable invoice/bill link for a customer.
+- Shareable customer history/statement link.
+- Customer payment page link.
+
+4.2 Customer Payment Reminders
+- Send reminders using:
+  - SMS (via configured SMS provider)
+  - WhatsApp (generates WhatsApp Web send links with pre-filled messages)
+- Reminder types include:
+  - Due reminder
+  - Bill link
+  - History link
+
+============================================================
+5) SUPPLIER MANAGEMENT
+============================================================
+- Add / edit / delete suppliers.
+- View supplier purchase history and balances.
+
+============================================================
+6) PURCHASE MANAGEMENT
+============================================================
+6.1 Purchases
+- Create purchase entries with supplier, date, reference, notes.
+- Add multiple purchase items (products + quantities + unit costs).
+- Supports discount types (fixed/percentage) and basic VAT selection.
+- Shipping cost handling (divided across items or handled separately).
+- Document upload for purchases (PDF/images/etc.).
+- Auto updates product stock quantities when purchases are created.
+- Purchase payment status (paid/partial/unpaid) and due calculation.
+
+6.2 Supplier Payments (Purchase Payments)
+- Record supplier payments against a purchase.
+- Automatically updates purchase paid/due amounts and payment status.
+
+6.3 Purchase Returns
+- Return purchased items back to supplier.
+- Stock decreases accordingly.
+- Refund handling:
+  - Cash (recorded as refund)
+  - Account adjustment (reduces supplier due)
+
+============================================================
+7) SALES MANAGEMENT
+============================================================
+7.1 Sales (Invoices)
+- Sales list with filters (date range, customer, payment status).
+- View invoice details.
+- Print invoice/receipt.
+
+7.2 Payments (Customer Receipts)
+- Add payments to sales.
+- Automatic paid/due recalculation.
+- Payment status updates (paid/partial/unpaid).
+
+7.3 Sales Exports
+- Export sales to CSV.
+- Export sales to PDF.
+
+7.4 Quotations
+- Create quotations (draft sales).
+- List quotations.
+- Convert quotation to sale (invoice) in one action.
+- Quotation PDF.
+- Delete quotations (if needed).
+
+7.5 Sales Returns
+Two supported flows:
+- Simple return from an invoice (restocks returned items).
+- Advanced returns module:
+  - Return items with remaining-quantity validation.
+  - Optional exchange items (creates a new sale for exchanged products).
+  - Net difference handling (customer pays difference or receives refund/credit).
+
+============================================================
+8) POS (POINT OF SALE) – COUNTER SALES
+============================================================
+- Fast product search (by name, SKU, barcode).
+- Cart management:
+  - Add items
+  - Update quantity
+  - Remove items
+  - Clear cart
+  - Apply discount
+- Unit selection (per product) when configured.
+- Hold cart and restore held carts.
+- Save draft quotation from POS.
+- Checkout:
+  - Creates sales and reduces stock.
+  - Can also process return items through POS flow (where enabled).
+
+============================================================
+9) EXPENSE MANAGEMENT
+============================================================
+- Record business expenses with date, category, amount, description.
+- Manage expense categories (add/edit/activate/deactivate where allowed).
+
+============================================================
+10) REPORTS & EXPORTS
+============================================================
+Reports include filters by date range (where applicable), and many provide PDF and CSV exports.
+
+10.1 Sales Reports
+- Sales summary report (and daily breakdown).
+- Sales export to PDF / CSV.
+
+10.2 Purchase Reports
+- Purchase summary report.
+- Purchase export to PDF / CSV.
+
+10.3 Profit & Loss
+- Profit & Loss report (revenue, COGS, expenses, net profit).
+- Export to PDF / CSV.
+
+10.4 Stock Reports
+- Stock report (purchased vs sold vs current stock; low stock flag).
+- Export to PDF / CSV.
+
+10.5 Expense Reports
+- Expense report (including grouping by category).
+- Export to PDF / CSV.
+
+10.6 Trending Products
+- Top-selling products report.
+
+10.7 VAT Report
+- VAT summary and daily view.
+- VAT day details.
+- Export to PDF / CSV.
+
+10.8 Receive / Debit Reports
+- Receive report: incoming customer payments.
+- Debit report: outgoing supplier payments.
+- Export to PDF / CSV.
+
+10.9 Due Tracking
+- Due bills report (invoices with outstanding balance) + PDF/CSV.
+- Customer due report (customers with total due) + PDF/CSV.
+
+10.10 Currency Rates (Utilities)
+- Live currency rate conversion page with cached rates and fallback options.
+
+============================================================
+11) NOTIFICATIONS (INTERNAL + CUSTOMER MESSAGING)
+============================================================
+11.1 System Notifications
+- Notification list and unread tracking.
+- Mark notifications as read.
+
+11.2 Stock Alerts
+- Generates internal notifications when products reach low stock threshold.
+
+11.3 Promotions & Bulk Messaging
+- Send promotion messages to customers via:
+  - SMS
+  - WhatsApp
+  - Both
+- Customer selection scopes (e.g., all/active/selected/top spenders where applicable).
+
+11.4 Monthly Due Reminders
+- Optional monthly reminder run to message customers who have due balances.
+- Template-based message with placeholders (name, due, date).
+- Supports SMS / WhatsApp / both.
+
+============================================================
+12) SETTINGS
+============================================================
+12.1 Business Settings
+- Shop name, tagline, address, phone, email.
+- Logo upload.
+
+12.2 General Settings
+- Currency, currency position, decimal places.
+- Date/time formats, timezone, language.
+- Items per page.
+- VAT enable and VAT rate.
+
+12.3 Invoice Settings
+- Invoice prefix.
+- Invoice paper size (A4 / 80mm / 58mm / Letter).
+- Logo on invoice, footer text, terms.
+
+12.4 Quotation Settings
+- Quotation prefix.
+- Valid days.
+- Quotation paper size and footer/terms.
+
+12.5 Notification/SMS Settings
+- Configure SMS provider settings (TextIt.biz/custom, Twilio, Nexmo, MSG91).
+- Enable/disable stock alerts and SMS notifications.
+- Configure monthly due reminder settings.
+
+============================================================
+NOTES / LIMITATIONS (FOR CLIENT EXPECTATION)
+============================================================
+- Some features depend on proper configuration (e.g., SMS provider credentials).
+- Public invoice/history/payment pages are shareable; access is by link.
+- “Hidden bill ranges” can hide/mask specific sales totals when configured.
+
+END OF DOCUMENT

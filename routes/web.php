@@ -68,6 +68,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     
     // Products
+    Route::get('products/import', [ProductController::class, 'importForm'])->name('products.import');
+    Route::get('products/import/template', [ProductController::class, 'downloadTemplate'])->name('products.import.template');
+    Route::post('products/import', [ProductController::class, 'import'])->name('products.import.store');
     Route::resource('products', ProductController::class);
     Route::post('products/{product}/update-price', [ProductController::class, 'updatePrice'])->name('products.update-price');
     
@@ -118,6 +121,10 @@ Route::middleware('auth')->group(function () {
     Route::post('pos/cart/clear', [POSController::class, 'clearCart'])->name('pos.cart.clear');
     Route::post('pos/cart/discount', [POSController::class, 'setDiscount'])->name('pos.cart.discount');
     Route::post('pos/cart/unit', [POSController::class, 'setItemUnit'])->name('pos.cart.unit');
+    Route::post('pos/cart/hold', [POSController::class, 'holdCart'])->name('pos.cart.hold');
+    Route::get('pos/cart/holds', [POSController::class, 'listHolds'])->name('pos.cart.holds');
+    Route::post('pos/cart/holds/load', [POSController::class, 'loadHold'])->name('pos.cart.holds.load');
+    Route::post('pos/cart/holds/remove', [POSController::class, 'removeHold'])->name('pos.cart.holds.remove');
     // Save draft quotation
     Route::post('pos/draft', [POSController::class, 'saveDraft'])->name('pos.draft');
     // Complete checkout

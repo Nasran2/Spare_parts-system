@@ -57,6 +57,11 @@
         </div>
     </form>
 
+    <div class="mt-4">
+        <label class="text-xs font-semibold text-gray-600">Quick search</label>
+        <input id="salesSearchInput" type="search" placeholder="Search invoices, customers..." class="mt-2 w-full px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring focus:ring-blue-100">
+    </div>
+
     <!-- Sales Table -->
     <div class="bg-white rounded-xl shadow-md overflow-hidden">
         <div class="overflow-x-auto">
@@ -75,7 +80,7 @@
                 </thead>
                 <tbody class="divide-y divide-gray-200">
                     @forelse($sales as $sale)
-                    <tr class="hover:bg-gray-50 transition">
+                    <tr data-sales-row class="hover:bg-gray-50 transition" data-search-text="{{ strtolower($sale->sale_no . ' ' . ($sale->customer->name ?? '') . ' ' . ($sale->payment_status ?? '') . ' ' . ($sale->payment_method ?? '')) }}">
                         <td class="px-6 py-4">
                             <span class="font-mono font-semibold text-blue-600">{{ $sale->sale_no }}</span>
                         </td>
@@ -256,6 +261,16 @@ document.addEventListener('visibilitychange', () => {
         const loader = document.querySelector('.global-loading, .loading-overlay');
         if (loader) loader.classList.add('hidden');
     }
+});
+
+const salesSearchInput = document.getElementById('salesSearchInput');
+const salesRows = document.querySelectorAll('[data-sales-row]');
+salesSearchInput?.addEventListener('input', function () {
+    const term = this.value.trim().toLowerCase();
+    salesRows.forEach(row => {
+        const text = row.dataset.searchText || '';
+        row.style.display = text.includes(term) ? '' : 'none';
+    });
 });
 </script>
 @endpush

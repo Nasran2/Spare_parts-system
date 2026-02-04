@@ -20,11 +20,16 @@
         </button>
     </div>
 
+    <div>
+        <label class="text-xs font-semibold text-gray-600">Quick search</label>
+        <input type="search" id="unitSearchInput" placeholder="Search units" class="mt-2 w-full px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring focus:ring-blue-100">
+    </div>
+
     <!-- Units Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         @if(isset($units) && $units->count())
             @foreach($units as $unit)
-                <div class="bg-white rounded-lg shadow p-4">
+                <div data-unit-card class="bg-white rounded-lg shadow p-4" data-search-text="{{ strtolower($unit->name . ' ' . $unit->short_name) }}">
                     <div>
                         <h4 class="text-lg font-semibold text-gray-800">{{ $unit->name }} <span class="text-sm text-gray-500">({{ $unit->short_name }})</span></h4>
                         @php($m = rtrim(rtrim(number_format((float)$unit->base_unit_multiplier, 3, '.', ''), '0'), '.'))
@@ -151,6 +156,16 @@ document.getElementById('unitCreateForm').addEventListener('submit', async funct
         console.error(err);
         alert('An error occurred while creating unit. Check console for details.');
     }
+});
+
+const unitSearchInput = document.getElementById('unitSearchInput');
+const unitCards = document.querySelectorAll('[data-unit-card]');
+unitSearchInput?.addEventListener('input', function () {
+    const term = this.value.trim().toLowerCase();
+    unitCards.forEach(card => {
+        const text = card.dataset.searchText || '';
+        card.style.display = text.includes(term) ? '' : 'none';
+    });
 });
 </script>
 @endsection

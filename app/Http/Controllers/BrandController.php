@@ -13,7 +13,7 @@ class BrandController extends Controller
     public function index()
     {
         // Load brands and return index view
-        $brands = Brand::orderBy('created_at', 'desc')->get();
+        $brands = Brand::withCount('products')->orderBy('created_at', 'desc')->get();
 
         return view('brands.index', compact('brands'));
     }

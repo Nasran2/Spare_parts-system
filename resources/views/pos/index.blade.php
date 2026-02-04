@@ -14,6 +14,7 @@
             <div class="bg-white rounded-xl shadow-md p-4">
                 <div class="relative">
                     <input 
+                        id="product-search"
                         type="text" 
                         placeholder="Search products by name, SKU, or barcode..."
                         class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -27,47 +28,35 @@
                 <h3 class="text-lg font-bold text-gray-800 mb-4">
                     <i class="fas fa-box text-blue-600 mr-2"></i>Products
                 </h3>
-                <div class="grid grid-cols-2 md:grid-cols-3 gap-4 max-h-[600px] overflow-y-auto">
-                    @php
-                        $products = \App\Models\Product::with(['unit', 'categories', 'brands'])->where('is_active', true)->where('stock_quantity', '>', 0)->take(12)->get();
-                        $allUnits = \App\Models\Unit::where('is_active', true)->get();
-                    @endphp
-                    @forelse($products as $product)
-                    <div class="bg-gray-50 rounded-lg p-4 cursor-pointer hover:bg-blue-50 transition border-2 border-transparent hover:border-blue-500 add-to-cart"
-                         data-product-id="{{ $product->id }}"
-                         data-product-name="{{ $product->name }}"
-                         data-product-price="{{ $product->selling_price }}"
-                         data-visible-units="{{ json_encode($product->visible_units ?? []) }}">
-                        <div class="w-full h-24 bg-blue-100 rounded-lg flex items-center justify-center mb-3">
-                            @if($product->image)
-                                <img src="{{ asset('storage/' . $product->image) }}" alt="{{ $product->name }}" class="w-full h-full object-cover rounded-lg">
-                            @else
-                                <i class="fas fa-cog text-blue-600 text-3xl"></i>
-                            @endif
-                        </div>
-                        <h4 class="font-semibold text-gray-800 text-sm mb-1 truncate">{{ $product->name }}</h4>
-                        <p class="text-xs text-gray-500 mb-2">Stock: {{ $product->stock_quantity }}</p>
-                        <p class="text-lg font-bold text-blue-600">{{ $currency }} {{ number_format((float)$product->selling_price, 2) }}</p>
-                        @if($product->categories->isNotEmpty())
-                            <p class="text-xs text-gray-500 truncate" title="{{ $product->categories->pluck('name')->join(', ') }}">
-                                <i class="fas fa-tags mr-1"></i>{{ $product->categories->pluck('name')->join(', ') }}
-                            </p>
-                        @endif
-                        @if($product->brands->isNotEmpty())
-                            <p class="text-xs text-gray-500 truncate" title="{{ $product->brands->pluck('name')->join(', ') }}">
-                                <i class="fas fa-copyright mr-1"></i>{{ $product->brands->pluck('name')->join(', ') }}
-                            </p>
-                        @endif
-                        @if($product->unit)
-                            <p class="text-xs text-gray-600">Base: {{ $product->unit->short_name }}</p>
-                        @endif
+                @php
+                    $products = \App\Models\Product::with(['unit', 'categories', 'brands'])
+                        ->where('is_active', true)
+                        ->orderBy('name')
+                        ->get();
+                    $productPayload = $products->map(function ($product) {
+                        return [
+                            'id' => $product->id,
+                            'name' => $product->name,
+                            'selling_price' => (float)$product->selling_price,
+                            'stock_quantity' => (int)($product->stock_quantity ?? 0),
+                            'image' => $product->image ? asset('storage/' . $product->image) : null,
+                            'categories' => $product->categories->pluck('name')->values()->toArray(),
+                            'brands' => $product->brands->pluck('name')->values()->toArray(),
+                            'unit' => $product->unit ? [
+                                'id' => $product->unit->id,
+                                'name' => $product->unit->name,
+                                'short_name' => $product->unit->short_name,
+                            ] : null,
+                            'visible_units' => $product->visible_units ?? [],
+                        ];
+                    })->values();
+                    $allUnits = \App\Models\Unit::where('is_active', true)->get();
+                @endphp
+                <div id="product-grid" class="grid grid-cols-2 md:grid-cols-3 gap-4 max-h-[600px] overflow-y-auto">
+                    <div class="col-span-full text-center py-12 text-gray-500">
+                        <i class="fas fa-spinner fa-spin text-blue-500 text-3xl mb-2"></i>
+                        Loading products...
                     </div>
-                    @empty
-                    <div class="col-span-full text-center py-12">
-                        <i class="fas fa-box-open text-4xl text-gray-300 mb-2"></i>
-                        <p class="text-gray-500">No products available</p>
-                    </div>
-                    @endforelse
                 </div>
             </div>
         </div>
@@ -169,11 +158,20 @@
                     <button id="btn-checkout" class="w-full py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 transition shadow-lg font-semibold">
                         <i class="fas fa-check-circle mr-2"></i>Complete Sale
                     </button>
+                    <button id="btn-hold" class="w-full py-2 bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200 transition font-semibold">
+                        <i class="fas fa-pause-circle mr-2"></i>Hold Bill
+                    </button>
+                    <button id="btn-open-holds" class="w-full py-2 bg-blue-50 text-blue-800 rounded-lg hover:bg-blue-100 transition font-semibold">
+                        <i class="fas fa-archive mr-2"></i>Held Bills (<span id="hold-count">0</span>)
+                    </button>
                     <button id="btn-return-mode" class="w-full py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition" title="Load a previous sale for return/exchange">
                         <i class="fas fa-undo mr-2"></i>Return / Exchange
                     </button>
                     <button id="btn-draft" class="w-full py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition" title="Save cart as a Quotation without affecting stock">
                         <i class="fas fa-file-invoice mr-2"></i>Save as Quotation
+                    </button>
+                    <button id="btn-print-quotation" class="w-full py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition hidden" title="Print the last saved quotation">
+                        <i class="fas fa-print mr-2"></i>Print Quotation
                     </button>
                     <button id="btn-clear" class="w-full py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition">
                         <i class="fas fa-times mr-2"></i>Clear Cart
@@ -229,6 +227,36 @@
     </div>
 </div>
 
+<!-- Hold Bills Modal -->
+<div id="hold-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 overflow-hidden">
+        <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+            <h3 class="text-lg font-bold text-gray-800">Held Bills</h3>
+            <button class="text-gray-500 hover:text-gray-700" data-close-hold>
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Hold Label</label>
+                <input id="hold-label" type="text" class="w-full px-4 py-2 border rounded-lg" placeholder="Optional label (e.g. Customer name)">
+            </div>
+            <button id="confirm-hold" class="w-full py-3 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition font-semibold">
+                <i class="fas fa-pause-circle mr-2"></i>Hold Current Bill
+            </button>
+            <div class="border-t border-gray-200 pt-4">
+                <h4 class="text-sm font-semibold text-gray-700 mb-3">Existing Holds</h4>
+                <div id="hold-list" class="space-y-3 max-h-64 overflow-y-auto">
+                    <div class="text-sm text-gray-500 text-center py-6">
+                        <i class="fas fa-archive text-3xl mb-2"></i>
+                        No holds yet
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 @endsection
 
 @push('scripts')
@@ -243,6 +271,12 @@
     const UNITS = @json($allUnits ?? []);
     window.unitsMap = {};
     UNITS.forEach(u => { window.unitsMap[u.id] = u; });
+
+    const PRELOADED_PRODUCTS = @json($productPayload ?? []);
+    const productGridElement = document.getElementById('product-grid');
+    const productSearchInput = document.getElementById('product-search');
+    const SEARCH_PRODUCTS_URL = '{{ route('pos.search-products') }}';
+    let activeProductList = PRELOADED_PRODUCTS;
 
     // Enforce: Walk-in customer (no customer selected) cannot have due amount
     function updateCheckoutState(){
@@ -278,7 +312,8 @@
             Object.values(items).forEach(it => {
                 const row = document.createElement('div');
                 const isReturn = it.qty < 0;
-                row.className = `flex items-center justify-between rounded-lg p-3 ${isReturn ? 'bg-red-50 border border-red-100' : 'bg-gray-50'}`;
+                const isOutOfStock = !isReturn && (typeof it.stock_quantity !== 'undefined') && Number(it.stock_quantity) <= 0;
+                row.className = `flex items-center justify-between rounded-lg p-3 ${isReturn ? 'bg-red-50 border border-red-100' : (isOutOfStock ? 'bg-red-50 border border-red-200' : 'bg-gray-50')}`;
                 const cartKey = it.cart_key || it.id;
                 
                 // Build unit selection UI (disabled for returns)
@@ -321,6 +356,7 @@
                 row.innerHTML = `
                     <div class="space-y-1">
                         <p class="font-semibold text-gray-800 text-sm">${it.name}</p>
+                        ${isOutOfStock ? '<p class="text-xs font-semibold text-red-600 uppercase">Out of stock</p>' : ''}
                         <p class="text-xs text-gray-500">${currency(it.price)}${it.unit_multiplier && it.unit_multiplier>1 ? ' (x'+it.unit_multiplier+')' : ''}</p>
                         ${unitControl}
                     </div>
@@ -367,6 +403,253 @@
         toastHost.appendChild(el);
         setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 2500);
     }
+
+    const escapeHtml = (value = '') => String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    const escapeAttr = (value = '') => String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    function buildProductCard(product){
+        const isOutOfStock = (product.stock_quantity ?? 0) <= 0;
+        const visibleUnits = Array.isArray(product.visible_units) ? product.visible_units : [];
+        const categories = (product.categories || []).join(', ');
+        const brands = (product.brands || []).join(', ');
+        const unitShort = product.unit && product.unit.short_name ? product.unit.short_name : null;
+        const visibleUnitsAttr = escapeAttr(JSON.stringify(visibleUnits));
+        const unitHtml = unitShort ? `<p class="text-xs text-gray-600">Base: ${escapeHtml(unitShort)}</p>` : '';
+        const categoriesHtml = categories ? `<p class="text-xs text-gray-500 truncate" title="${escapeAttr(categories)}"><i class="fas fa-tags mr-1"></i>${escapeHtml(categories)}</p>` : '';
+        const brandsHtml = brands ? `<p class="text-xs text-gray-500 truncate" title="${escapeAttr(brands)}"><i class="fas fa-copyright mr-1"></i>${escapeHtml(brands)}</p>` : '';
+        const imageContent = product.image ? `<img src="${escapeAttr(product.image)}" alt="${escapeAttr(product.name)}" class="w-full h-full object-cover rounded-lg">` : `<i class="fas fa-cog text-blue-600 text-3xl"></i>`;
+        return `
+            <div class="rounded-lg p-4 cursor-pointer transition border-2 add-to-cart ${isOutOfStock ? 'bg-red-50 hover:bg-red-100 border-red-300' : 'bg-gray-50 hover:bg-blue-50 border-transparent hover:border-blue-500'}"
+                 data-product-id="${product.id}"
+                 data-product-name="${escapeAttr(product.name)}"
+                 data-product-price="${product.selling_price}"
+                 data-visible-units="${visibleUnitsAttr}"
+                 data-stock-quantity="${product.stock_quantity ?? 0}">
+                <div class="w-full h-24 bg-blue-100 rounded-lg flex items-center justify-center mb-3">
+                    ${imageContent}
+                </div>
+                <h4 class="font-semibold text-gray-800 text-sm mb-1 truncate">${escapeHtml(product.name)}</h4>
+                <p class="text-xs mb-2 ${isOutOfStock ? 'text-red-600 font-semibold' : 'text-gray-500'}">
+                    Stock: ${product.stock_quantity ?? 0}
+                    ${isOutOfStock ? '<span class="ml-2 uppercase">Out of stock</span>' : ''}
+                </p>
+                <p class="text-lg font-bold text-blue-600">${currency(product.selling_price ?? 0)}</p>
+                ${categoriesHtml}
+                ${brandsHtml}
+                ${unitHtml}
+            </div>
+        `;
+    }
+
+    function renderProductGrid(products = []){
+        if (!productGridElement) return;
+        if (!products.length) {
+            productGridElement.innerHTML = `
+                <div class="col-span-full text-center py-12 text-gray-500">
+                    <i class="fas fa-box-open text-4xl mb-2"></i>
+                    No products found
+                </div>
+            `;
+            return;
+        }
+        productGridElement.innerHTML = products.map(buildProductCard).join('');
+    }
+
+    async function fetchProducts(term = ''){
+        const url = new URL(SEARCH_PRODUCTS_URL, window.location.origin);
+        if (term) url.searchParams.set('term', term);
+        const res = await fetch(url);
+        if (!res.ok) {
+            const payload = await res.json().catch(() => ({}));
+            throw new Error(payload.message || 'Unable to load products');
+        }
+        return await res.json();
+    }
+
+    async function loadProducts(term = ''){
+        if (!term) {
+            activeProductList = PRELOADED_PRODUCTS;
+            renderProductGrid(activeProductList);
+            return;
+        }
+        try {
+            const data = await fetchProducts(term);
+            activeProductList = Array.isArray(data) ? data : [];
+            renderProductGrid(activeProductList);
+        } catch(err) {
+            console.error('Product search failed', err);
+            showToast('error', err.message || 'Product search failed');
+        }
+    }
+
+    let productSearchTimer;
+    if (productSearchInput) {
+        productSearchInput.addEventListener('input', () => {
+            const term = productSearchInput.value.trim();
+            clearTimeout(productSearchTimer);
+            productSearchTimer = setTimeout(() => {
+                loadProducts(term);
+            }, 250);
+        });
+    }
+
+    renderProductGrid(activeProductList);
+
+    const holdModal = document.getElementById('hold-modal');
+    const holdLabelInput = document.getElementById('hold-label');
+    const holdListEl = document.getElementById('hold-list');
+    const holdCountBadge = document.getElementById('hold-count');
+    const holdEndpoint = '{{ route('pos.cart.hold') }}';
+    const holdListEndpoint = '{{ route('pos.cart.holds') }}';
+    const holdLoadEndpoint = '{{ route('pos.cart.holds.load') }}';
+    const holdRemoveEndpoint = '{{ route('pos.cart.holds.remove') }}';
+    const quotationPdfTemplate = '{{ route('quotations.pdf', ['sale' => '__SALE_ID__']) }}';
+    const printQuotationBtn = document.getElementById('btn-print-quotation');
+    const printModal = document.getElementById('quotation-print-modal');
+    const previewIframe = document.getElementById('quotation-preview-iframe');
+    const confirmPrintBtn = document.getElementById('confirm-print-quotation');
+    const cancelPrintBtn = document.getElementById('cancel-print-quotation');
+    let currentQuotationUrl = '';
+    function buildQuotationUrl(saleId){
+        return quotationPdfTemplate.replace('__SALE_ID__', encodeURIComponent(saleId));
+    }
+
+    async function fetchHoldList(){
+        const res = await fetch(holdListEndpoint);
+        if (!res.ok) { return []; }
+        return await res.json();
+    }
+
+    function renderHoldList(holds){
+        if (!holdListEl) return;
+        if (!holds.length) {
+            holdListEl.innerHTML = `<div class="text-sm text-gray-500 text-center py-6"><i class="fas fa-archive text-3xl mb-2"></i>No holds yet</div>`;
+            if (holdCountBadge) holdCountBadge.textContent = '0';
+            return;
+        }
+        holdListEl.innerHTML = holds.map(hold => `
+            <div class="border border-gray-200 rounded-lg p-4 flex justify-between space-x-4 bg-white shadow-sm">
+                <div>
+                    <p class="text-sm font-semibold text-gray-800">${hold.label}</p>
+                    <p class="text-xs text-gray-500">${hold.item_count} item(s) · ${new Date(hold.created_at).toLocaleString()}</p>
+                </div>
+                <div class="text-right space-y-1">
+                    <p class="font-semibold text-blue-600">${currency(hold.total)}</p>
+                    <div class="flex justify-end gap-2">
+                        <button class="text-xs text-white bg-blue-600 rounded px-3 py-1 hover:bg-blue-700 load-hold" data-id="${hold.id}" type="button">Continue</button>
+                        <button class="text-xs text-red-600 border border-red-200 rounded px-3 py-1 hover:bg-red-50 delete-hold" data-id="${hold.id}" type="button">Delete</button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+        if (holdCountBadge) holdCountBadge.textContent = String(holds.length);
+    }
+
+    async function refreshHoldList(){
+        const holds = await fetchHoldList().catch(() => []);
+        renderHoldList(holds);
+    }
+
+    function closePrintModal(){
+        printModal?.classList.add('hidden');
+        if (previewIframe) {
+            previewIframe.src = 'about:blank';
+        }
+        currentQuotationUrl = '';
+    }
+
+    function openQuotationPreview(url){
+        currentQuotationUrl = url;
+        if (previewIframe) {
+            previewIframe.src = url;
+        }
+        printModal?.classList.remove('hidden');
+    }
+
+    printQuotationBtn?.addEventListener('click', () => {
+        const saleId = printQuotationBtn.dataset.quotationId;
+        if (!saleId) {
+            showToast('warning', 'No quotation available to print');
+            return;
+        }
+        openQuotationPreview(buildQuotationUrl(saleId));
+    });
+
+    confirmPrintBtn?.addEventListener('click', () => {
+        if (!currentQuotationUrl) return;
+        const printWindow = window.open(currentQuotationUrl, '_blank');
+        if (printWindow) {
+            printWindow.focus();
+            printWindow.onload = () => printWindow.print();
+        }
+        closePrintModal();
+    });
+
+    cancelPrintBtn?.addEventListener('click', closePrintModal);
+    document.querySelectorAll('[data-close-print-modal]').forEach(btn => btn.addEventListener('click', closePrintModal));
+
+    const openHoldModal = async () => {
+        await refreshHoldList();
+        holdModal?.classList.remove('hidden');
+    };
+
+    const closeHoldModal = () => {
+        holdModal?.classList.add('hidden');
+    };
+
+    document.querySelectorAll('[data-close-hold]').forEach(btn => btn.addEventListener('click', closeHoldModal));
+    document.getElementById('btn-hold')?.addEventListener('click', openHoldModal);
+    document.getElementById('btn-open-holds')?.addEventListener('click', openHoldModal);
+
+    const confirmHoldBtn = document.getElementById('confirm-hold');
+    confirmHoldBtn?.addEventListener('click', async () => {
+        const label = holdLabelInput?.value.trim();
+        try {
+            const payload = await postJSON(holdEndpoint, { label });
+            renderCart(payload.cart);
+            if (holdLabelInput) holdLabelInput.value = '';
+            showToast('success', 'Bill held successfully');
+            await refreshHoldList();
+            closeHoldModal();
+        } catch(err){
+            showToast('error', err.message);
+        }
+    });
+
+    holdListEl?.addEventListener('click', async (event) => {
+        const button = event.target.closest('button');
+        if (!button) return;
+        const holdId = button.dataset.id;
+        if (!holdId) return;
+            if (button.classList.contains('load-hold')) {
+            try {
+                const payload = await postJSON(holdLoadEndpoint, { hold_id: holdId });
+                renderCart(payload.cart);
+                await refreshHoldList();
+                closeHoldModal();
+                showToast('success', 'Hold loaded');
+            } catch(err){
+                showToast('error', err.message);
+            }
+        } else if (button.classList.contains('delete-hold')) {
+            try {
+                await postJSON(holdRemoveEndpoint, { hold_id: holdId });
+                await refreshHoldList();
+                showToast('success', 'Hold deleted');
+            } catch(err){
+                showToast('error', err.message);
+            }
+        }
+    });
 
     function bindCartRowEvents(){
         document.querySelectorAll('.qty-inc').forEach(btn => btn.onclick = async (e) => {
@@ -559,6 +842,13 @@
             if(res && res.sale_id){
                 const label = res.sale_no ? res.sale_no : ('#' + res.sale_id);
                 showToast('success', 'Quotation saved ' + label);
+                if (printQuotationBtn) {
+                    printQuotationBtn.dataset.quotationId = res.sale_id;
+                    printQuotationBtn.dataset.saleNo = label;
+                    printQuotationBtn.title = 'Print ' + label;
+                    printQuotationBtn.classList.remove('hidden');
+                }
+                openQuotationPreview(buildQuotationUrl(res.sale_id));
             }
         } catch(err){ showToast('error', err.message || 'Failed to save draft'); }
     });
@@ -766,6 +1056,28 @@
     })(); // end IIFE
 </script>
 @endpush
+
+<!-- Quotation Print Confirmation Modal -->
+<div id="quotation-print-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center px-4" style="z-index: 9999;">
+    <div class="bg-white rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <h3 class="text-lg font-semibold text-gray-800">Print Quotation</h3>
+            <button type="button" data-close-print-modal class="text-gray-500 hover:text-gray-800">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-6 space-y-4">
+            <p class="text-sm text-gray-600">Would you like to open the quotation in print view? The document will be rendered in a new tab.</p>
+            <div class="h-64 border border-gray-200 rounded-lg overflow-hidden">
+                <iframe id="quotation-preview-iframe" class="w-full h-full" src="about:blank" loading="lazy"></iframe>
+            </div>
+            <div class="flex justify-end gap-2">
+                <button id="cancel-print-quotation" type="button" class="px-4 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100">Cancel</button>
+                <button id="confirm-print-quotation" type="button" class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">Open Print View</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- Unit Selection Modal -->
 <div id="unit-selection-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">

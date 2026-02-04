@@ -6,9 +6,13 @@ use App\Models\Product;
 use App\Models\Category;
 use App\Models\Brand;
 use App\Models\Unit;
+use App\Exports\ProductImportTemplateExport;
+use App\Imports\ProductsImport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use App\Models\ActivityLog;
+use Illuminate\Validation\Rule;
+use Maatwebsite\Excel\Facades\Excel;
 
 class ProductController extends Controller
 {
@@ -73,15 +77,22 @@ class ProductController extends Controller
     {
         // Filter empty values from arrays
         if ($request->has('categories')) {
-            $request->merge(['categories' => array_filter($request->categories, fn($value) => !is_null($value) && $value !== '')]);
+            $request->merge(['categories' => array_values(array_filter($request->categories, fn($value) => !is_null($value) && $value !== ''))]);
         }
         if ($request->has('brands')) {
-            $request->merge(['brands' => array_filter($request->brands, fn($value) => !is_null($value) && $value !== '')]);
+            $request->merge(['brands' => array_values(array_unique(array_filter($request->brands, fn($value) => !is_null($value) && $value !== '')))]);
+        }
+
+        $hasMultipleBrands = is_array($request->brands ?? null) && count($request->brands) > 1;
+
+        $skuRule = ['nullable', 'string'];
+        if (!$hasMultipleBrands) {
+            $skuRule[] = Rule::unique('products', 'sku');
         }
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'sku' => 'nullable|string|unique:products,sku',
+            'sku' => $skuRule,
             'categories' => 'nullable|array',
             'categories.*' => 'exists:categories,id',
             'brands' => 'nullable|array',
@@ -92,18 +103,16 @@ class ProductController extends Controller
             'description' => 'nullable|string',
             'cost_price' => 'required|numeric|min:0',
             'selling_price' => 'required|numeric|min:0',
+            'brand_cost_price' => 'nullable|array',
+            'brand_cost_price.*' => 'nullable|numeric|min:0',
+            'brand_selling_price' => 'nullable|array',
+            'brand_selling_price.*' => 'nullable|numeric|min:0',
+            'brand_stock_quantity' => 'nullable|array',
+            'brand_stock_quantity.*' => 'nullable|integer|min:0',
             'stock_quantity' => 'required|integer|min:0',
             'alert_quantity' => 'required|integer|min:0',
             'image' => 'nullable|image|max:2048',
         ]);
-
-        // Auto-generate SKU if not provided
-        if (empty($validated['sku'])) {
-            $validated['sku'] = $this->generateSKU();
-        }
-
-        // Barcode is always the same as SKU
-        $validated['barcode'] = $validated['sku'];
 
         if ($request->hasFile('image')) {
             $validated['image'] = $request->file('image')->store('products', 'public');
@@ -115,35 +124,124 @@ class ProductController extends Controller
         }
 
         $categories = $validated['categories'] ?? [];
-        $brands = $validated['brands'] ?? [];
+        $brandIds = $validated['brands'] ?? [];
+        $brandIds = array_values(array_unique($brandIds));
+
+        $brandCostPrice = $request->input('brand_cost_price', []);
+        $brandSellingPrice = $request->input('brand_selling_price', []);
+        $brandStockQuantity = $request->input('brand_stock_quantity', []);
         
         // Remove array fields before create
-        unset($validated['categories'], $validated['brands']);
+        unset($validated['categories'], $validated['brands'], $validated['brand_cost_price'], $validated['brand_selling_price'], $validated['brand_stock_quantity']);
 
-        // Set legacy columns for backward compatibility
-        $validated['category_id'] = $categories[0] ?? null;
-        $validated['brand_id'] = $brands[0] ?? null;
+        // If no brands selected, create a single product (existing behavior)
+        if (empty($brandIds)) {
+            // Auto-generate SKU if not provided
+            if (empty($validated['sku'])) {
+                $validated['sku'] = $this->generateSKU();
+            }
 
-        $product = Product::create($validated);
-        
-        if (!empty($categories)) {
-            $product->categories()->sync($categories);
+            // Barcode is always the same as SKU
+            $validated['barcode'] = $validated['sku'];
+
+            // Set legacy columns for backward compatibility
+            $validated['category_id'] = $categories[0] ?? null;
+            $validated['brand_id'] = null;
+
+            $product = Product::create($validated);
+
+            if (!empty($categories)) {
+                $product->categories()->sync($categories);
+            }
+
+            ActivityLog::log('create', "Created product: {$product->name}", $product);
+
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'product' => $product,
+                    'message' => 'Product created successfully!',
+                ]);
+            }
+
+            return redirect()->route('products.index')->with('success', 'Product created successfully!');
         }
-        if (!empty($brands)) {
-            $product->brands()->sync($brands);
+
+        // Brands selected: create one product per brand
+        $brandsById = Brand::whereIn('id', $brandIds)->get()->keyBy('id');
+        $createdProducts = [];
+
+        $baseSku = $validated['sku'] ?? null;
+
+        foreach ($brandIds as $index => $brandId) {
+            $brand = $brandsById->get($brandId);
+            if (!$brand) {
+                continue;
+            }
+
+            $productData = $validated;
+            $productData['name'] = rtrim($validated['name']) . ' (' . $brand->name . ')';
+            $productData['brand_id'] = $brandId;
+            $productData['category_id'] = $categories[0] ?? null;
+
+            $productData['cost_price'] = isset($brandCostPrice[$brandId]) && $brandCostPrice[$brandId] !== ''
+                ? (float) $brandCostPrice[$brandId]
+                : (float) $validated['cost_price'];
+            $productData['selling_price'] = isset($brandSellingPrice[$brandId]) && $brandSellingPrice[$brandId] !== ''
+                ? (float) $brandSellingPrice[$brandId]
+                : (float) $validated['selling_price'];
+            $productData['stock_quantity'] = isset($brandStockQuantity[$brandId]) && $brandStockQuantity[$brandId] !== ''
+                ? (int) $brandStockQuantity[$brandId]
+                : (int) $validated['stock_quantity'];
+
+            // SKU handling
+            if (empty($baseSku)) {
+                $productData['sku'] = $this->generateSKU();
+            } else {
+                $candidate = $baseSku;
+                if (count($brandIds) > 1) {
+                    $candidate = $baseSku . '-' . str_pad((string)($index + 1), 2, '0', STR_PAD_LEFT);
+                }
+                $productData['sku'] = $this->makeUniqueSku($candidate);
+            }
+
+            $productData['barcode'] = $productData['sku'];
+
+            $product = Product::create($productData);
+            if (!empty($categories)) {
+                $product->categories()->sync($categories);
+            }
+            $product->brands()->sync([$brandId]);
+
+            ActivityLog::log('create', "Created product: {$product->name}", $product);
+            $createdProducts[] = $product;
         }
 
-        ActivityLog::log('create', "Created product: {$product->name}", $product);
+        $message = 'Created ' . count($createdProducts) . ' product(s) successfully!';
 
         if ($request->ajax() || $request->wantsJson()) {
             return response()->json([
                 'success' => true,
-                'product' => $product,
-                'message' => 'Product created successfully!',
+                'product' => $createdProducts[0] ?? null,
+                'products' => $createdProducts,
+                'message' => $message,
             ]);
         }
 
-        return redirect()->route('products.index')->with('success', 'Product created successfully!');
+        return redirect()->route('products.index')->with('success', $message);
+    }
+
+    private function makeUniqueSku(string $sku): string
+    {
+        $candidate = $sku;
+        $counter = 1;
+
+        while (Product::where('sku', $candidate)->exists()) {
+            $candidate = $sku . '-' . str_pad((string)$counter, 2, '0', STR_PAD_LEFT);
+            $counter++;
+        }
+
+        return $candidate;
     }
 
     public function edit(Product $product)
@@ -239,6 +337,157 @@ class ProductController extends Controller
         $product->delete();
 
         return redirect()->route('products.index')->with('success', 'Product deleted successfully!');
+    }
+
+    // Product import helpers
+    public function importForm()
+    {
+        return view('products.import');
+    }
+
+    public function downloadTemplate()
+    {
+        $categories = Category::where('is_active', true)->pluck('name')->filter()->values()->toArray();
+        $brands = Brand::where('is_active', true)->pluck('name')->filter()->values()->toArray();
+        $units = Unit::where('is_active', true)->pluck('short_name')->filter()->values()->toArray();
+
+        return Excel::download(new ProductImportTemplateExport($categories, $brands, $units), 'products-import-template.xlsx');
+    }
+
+    public function import(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls,csv',
+        ]);
+
+        $sheet = Excel::toCollection(new ProductsImport(), $request->file('file'))->first();
+
+        if (!$sheet || $sheet->isEmpty()) {
+            return redirect()->route('products.import')
+                ->with('error', 'The uploaded file is empty or missing the header row.');
+        }
+
+        $categoryMap = Category::where('is_active', true)->get()->keyBy(fn ($category) => strtolower($category->name));
+        $brandMap = Brand::where('is_active', true)->get()->keyBy(fn ($brand) => strtolower($brand->name));
+        $units = Unit::where('is_active', true)->get();
+        $unitsByShortName = $units->filter(fn ($unit) => filled($unit->short_name))->keyBy(fn ($unit) => strtolower($unit->short_name));
+        $unitsByName = $units->filter(fn ($unit) => filled($unit->name))->keyBy(fn ($unit) => strtolower($unit->name));
+
+        $imported = 0;
+        $issues = [];
+
+        foreach ($sheet as $index => $row) {
+            $rowNumber = $index + 2;
+            $name = trim($row['name'] ?? '');
+
+            if ($name === '') {
+                $issues[] = "Row {$rowNumber}: product name is required.";
+                continue;
+            }
+
+            $unitValue = trim($row['unit_short_name'] ?? $row['unit_name'] ?? '');
+
+            if ($unitValue === '') {
+                $issues[] = "Row {$rowNumber}: unit short name is required.";
+                continue;
+            }
+
+            $unitKey = strtolower($unitValue);
+            $unit = $unitsByShortName[$unitKey] ?? $unitsByName[$unitKey] ?? null;
+
+            if (!$unit) {
+                $issues[] = "Row {$rowNumber}: unit \"{$unitValue}\" not found.";
+                continue;
+            }
+
+            $sku = trim($row['sku'] ?? '');
+            if ($sku !== '' && Product::where('sku', $sku)->exists()) {
+                $issues[] = "Row {$rowNumber}: SKU \"{$sku}\" already exists.";
+                continue;
+            }
+
+            if ($sku === '') {
+                $sku = $this->generateSKU();
+            }
+
+            $brandName = trim($row['brand_name'] ?? '');
+            $brand = null;
+            if ($brandName !== '') {
+                $brandKey = strtolower($brandName);
+                $brand = $brandMap[$brandKey] ?? null;
+                if (!$brand) {
+                    $issues[] = "Row {$rowNumber}: brand \"{$brandName}\" not found; product created without a brand.";
+                }
+            }
+
+            $categoryNames = collect(preg_split('/[|,]/', $row['category_names'] ?? '', -1, PREG_SPLIT_NO_EMPTY))
+                ->map(fn ($item) => trim($item))
+                ->reject(fn ($item) => $item === '');
+            $categoryIds = [];
+            $missingCategories = [];
+
+            foreach ($categoryNames as $categoryName) {
+                $categoryKey = strtolower($categoryName);
+                if (isset($categoryMap[$categoryKey])) {
+                    $categoryIds[] = $categoryMap[$categoryKey]->id;
+                } else {
+                    $missingCategories[] = $categoryName;
+                }
+            }
+
+            $categoryIds = array_values(array_unique($categoryIds));
+
+            if (!empty($missingCategories)) {
+                $issues[] = "Row {$rowNumber}: categories not found (" . implode(', ', $missingCategories) . "); only mapped the existing ones.";
+            }
+
+            $costPrice = is_numeric($row['cost_price'] ?? null) ? (float) $row['cost_price'] : 0;
+            $sellingPrice = is_numeric($row['selling_price'] ?? null) ? (float) $row['selling_price'] : 0;
+            $stockQuantity = is_numeric($row['stock_quantity'] ?? null) ? (int) $row['stock_quantity'] : 0;
+            $alertQuantity = is_numeric($row['alert_quantity'] ?? null) ? (int) $row['alert_quantity'] : 0;
+            $description = trim($row['description'] ?? '') ?: null;
+
+            $product = Product::create([
+                'name' => $name,
+                'sku' => $sku,
+                'barcode' => $sku,
+                'unit_id' => $unit->id,
+                'cost_price' => $costPrice,
+                'selling_price' => $sellingPrice,
+                'stock_quantity' => $stockQuantity,
+                'alert_quantity' => $alertQuantity,
+                'description' => $description,
+                'category_id' => $categoryIds[0] ?? null,
+                'brand_id' => $brand->id ?? null,
+                'is_active' => true,
+            ]);
+
+            if (!empty($categoryIds)) {
+                $product->categories()->sync($categoryIds);
+            }
+
+            if ($brand) {
+                $product->brands()->sync([$brand->id]);
+            }
+
+            ActivityLog::log('import', "Imported product via Excel: {$product->name}", $product);
+            $imported++;
+        }
+
+        $redirect = redirect()->route('products.import');
+
+        if ($imported > 0) {
+            $plural = $imported === 1 ? '' : 's';
+            $redirect = $redirect->with('success', "{$imported} product{$plural} imported successfully.");
+        } else {
+            $redirect = $redirect->with('error', 'No products were imported. Please verify the template and try again.');
+        }
+
+        if (!empty($issues)) {
+            $redirect = $redirect->with('import_errors', $issues);
+        }
+
+        return $redirect;
     }
 
     public function updatePrice(Request $request, Product $product)

@@ -17,6 +17,11 @@
         </a>
     </div>
 
+    <div class="mt-4">
+        <label class="text-xs font-semibold text-gray-600">Quick search</label>
+        <input id="purchaseSearchInput" type="search" placeholder="Search purchases" class="mt-2 w-full px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring focus:ring-blue-100">
+    </div>
+
     <!-- Purchases Table -->
     <div class="bg-white rounded-xl shadow-md overflow-hidden">
         <div class="overflow-x-auto">
@@ -34,7 +39,7 @@
                 </thead>
                 <tbody class="divide-y divide-gray-200">
                     @forelse($purchases as $purchase)
-                    <tr class="hover:bg-gray-50 transition">
+                    <tr data-purchase-row class="hover:bg-gray-50 transition" data-search-text="{{ strtolower($purchase->purchase_no . ' ' . ($purchase->supplier->name ?? 'N/A') . ' ' . ($purchase->status ?? '') . ' ' . ($purchase->payment_status ?? '')) }}">
                         <td class="px-6 py-4">
                             <span class="font-mono font-semibold text-orange-600">{{ $purchase->purchase_no }}</span>
                         </td>
@@ -103,5 +108,15 @@ function viewPurchase(id) {
 function editPurchase(id) {
     window.location.href = '{{ url('purchases') }}/' + id + '/edit';
 }
+
+const purchaseSearchInput = document.getElementById('purchaseSearchInput');
+const purchaseRows = document.querySelectorAll('[data-purchase-row]');
+purchaseSearchInput?.addEventListener('input', function () {
+    const term = this.value.trim().toLowerCase();
+    purchaseRows.forEach(row => {
+        const text = row.dataset.searchText || '';
+        row.style.display = text.includes(term) ? '' : 'none';
+    });
+});
 </script>
 @endsection

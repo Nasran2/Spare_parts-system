@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
@@ -87,13 +88,38 @@ class POSController extends Controller
         $term = $request->input('term');
         if (!$term) return response()->json([]);
 
-        $products = Product::where('name', 'LIKE', "%{$term}%")
-            ->orWhere('sku', 'LIKE', "%{$term}%")
+        $products = Product::with(['unit', 'categories', 'brands'])
             ->where('is_active', true)
-            ->take(10)
-            ->get(['id', 'name', 'selling_price', 'stock_quantity']);
+            ->where(function ($q) use ($term) {
+                $q->where('name', 'LIKE', "%{$term}%")
+                    ->orWhere('sku', 'LIKE', "%{$term}%")
+                    ->orWhere('barcode', 'LIKE', "%{$term}%");
+            })
+            ->orderBy('name')
+            ->take(20)
+            ->get();
 
-        return response()->json($products);
+        $payload = $products->map(fn($product) => $this->formatProductForPOS($product));
+        return response()->json($payload);
+    }
+
+    private function formatProductForPOS(Product $product): array
+    {
+        return [
+            'id' => $product->id,
+            'name' => $product->name,
+            'selling_price' => (float)$product->selling_price,
+            'stock_quantity' => (int)($product->stock_quantity ?? 0),
+            'image' => $product->image ? asset('storage/' . $product->image) : null,
+            'categories' => $product->categories->pluck('name')->values()->toArray(),
+            'brands' => $product->brands->pluck('name')->values()->toArray(),
+            'unit' => $product->unit ? [
+                'id' => $product->unit->id,
+                'name' => $product->unit->name,
+                'short_name' => $product->unit->short_name,
+            ] : null,
+            'visible_units' => $product->visible_units ?? [],
+        ];
     }
 
     /**
@@ -416,6 +442,30 @@ class POSController extends Controller
         return $this->withTotals($cart);
     }
 
+    private function getHoldStorage(): array
+    {
+        return Session::get('pos.holds', []);
+    }
+
+    private function saveHoldStorage(array $holds): void
+    {
+        Session::put('pos.holds', $holds);
+    }
+
+    private function formatHoldPreview(array $hold): array
+    {
+        $items = $hold['cart']['items'] ?? [];
+        $totals = $hold['cart']['totals'] ?? ['total' => 0];
+        return [
+            'id' => $hold['id'],
+            'label' => $hold['label'] ?? 'Hold',
+            'created_at' => $hold['created_at'] ?? now()->toDateTimeString(),
+            'total' => $totals['total'] ?? 0,
+            'item_count' => count($items),
+            'cart' => $hold['cart'],
+        ];
+    }
+
     /* ----------------------- Cart Endpoints ----------------------- */
     public function addToCart(Request $request)
     {
@@ -477,6 +527,7 @@ class POSController extends Controller
                 'price' => $finalPrice,
                 'qty' => $quantity,
                 'base_price' => $basePrice,
+                'stock_quantity' => (int)($product->stock_quantity ?? 0),
                 'unit_id' => $selectedUnitId,
                 'unit_name' => $selectedUnitName,
                 'unit_multiplier' => $selectedMultiplier,
@@ -585,6 +636,57 @@ class POSController extends Controller
         return response()->json($cart);
     }
 
+    public function holdCart(Request $request)
+    {
+        $cart = Session::get('pos.cart');
+        if (empty($cart['items'] ?? [])) {
+            return response()->json(['message' => 'Cart is empty'], 422);
+        }
+
+        $label = trim($request->input('label') ?? '');
+        $holds = $this->getHoldStorage();
+        $holdId = Str::uuid()->toString();
+        $holds[$holdId] = [
+            'id' => $holdId,
+            'label' => $label ?: 'Hold ' . now()->format('Y-m-d H:i'),
+            'created_at' => now()->toDateTimeString(),
+            'cart' => $cart,
+        ];
+        $this->saveHoldStorage($holds);
+        Session::forget('pos.cart');
+        return response()->json([ 'message' => 'Bill held', 'cart' => $this->cart() ]);
+    }
+
+    public function listHolds()
+    {
+        $holds = array_values(array_map(fn($hold) => $this->formatHoldPreview($hold), $this->getHoldStorage()));
+        return response()->json($holds);
+    }
+
+    public function loadHold(Request $request)
+    {
+        $holdId = $request->input('hold_id');
+        $holds = $this->getHoldStorage();
+        if (!isset($holds[$holdId])) {
+            return response()->json(['message' => 'Hold not found'], 404);
+        }
+        Session::put('pos.cart', $holds[$holdId]['cart']);
+        unset($holds[$holdId]);
+        $this->saveHoldStorage($holds);
+        return response()->json(['message' => 'Hold loaded', 'cart' => $this->cart()]);
+    }
+
+    public function removeHold(Request $request)
+    {
+        $holdId = $request->input('hold_id');
+        $holds = $this->getHoldStorage();
+        if (isset($holds[$holdId])) {
+            unset($holds[$holdId]);
+            $this->saveHoldStorage($holds);
+        }
+        return response()->json(['message' => 'Hold deleted']);
+    }
+
     public function saveDraft(Request $request)
     {
         $cart = $this->cart();
@@ -604,8 +706,8 @@ class POSController extends Controller
                 // Quotations shouldn't record payment fields
                 'paid_amount'   => 0,
                 'due_amount'    => 0,
-                'payment_status'=> null,
-                'payment_method'=> null,
+                'payment_status'=> 'unpaid',
+                'payment_method'=> 'cash',
                 'sale_type'     => 'quotation',
                 'notes'         => $request->string('notes')
             ]);

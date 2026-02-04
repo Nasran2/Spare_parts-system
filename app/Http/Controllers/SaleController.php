@@ -245,7 +245,8 @@ class SaleController extends Controller
         $currency = config('app.currency', 'Rs ');
         $pdf->loadView('quotations.pdf', compact('sale','shop','currency'));
         $pdf->setPaper('A4', 'portrait');
-        return $pdf->download($sale->sale_no . '.pdf');
+        // Stream inline (do not force download) so it can be previewed/printed in-browser.
+        return $pdf->stream($sale->sale_no . '.pdf', ['Attachment' => false]);
     }
 
     /**

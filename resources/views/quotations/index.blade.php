@@ -58,6 +58,11 @@
         </div>
     </form>
 
+    <div class="mt-4">
+        <label class="text-xs font-semibold text-gray-600">Quick search</label>
+        <input id="quotationsSearchInput" type="search" placeholder="Search quotations" class="mt-2 w-full px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring focus:ring-blue-100">
+    </div>
+
     <!-- Quotations Table -->
     <div class="bg-white rounded-xl shadow-md overflow-hidden">
         <div class="overflow-x-auto">
@@ -74,7 +79,7 @@
                 </thead>
                 <tbody class="divide-y divide-gray-200">
                     @forelse($sales as $sale)
-                        <tr class="hover:bg-gray-50 transition">
+                        <tr data-quotation-row class="hover:bg-gray-50 transition" data-search-text="{{ strtolower($sale->sale_no . ' ' . ($sale->customer->name ?? '') . ' ' . ($sale->payment_status ?? '')) }}">
                             <td class="px-6 py-4"><span class="font-mono font-semibold text-amber-600">{{ $sale->sale_no }}</span></td>
                             <td class="px-6 py-4">{{ $sale->customer->name ?? 'Walk-in Customer' }}</td>
                             <td class="px-6 py-4">{{ $sale->sale_date?->format('M d, Y') ?? $sale->created_at->format('M d, Y') }}</td>
@@ -117,6 +122,18 @@
         </div>
         <div class="p-4">{{ $sales->links() }}</div>
     </div>
+
+    <script>
+        const quotationsSearchInput = document.getElementById('quotationsSearchInput');
+        const quotationRows = document.querySelectorAll('[data-quotation-row]');
+        quotationsSearchInput?.addEventListener('input', function () {
+            const term = this.value.trim().toLowerCase();
+            quotationRows.forEach(row => {
+                const text = row.dataset.searchText || '';
+                row.style.display = text.includes(term) ? '' : 'none';
+            });
+        });
+    </script>
 
 </div>
 @endsection

@@ -20,11 +20,16 @@
         </button>
     </div>
 
+    <div>
+        <label class="text-xs font-semibold text-gray-600">Quick search</label>
+        <input id="categorySearchInput" type="search" placeholder="Search categories" class="mt-2 w-full px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring focus:ring-blue-100">
+    </div>
+
     <!-- Categories Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         @if(isset($categories) && $categories->count())
             @foreach($categories as $category)
-                <div class="bg-white rounded-lg shadow p-4 flex flex-col justify-between">
+                <div data-category-card class="bg-white rounded-lg shadow p-4 flex flex-col justify-between" data-search-text="{{ strtolower($category->name . ' ' . ($category->description ?? '')) }}">
                     <div>
                         <h4 class="text-lg font-semibold text-gray-800">{{ $category->name }}</h4>
                         @if($category->description)
@@ -127,6 +132,16 @@ document.getElementById('categoryCreateForm').addEventListener('submit', async f
         document.getElementById('categoryCreateError').textContent = 'Server error';
         document.getElementById('categoryCreateError').classList.remove('hidden');
     }
+});
+
+const categorySearchInput = document.getElementById('categorySearchInput');
+const categoryCards = document.querySelectorAll('[data-category-card]');
+categorySearchInput?.addEventListener('input', function () {
+    const term = this.value.trim().toLowerCase();
+    categoryCards.forEach(card => {
+        const text = card.dataset.searchText || '';
+        card.style.display = text.includes(term) ? '' : 'none';
+    });
 });
 </script>
 @endsection

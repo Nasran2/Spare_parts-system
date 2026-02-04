@@ -69,6 +69,41 @@ class DashboardController extends Controller
             // Net Profit (Sales - Purchase - Expenses)
             $netProfit = $totalSales - $totalPurchase - $totalExpenses;
 
+            // Calculate percentage changes (compare with previous period)
+            $calculatePercentageChange = function ($currentValue, $previousValue) {
+                if ($previousValue == 0) {
+                    return $currentValue > 0 ? 100 : 0;
+                }
+                return round((($currentValue - $previousValue) / abs($previousValue)) * 100, 2);
+            };
+
+            // Previous period dates (same length as current period)
+            $currentPeriodLength = Carbon::parse($endDate)->diffInDays(Carbon::parse($startDate)) + 1;
+            $previousEndDate = Carbon::parse($startDate)->subDay()->format('Y-m-d');
+            $previousStartDate = Carbon::parse($previousEndDate)->subDays($currentPeriodLength - 1)->format('Y-m-d');
+
+            // Previous Period Sales
+            $previousSalesQuery = $applyExclude(Sale::where('sale_type', 'sale'));
+            $previousSalesQuery = $previousSalesQuery->whereBetween('sale_date', [$previousStartDate, $previousEndDate]);
+            $previousSales = $previousSalesQuery->sum('total_amount') ?? 0;
+            $salesChangePercent = $calculatePercentageChange($totalSales, $previousSales);
+
+            // Previous Period Purchase
+            $previousPurchaseQuery = Purchase::query();
+            $previousPurchaseQuery = $previousPurchaseQuery->whereBetween('purchase_date', [$previousStartDate, $previousEndDate]);
+            $previousPurchase = $previousPurchaseQuery->sum('total_amount') ?? 0;
+            $purchaseChangePercent = $calculatePercentageChange($totalPurchase, $previousPurchase);
+
+            // Previous Period Expenses
+            $previousExpenseQuery = Expense::query();
+            $previousExpenseQuery = $previousExpenseQuery->whereBetween('expense_date', [$previousStartDate, $previousEndDate]);
+            $previousExpenses = $previousExpenseQuery->sum('amount') ?? 0;
+            $expenseChangePercent = $calculatePercentageChange($totalExpenses, $previousExpenses);
+
+            // Previous Period Net Profit
+            $previousNetProfit = $previousSales - $previousPurchase - $previousExpenses;
+            $profitChangePercent = $calculatePercentageChange($netProfit, $previousNetProfit);
+
             // Invoice Due within selected period (exclude hidden sales)
             $dueQuery = $applyExclude(Sale::where('payment_status', '!=', 'paid'));
             $dueQuery = $useToday
@@ -158,7 +193,11 @@ class DashboardController extends Controller
                 'lowStockProducts',
                 'topProducts',
                 'chartLabels',
-                'chartData'
+                'chartData',
+                'salesChangePercent',
+                'purchaseChangePercent',
+                'expenseChangePercent',
+                'profitChangePercent'
             ));
         } catch (\Exception $e) {
             // Log the error and show a user-friendly message
@@ -176,7 +215,11 @@ class DashboardController extends Controller
                 'lowStockProducts' => collect([]),
                 'topProducts' => collect([]),
                 'chartLabels' => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                'chartData' => [0, 0, 0, 0, 0, 0, 0]
+                'chartData' => [0, 0, 0, 0, 0, 0, 0],
+                'salesChangePercent' => 0,
+                'purchaseChangePercent' => 0,
+                'expenseChangePercent' => 0,
+                'profitChangePercent' => 0
             ]);
         }
     }

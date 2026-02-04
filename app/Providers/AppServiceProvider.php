@@ -2,8 +2,10 @@
 
 namespace App\Providers;
 
+use Illuminate\Foundation\AliasLoader;
 use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\View;
+use Maatwebsite\Excel\ExcelServiceProvider;
+use Maatwebsite\Excel\Facades\Excel;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -12,7 +14,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->register(ExcelServiceProvider::class);
+        AliasLoader::getInstance()->alias('Excel', Excel::class);
     }
 
     /**
