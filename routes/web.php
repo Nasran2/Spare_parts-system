@@ -71,6 +71,9 @@ Route::middleware('auth')->group(function () {
     Route::get('products/import', [ProductController::class, 'importForm'])->name('products.import');
     Route::get('products/import/template', [ProductController::class, 'downloadTemplate'])->name('products.import.template');
     Route::post('products/import', [ProductController::class, 'import'])->name('products.import.store');
+        Route::get('products/barcode-search', [ProductController::class, 'barcodeSearch'])->name('products.barcode.search');
+    Route::get('products/barcode-print', [ProductController::class, 'barcodePrint'])->name('products.barcode.print');
+    Route::post('products/barcode-print/preview', [ProductController::class, 'barcodePrintPreview'])->name('products.barcode.preview');
     Route::resource('products', ProductController::class);
     Route::post('products/{product}/update-price', [ProductController::class, 'updatePrice'])->name('products.update-price');
     
@@ -117,6 +120,7 @@ Route::middleware('auth')->group(function () {
     Route::post('pos/search-sale', [POSController::class, 'searchSale'])->name('pos.search-sale');
     Route::get('pos/search-products', [POSController::class, 'searchProducts'])->name('pos.search-products');
     Route::post('pos/cart/update', [POSController::class, 'updateQty'])->name('pos.cart.update');
+    Route::post('pos/cart/item/update', [POSController::class, 'updateCartItem'])->name('pos.cart.item.update');
     Route::post('pos/cart/remove', [POSController::class, 'removeItem'])->name('pos.cart.remove');
     Route::post('pos/cart/clear', [POSController::class, 'clearCart'])->name('pos.cart.clear');
     Route::post('pos/cart/discount', [POSController::class, 'setDiscount'])->name('pos.cart.discount');
@@ -206,6 +210,8 @@ Route::middleware('auth')->group(function () {
     Route::get('settings/general', [SettingController::class, 'general'])->name('settings.general');
     Route::get('settings/invoice', [SettingController::class, 'invoice'])->name('settings.invoice');
     Route::get('settings/quotation', [SettingController::class, 'quotation'])->name('settings.quotation');
+    Route::get('settings/pos', [SettingController::class, 'pos'])->name('settings.pos');
+    Route::get('settings/barcode', [SettingController::class, 'barcode'])->name('settings.barcode');
     Route::post('settings/save', [SettingController::class, 'save'])->name('settings.save');
     
     // Activity Log

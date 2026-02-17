@@ -118,6 +118,7 @@
                         'Roles' => ['roles.view', 'roles.create', 'roles.edit', 'roles.delete'],
                         'Settings' => ['settings.view', 'settings.edit'],
                         'Reports' => ['reports.view', 'reports.sales', 'reports.purchases', 'reports.profit', 'reports.stock', 'reports.expenses'],
+                        'Barcodes' => ['barcode.print', 'barcode.settings'],
                         'Activity Log' => ['activity-log.view'],
                         'Notifications' => ['notifications.view'],
                     ];

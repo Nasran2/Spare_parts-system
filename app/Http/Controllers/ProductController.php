@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Product;
 use App\Models\Category;
 use App\Models\Brand;
+use App\Models\Setting;
 use App\Models\Unit;
 use App\Exports\ProductImportTemplateExport;
 use App\Imports\ProductsImport;
@@ -61,6 +62,127 @@ class ProductController extends Controller
         return view('products.index', compact('products', 'categories', 'brands', 'units'));
     }
 
+    public function barcodePrint()
+    {
+        $settings = $this->getBarcodeSettings();
+
+        return view('products.barcode-print', compact('settings'));
+    }
+
+    public function barcodeSearch(Request $request)
+    {
+        $term = trim((string) $request->input('term', ''));
+        if ($term === '') {
+            return response()->json([]);
+        }
+
+        $products = Product::query()
+            ->where('is_active', true)
+            ->where(function ($q) use ($term) {
+                $q->where('name', 'LIKE', "%{$term}%")
+                    ->orWhere('sku', 'LIKE', "%{$term}%")
+                    ->orWhere('barcode', 'LIKE', "%{$term}%");
+            })
+            ->orderBy('name')
+            ->take(20)
+            ->get(['id', 'name', 'sku', 'barcode', 'selling_price']);
+
+        $payload = $products->map(fn($product) => [
+            'id' => $product->id,
+            'name' => $product->name,
+            'barcode' => $product->barcode ?: $product->sku,
+            'selling_price' => (float) $product->selling_price,
+        ]);
+
+        return response()->json($payload);
+    }
+
+    public function barcodePrintPreview(Request $request)
+    {
+        $validated = $request->validate([
+            'products' => 'required|array',
+            'products.*' => 'integer|exists:products,id',
+            'qty' => 'nullable|array',
+            'qty.*' => 'nullable|integer|min:1|max:1000',
+        ]);
+
+        $productIds = $validated['products'] ?? [];
+        $qtyMap = $validated['qty'] ?? [];
+
+        $products = Product::whereIn('id', $productIds)
+            ->orderBy('name')
+            ->get(['id', 'name', 'sku', 'barcode', 'selling_price', 'cost_price']);
+
+        $items = [];
+        foreach ($products as $product) {
+            $qty = (int) ($qtyMap[$product->id] ?? 1);
+            $qty = max(1, $qty);
+            $items[] = [
+                'product' => $product,
+                'qty' => $qty,
+            ];
+        }
+
+        $settings = $this->getBarcodeSettings();
+        $currency = Setting::get('currency', 'Rs');
+        $currencyPosition = Setting::get('currency_position', 'before');
+        $barcodeHeightPx = (float) $settings['barcode_height'] * 37.795;
+
+        return view('products.barcode-print-preview', compact('items', 'settings', 'currency', 'currencyPosition', 'barcodeHeightPx'));
+    }
+
+    private function getBarcodeSettings(): array
+    {
+        $defaultMap = [
+            '0' => 'E',
+            '1' => 'M',
+            '2' => 'O',
+            '3' => 'D',
+            '4' => 'T',
+            '5' => 'W',
+            '6' => 'I',
+            '7' => 'N',
+            '8' => 'K',
+            '9' => 'L',
+        ];
+
+        $settings = [
+            'barcode_sticker_width' => (float) Setting::get('barcode_sticker_width', 3),
+            'barcode_sticker_height' => (float) Setting::get('barcode_sticker_height', 2),
+            'barcode_paper_width' => (float) Setting::get('barcode_paper_width', 4),
+            'barcode_labels_per_row' => (int) Setting::get('barcode_labels_per_row', 1),
+            'barcode_row_gap' => (float) Setting::get('barcode_row_gap', 0.3),
+            'barcode_top_margin' => (float) Setting::get('barcode_top_margin', 0),
+            'barcode_left_margin' => (float) Setting::get('barcode_left_margin', 0),
+            'barcode_col_gap' => (float) Setting::get('barcode_col_gap', 0),
+            'barcode_shop_name_size' => (int) Setting::get('barcode_shop_name_size', 6),
+            'barcode_product_name_size' => (int) Setting::get('barcode_product_name_size', 7),
+            'barcode_price_tag_size' => (int) Setting::get('barcode_price_tag_size', 9),
+            'barcode_secret_code_size' => (int) Setting::get('barcode_secret_code_size', 8),
+            'barcode_height' => (float) Setting::get('barcode_height', 0.7),
+            'barcode_sticker_top_padding' => (float) Setting::get('barcode_sticker_top_padding', 0.1),
+            'barcode_sticker_bottom_padding' => (float) Setting::get('barcode_sticker_bottom_padding', 0.1),
+            'barcode_show_cost_code' => (bool) Setting::get('barcode_show_cost_code', false),
+            'barcode_cost_code_map' => (array) Setting::get('barcode_cost_code_map', $defaultMap),
+        ];
+
+        $presets = (array) Setting::get('barcode_presets', []);
+        $defaultPreset = (string) Setting::get('barcode_default_preset', '');
+        if ($defaultPreset !== '') {
+            foreach ($presets as $preset) {
+                if (($preset['name'] ?? '') === $defaultPreset && isset($preset['settings'])) {
+                    $settings = array_merge($settings, (array) $preset['settings']);
+                    break;
+                }
+            }
+        }
+
+        if (!isset($settings['barcode_cost_code_map']) || empty($settings['barcode_cost_code_map'])) {
+            $settings['barcode_cost_code_map'] = $defaultMap;
+        }
+
+        return $settings;
+    }
     public function create()
     {
         $categories = Category::where('is_active', true)->get();

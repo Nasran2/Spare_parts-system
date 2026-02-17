@@ -263,6 +263,10 @@
                         <i class="fas fa-file-import w-4"></i>
                         <span>Import Products</span>
                     </a>
+                    <a href="{{ route('products.barcode.print') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('products.barcode.*') ? 'active' : '' }}">
+                        <i class="fas fa-barcode w-4"></i>
+                        <span>Barcode Print</span>
+                    </a>
                     <a href="{{ route('categories.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('categories.*') ? 'active' : '' }}">
                         <i class="fas fa-tags w-4"></i>
                         <span>Categories</span>

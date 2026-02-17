@@ -12,6 +12,10 @@ use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\Setting;
 use App\Models\Customer;
+use App\Models\Expense;
+use App\Models\ExpenseCategory;
+use App\Models\Payment;
+use App\Models\Unit;
 
 class POSController extends Controller
 {
@@ -24,11 +28,37 @@ class POSController extends Controller
         $cart = $this->cart();
         $customers = Customer::where('is_active', true)->orderBy('name')->get(['id','name']);
         $invoicePaperSize = Setting::get('invoice_paper_size', 'a4');
+        $posLayout = Setting::get('pos_layout', 'default');
+
+        $allUnits = Unit::where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'short_name']);
+
+        $products = Product::with(['unit', 'categories', 'brands'])
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
+
+        $productPayload = $products
+            ->map(fn (Product $product) => $this->formatProductForPOS($product))
+            ->values();
+
+        $posCardFee = [
+            'enabled' => (bool) Setting::get('pos_card_fee_enabled', false),
+            'rate' => (float) Setting::get('pos_card_fee_rate', 0),
+            'mode' => Setting::get('pos_card_fee_mode', 'customer'),
+            'record_expense' => (bool) Setting::get('pos_card_fee_record_expense', true),
+            'expense_category_id' => (int) Setting::get('pos_card_fee_expense_category_id', 0),
+        ];
         
         return view('pos.index', [
             'cart' => $cart,
             'customers' => $customers,
             'invoicePaperSize' => $invoicePaperSize,
+            'posLayout' => $posLayout,
+            'posCardFee' => $posCardFee,
+            'allUnits' => $allUnits,
+            'productPayload' => $productPayload,
         ]);
     }
 
@@ -103,8 +133,14 @@ class POSController extends Controller
         return response()->json($payload);
     }
 
-    private function formatProductForPOS(Product $product): array
+    /**
+     * @param mixed $product
+     */
+    private function formatProductForPOS($product): array
     {
+        if (!$product instanceof Product) {
+            throw new \InvalidArgumentException('formatProductForPOS expects a Product model');
+        }
         return [
             'id' => $product->id,
             'name' => $product->name,
@@ -304,23 +340,109 @@ class POSController extends Controller
 
             // Process New Sale
             if (!empty($saleItemsData)) {
-                $subtotal = 0;
-                foreach ($saleItemsData as $it) {
-                    $subtotal += $it['qty'] * $it['price'];
+                $subtotal = 0.0;
+                $lineDiscountTotal = 0.0;
+
+                foreach ($saleItemsData as $idx => $it) {
+                    $qty = (float) ($it['qty'] ?? 0);
+                    $price = (float) ($it['price'] ?? 0);
+                    $lineSubtotal = $qty * $price;
+                    $lineDiscount = 0.0;
+
+                    if ($qty > 0 && !empty($it['line_discount']) && is_array($it['line_discount'])) {
+                        $type = ($it['line_discount']['type'] ?? 'fixed') === 'percent' ? 'percent' : 'fixed';
+                        $value = (float) ($it['line_discount']['value'] ?? 0);
+                        $value = max(0, $value);
+
+                        if ($type === 'percent') {
+                            $value = min(100, $value);
+                            $lineDiscount = round($lineSubtotal * ($value / 100), 2);
+                        } else {
+                            $lineDiscount = round($value, 2);
+                        }
+                        $lineDiscount = min($lineDiscount, max(0, $lineSubtotal));
+                    }
+
+                    $saleItemsData[$idx]['line_subtotal'] = round($lineSubtotal, 2);
+                    $saleItemsData[$idx]['line_discount_amount'] = round($lineDiscount, 2);
+                    $saleItemsData[$idx]['line_total'] = round($lineSubtotal - $lineDiscount, 2);
+
+                    $subtotal += $lineSubtotal;
+                    $lineDiscountTotal += $lineDiscount;
                 }
-                
-                $discountAmount = 0;
-                if (($cart['discount']['type'] ?? 'fixed') === 'percent') {
-                    $discountAmount = round($subtotal * ((float)($cart['discount']['value'] ?? 0)) / 100, 2);
-                } else {
-                    $discountAmount = (float)($cart['discount']['value'] ?? 0);
+
+                $baseForCartDiscount = $subtotal - $lineDiscountTotal;
+                $cartDiscount = 0.0;
+                if ($baseForCartDiscount > 0) {
+                    if (($cart['discount']['type'] ?? 'fixed') === 'percent') {
+                        $cartDiscount = round($baseForCartDiscount * ((float) ($cart['discount']['value'] ?? 0)) / 100, 2);
+                    } else {
+                        $cartDiscount = (float) ($cart['discount']['value'] ?? 0);
+                    }
+                    $cartDiscount = min(max(0, $cartDiscount), $baseForCartDiscount);
                 }
-                
+
+                $discountAmount = $lineDiscountTotal + $cartDiscount;
                 $taxAmount = round(($subtotal - $discountAmount) * ((float)($cart['tax_rate'] ?? 0)) / 100, 2);
                 $totalAmount = max(0, $subtotal - $discountAmount + $taxAmount);
 
+                // Payment method(s)
+                $allowedMethods = ['cash', 'card', 'bank_transfer', 'mobile_payment'];
+
+                $paymentMethod = (string) $request->input('payment_method', 'cash');
+                if (!in_array($paymentMethod, $allowedMethods, true)) {
+                    $paymentMethod = 'cash';
+                }
+
+                $splitPayments = $request->input('payments');
+                $normalizedPayments = [];
+                $cardPaidAmount = 0.0;
+                if (is_array($splitPayments)) {
+                    foreach ($splitPayments as $p) {
+                        if (!is_array($p)) continue;
+                        $method = (string) ($p['method'] ?? $p['payment_method'] ?? '');
+                        $amount = (float) ($p['amount'] ?? 0);
+                        if (!in_array($method, $allowedMethods, true)) continue;
+                        if ($amount <= 0) continue;
+                        $amount = round($amount, 2);
+                        $normalizedPayments[] = ['method' => $method, 'amount' => $amount];
+                        if ($method === 'card') {
+                            $cardPaidAmount += $amount;
+                        }
+                    }
+
+                    if (!empty($normalizedPayments)) {
+                        // Choose a representative payment_method for sales table enum
+                        $paymentMethod = collect($normalizedPayments)
+                            ->sortByDesc('amount')
+                            ->first()['method'] ?? $paymentMethod;
+                    }
+                }
+
+                // Card fee (optional)
+                $cardFeeEnabled = (bool) Setting::get('pos_card_fee_enabled', false);
+                $cardFeeRate = (float) Setting::get('pos_card_fee_rate', 0);
+                $cardFeeMode = (string) Setting::get('pos_card_fee_mode', 'customer'); // customer|seller
+                $cardFeeRecordExpense = (bool) Setting::get('pos_card_fee_record_expense', true);
+                $cardFeeExpenseCategoryId = (int) Setting::get('pos_card_fee_expense_category_id', 0);
+
+                $cardFee = 0.0;
+                $hasCard = ($paymentMethod === 'card') || ($cardPaidAmount > 0);
+                $cardFeeBase = $cardPaidAmount > 0 ? $cardPaidAmount : $totalAmount;
+                if ($hasCard && $cardFeeEnabled && $cardFeeRate > 0 && $cardFeeBase > 0) {
+                    $cardFee = round($cardFeeBase * ($cardFeeRate / 100), 2);
+                }
+
+                $effectiveTotalAmount = $totalAmount;
+                if ($hasCard && $cardFee > 0 && $cardFeeMode === 'customer') {
+                    $effectiveTotalAmount = round($totalAmount + $cardFee, 2);
+                }
+
                 // Calculate Payment
                 $paidCash = (float) $request->input('paid_amount', 0);
+                if (!empty($normalizedPayments)) {
+                    $paidCash = (float) collect($normalizedPayments)->sum('amount');
+                }
                 
                 $returnCredit = 0;
                 if (!empty($returnItemsData)) {
@@ -330,8 +452,8 @@ class POSController extends Controller
                 }
 
                 $totalPaid = $paidCash + $returnCredit;
-                $salePaid = min($totalAmount, $totalPaid);
-                $due = $totalAmount - $salePaid;
+                $salePaid = min($effectiveTotalAmount, $totalPaid);
+                $due = $effectiveTotalAmount - $salePaid;
                 if ($due < 0) $due = 0;
 
                 if ($due > 0 && !$customerId) {
@@ -345,22 +467,79 @@ class POSController extends Controller
                     'subtotal'      => $subtotal,
                     'tax'           => $taxAmount,
                     'discount'      => $discountAmount,
-                    'total_amount'  => $totalAmount,
+                    'total_amount'  => $effectiveTotalAmount,
                     'paid_amount'   => $salePaid,
                     'due_amount'    => $due,
                     'payment_status'=> $due > 0 ? 'partial' : 'paid',
-                    'payment_method'=> !empty($returnItemsData) ? 'exchange' : ($request->input('payment_method', 'cash')),
+                    'payment_method'=> $paymentMethod,
                     'sale_type'     => 'sale',
-                    'notes'         => $request->string('notes') . (!empty($returnItemsData) ? " (Exchange/Return Processed)" : "")
+                    'notes'         => $request->string('notes')
+                        . (!empty($returnItemsData) ? " (Exchange/Return Processed)" : "")
+                        . (($hasCard && $cardFee > 0)
+                            ? ($cardFeeMode === 'customer'
+                                ? " (Card fee charged to customer: {$cardFeeRate}% = {$cardFee})"
+                                : " (Card fee paid by seller: {$cardFeeRate}% = {$cardFee})")
+                            : "")
                 ]);
 
+                // Record split payments as Payment rows (optional but useful for reporting)
+                if (!empty($normalizedPayments)) {
+                    foreach ($normalizedPayments as $p) {
+                        Payment::create([
+                            'sale_id' => $sale->id,
+                            'customer_id' => $customerId,
+                            'amount' => $p['amount'],
+                            'payment_method' => $p['method'],
+                            'payment_date' => now()->toDateString(),
+                            'notes' => $request->input('notes'),
+                        ]);
+                    }
+                } else {
+                    // Single-payment flow: write a single Payment row when money is taken
+                    if ($salePaid > 0) {
+                        Payment::create([
+                            'sale_id' => $sale->id,
+                            'customer_id' => $customerId,
+                            'amount' => $salePaid,
+                            'payment_method' => $paymentMethod,
+                            'payment_date' => now()->toDateString(),
+                            'notes' => $request->input('notes'),
+                        ]);
+                    }
+                }
+
+                // Record card fee as expense when seller pays
+                if (
+                    $hasCard
+                    && $cardFee > 0
+                    && $cardFeeMode === 'seller'
+                    && $cardFeeRecordExpense
+                    && $cardFeeExpenseCategoryId > 0
+                ) {
+                    if (ExpenseCategory::whereKey($cardFeeExpenseCategoryId)->exists()) {
+                        Expense::create([
+                            'expense_category_id' => $cardFeeExpenseCategoryId,
+                            'user_id' => $userId,
+                            'expense_date' => now()->toDateString(),
+                            'amount' => $cardFee,
+                            'description' => 'Card fee for Sale ' . ($sale->sale_no ?? ('#' . $sale->id)),
+                        ]);
+                    }
+                }
+
                 foreach ($saleItemsData as $item) {
+                    $qty = (float) ($item['qty'] ?? 0);
+                    $lineTotal = array_key_exists('line_total', $item)
+                        ? (float) $item['line_total']
+                        : ($qty * (float) ($item['price'] ?? 0));
+                    $effectiveUnitPrice = $qty > 0 ? round($lineTotal / $qty, 2) : (float) ($item['price'] ?? 0);
+
                     SaleItem::create([
                         'sale_id'    => $sale->id,
                         'product_id' => $item['id'],
                         'quantity'   => $item['qty'],
-                        'unit_price' => $item['price'],
-                        'total'      => $item['qty'] * $item['price'],
+                        'unit_price' => $effectiveUnitPrice,
+                        'total'      => round($lineTotal, 2),
                     ]);
 
                     // Reduce stock
@@ -413,19 +592,53 @@ class POSController extends Controller
 
     private function withTotals(array $cart): array
     {
-        $subtotal = 0;
-        foreach ($cart['items'] as $it) {
-            $subtotal += $it['qty'] * $it['price'];
+        $subtotal = 0.0;
+        $lineDiscountTotal = 0.0;
+
+        foreach ($cart['items'] as $key => $it) {
+            $qty = (float) ($it['qty'] ?? 0);
+            $price = (float) ($it['price'] ?? 0);
+            $lineSubtotal = $qty * $price;
+            $lineDiscount = 0.0;
+
+            // No discounts on return lines (negative qty)
+            if ($qty > 0 && !empty($it['line_discount']) && is_array($it['line_discount'])) {
+                $type = ($it['line_discount']['type'] ?? 'fixed') === 'percent' ? 'percent' : 'fixed';
+                $value = (float) ($it['line_discount']['value'] ?? 0);
+                $value = max(0, $value);
+
+                if ($type === 'percent') {
+                    $value = min(100, $value);
+                    $lineDiscount = round($lineSubtotal * ($value / 100), 2);
+                } else {
+                    $lineDiscount = round($value, 2);
+                }
+                $lineDiscount = min($lineDiscount, max(0, $lineSubtotal));
+            }
+
+            $lineTotal = $lineSubtotal - $lineDiscount;
+            $subtotal += $lineSubtotal;
+            $lineDiscountTotal += $lineDiscount;
+
+            // Add computed fields for frontend display
+            $cart['items'][$key]['line_subtotal'] = round($lineSubtotal, 2);
+            $cart['items'][$key]['line_discount_amount'] = round($lineDiscount, 2);
+            $cart['items'][$key]['line_total'] = round($lineTotal, 2);
         }
-        $discountAmount = 0;
-        if (($cart['discount']['type'] ?? 'fixed') === 'percent') {
-            $discountAmount = round($subtotal * ((float)($cart['discount']['value'] ?? 0)) / 100, 2);
-        } else {
-            $discountAmount = (float)($cart['discount']['value'] ?? 0);
+
+        $baseForCartDiscount = $subtotal - $lineDiscountTotal;
+        $cartDiscount = 0.0;
+        if ($baseForCartDiscount > 0) {
+            if (($cart['discount']['type'] ?? 'fixed') === 'percent') {
+                $cartDiscount = round($baseForCartDiscount * ((float) ($cart['discount']['value'] ?? 0)) / 100, 2);
+            } else {
+                $cartDiscount = (float) ($cart['discount']['value'] ?? 0);
+            }
+            $cartDiscount = min(max(0, $cartDiscount), $baseForCartDiscount);
         }
-        $discountAmount = min($discountAmount, $subtotal);
+
+        $discountAmount = $lineDiscountTotal + $cartDiscount;
         $taxAmount = round(($subtotal - $discountAmount) * ((float)($cart['tax_rate'] ?? 0)) / 100, 2);
-        // Allow negative total for returns/exchanges
         $total = $subtotal - $discountAmount + $taxAmount;
         $cart['totals'] = [
             'subtotal' => round($subtotal, 2),
@@ -496,9 +709,12 @@ class POSController extends Controller
                 $selectedMultiplier = (float)$selectedUnit->base_unit_multiplier;
             }
         } elseif ($visibleUnits->count() > 0) {
-            // Auto-select first visible unit if none provided
-            $selectedUnitId = (int)$visibleUnits->first();
-            $selectedUnit = \App\Models\Unit::find($selectedUnitId);
+            // Auto-select default unit if none provided:
+            // Prefer base unit (multiplier == 1) if present, else first visible unit.
+            $candidateUnits = \App\Models\Unit::whereIn('id', $visibleUnits->all())->get(['id', 'name', 'short_name', 'base_unit_multiplier']);
+            $default = $candidateUnits->firstWhere('base_unit_multiplier', 1) ?? $candidateUnits->first();
+            $selectedUnitId = $default ? (int)$default->id : (int)$visibleUnits->first();
+            $selectedUnit = $default ?: \App\Models\Unit::find($selectedUnitId);
             if ($selectedUnit) {
                 $selectedUnitName = $selectedUnit->short_name ?? $selectedUnit->name;
                 $selectedMultiplier = (float)$selectedUnit->base_unit_multiplier;
@@ -609,6 +825,53 @@ class POSController extends Controller
         return response()->json($cart);
     }
 
+    /**
+     * Update per-item details (unit price override, line discount, description).
+     */
+    public function updateCartItem(Request $request)
+    {
+        $data = $request->validate([
+            'cart_key' => 'required|string',
+            'unit_price' => 'nullable|numeric|min:0',
+            'discount_type' => 'nullable|in:fixed,percent',
+            'discount_value' => 'nullable|numeric|min:0',
+            'description' => 'nullable|string|max:5000',
+        ]);
+
+        $cart = Session::get('pos.cart');
+        if (!$cart || empty($cart['items'][$data['cart_key']])) {
+            return response()->json(['message' => 'Item not found'], 404);
+        }
+
+        $item = $cart['items'][$data['cart_key']];
+        if (($item['qty'] ?? 0) < 0) {
+            return response()->json(['message' => 'Cannot edit return items'], 422);
+        }
+
+        if (array_key_exists('unit_price', $data) && $data['unit_price'] !== null) {
+            $item['price'] = round((float) $data['unit_price'], 2);
+        }
+
+        if (($data['discount_type'] ?? null) !== null || ($data['discount_value'] ?? null) !== null) {
+            $type = ($data['discount_type'] ?? ($item['line_discount']['type'] ?? 'fixed'));
+            $type = $type === 'percent' ? 'percent' : 'fixed';
+            $value = (float) ($data['discount_value'] ?? ($item['line_discount']['value'] ?? 0));
+            $value = max(0, $value);
+            if ($type === 'percent') {
+                $value = min(100, $value);
+            }
+            $item['line_discount'] = ['type' => $type, 'value' => $value];
+        }
+
+        if (array_key_exists('description', $data)) {
+            $item['description'] = (string) ($data['description'] ?? '');
+        }
+
+        $cart['items'][$data['cart_key']] = $item;
+        $cart = $this->putCart($cart);
+        return response()->json($cart);
+    }
+
     public function removeItem(Request $request)
     {
         $request->validate(['cart_key' => 'required|string']);
@@ -713,12 +976,18 @@ class POSController extends Controller
             ]);
 
             foreach ($cart['items'] as $item) {
+                $qty = (float) ($item['qty'] ?? 0);
+                $lineTotal = array_key_exists('line_total', $item)
+                    ? (float) $item['line_total']
+                    : ($qty * (float) ($item['price'] ?? 0));
+                $effectiveUnitPrice = $qty != 0 ? round($lineTotal / $qty, 2) : (float) ($item['price'] ?? 0);
+
                 SaleItem::create([
                     'sale_id'    => $sale->id,
                     'product_id' => $item['id'],
                     'quantity'   => $item['qty'],
-                    'unit_price' => $item['price'],
-                    'total'      => $item['qty'] * $item['price'],
+                    'unit_price' => $effectiveUnitPrice,
+                    'total'      => round($lineTotal, 2),
                 ]);
             }
 
@@ -749,16 +1018,30 @@ class POSController extends Controller
      */
     public function getSaleReceipt($id)
     {
-        $sale = Sale::with('items.product')->findOrFail($id);
+        $sale = Sale::with(['items.product', 'customer', 'user', 'payments'])->findOrFail($id);
         
         return response()->json([
             'id' => $sale->id,
+            'sale_no' => $sale->sale_no,
             'sale_date' => $sale->sale_date,
             'subtotal' => $sale->subtotal,
             'tax' => $sale->tax,
             'discount' => $sale->discount,
             'total_amount' => $sale->total_amount,
             'paid_amount' => $sale->paid_amount,
+            'due_amount' => $sale->due_amount,
+            'payment_status' => $sale->payment_status,
+            'payment_method' => $sale->payment_method,
+            'customer_name' => $sale->customer?->name,
+            'cashier_name' => $sale->user?->name,
+            'payments' => $sale->payments->map(function ($p) {
+                return [
+                    'method' => $p->payment_method,
+                    'amount' => $p->amount,
+                    'date' => $p->payment_date,
+                    'notes' => $p->notes,
+                ];
+            })->values(),
             'items' => $sale->items->map(function ($item) {
                 return [
                     'product_name' => $item->product->name,

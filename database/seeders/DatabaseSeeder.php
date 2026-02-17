@@ -37,6 +37,7 @@ class DatabaseSeeder extends Seeder
                 'categories.view', 'categories.create', 'categories.edit', 'categories.delete',
                 'brands.view', 'brands.create', 'brands.edit', 'brands.delete',
                 'units.view', 'units.create', 'units.edit', 'units.delete',
+                'barcode.print', 'barcode.settings',
                 
                 // Supplier & Customer
                 'suppliers.view', 'suppliers.create', 'suppliers.edit', 'suppliers.delete',
@@ -74,6 +75,7 @@ class DatabaseSeeder extends Seeder
                 'products.view', 'products.create', 'products.edit', 'products.update-price',
                 'categories.view', 'categories.create', 'categories.edit',
                 'brands.view', 'brands.create', 'brands.edit',
+                'barcode.print', 'barcode.settings',
                 'suppliers.view', 'suppliers.create', 'suppliers.edit',
                 'customers.view', 'customers.create', 'customers.edit',
                 'purchases.view', 'purchases.create', 'purchases.edit',
