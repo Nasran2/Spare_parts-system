@@ -87,6 +87,7 @@
             <li>Provide the <span class="font-semibold text-gray-800">Unit Short Name</span> (case-insensitive) that matches an active unit.</li>
             <li><span class="font-semibold">SKU</span> is optional; leaving it empty auto-generates a unique SKU and barcode.</li>
             <li><span class="font-semibold text-gray-800">Brand Name</span> is optional but must match an existing brand when supplied.</li>
+            <li><span class="font-semibold text-gray-800">Cost Code</span> is optional. When provided, it will be decoded to set the cost price on import.</li>
             <li>Cost and selling prices default to 0 when left blank, and stock quantities fall back to 0.</li>
             <li><span class="font-semibold text-gray-800">Profit margin</span> columns calculate automatically once you fill both the cost and selling prices.</li>
         </ul>

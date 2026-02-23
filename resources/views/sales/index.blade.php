@@ -145,6 +145,15 @@
                                     <i class="fas fa-money-bill-wave"></i>
                                 </button>
                                 @endif
+                                @if(auth()->user()?->hasPermission('sales.delete'))
+                                <form action="{{ route('sales.destroy', $sale->id) }}" method="POST" onsubmit="return confirm('Delete this {{ $sale->sale_type === 'quotation' ? 'quotation' : 'sale' }}? This cannot be undone.');">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="p-2 text-red-700 hover:bg-red-50 rounded-lg transition" title="Delete {{ $sale->sale_type === 'quotation' ? 'Quotation' : 'Sale' }}">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
+                                @endif
                             </div>
                         </td>
                     </tr>

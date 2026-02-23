@@ -12,8 +12,10 @@ use App\Imports\ProductsImport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use App\Models\ActivityLog;
+use Illuminate\Database\QueryException;
 use Illuminate\Validation\Rule;
 use Maatwebsite\Excel\Facades\Excel;
+use App\Support\PublicStorageSync;
 
 class ProductController extends Controller
 {
@@ -22,26 +24,47 @@ class ProductController extends Controller
         $query = Product::with(['categories', 'brands', 'unit']);
 
         // Search
-        if ($request->has('search')) {
-            $search = $request->input('search');
-            $query->where(function($q) use ($search) {
+        if ($request->filled('search')) {
+            $search = trim((string) $request->input('search'));
+            $normalized = preg_replace('/[^\pL\pN]+/u', ' ', $search);
+            $tokens = array_values(array_filter(preg_split('/\s+/', (string) $normalized), fn ($token) => mb_strlen($token) >= 2));
+
+            $query->where(function ($q) use ($search, $tokens) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('sku', 'like', "%{$search}%")
-                  ->orWhere('barcode', 'like', "%{$search}%");
+                    ->orWhere('sku', 'like', "%{$search}%")
+                    ->orWhere('barcode', 'like', "%{$search}%");
+
+                if (!empty($tokens)) {
+                    $q->orWhere(function ($allTokensQuery) use ($tokens) {
+                        foreach ($tokens as $token) {
+                            $allTokensQuery->where(function ($tokenFieldQuery) use ($token) {
+                                $tokenFieldQuery->where('name', 'like', "%{$token}%")
+                                    ->orWhere('sku', 'like', "%{$token}%")
+                                    ->orWhere('barcode', 'like', "%{$token}%");
+                            });
+                        }
+                    });
+                }
             });
         }
 
         // Filter by category
         if ($request->has('category_id') && $request->category_id) {
-            $query->whereHas('categories', function($q) use ($request) {
-                $q->where('categories.id', $request->category_id);
+            $query->where(function ($outer) use ($request) {
+                $outer->where('category_id', $request->category_id)
+                    ->orWhereHas('categories', function($q) use ($request) {
+                        $q->where('categories.id', $request->category_id);
+                    });
             });
         }
 
         // Filter by brand
         if ($request->has('brand_id') && $request->brand_id) {
-            $query->whereHas('brands', function($q) use ($request) {
-                $q->where('brands.id', $request->brand_id);
+            $query->where(function ($outer) use ($request) {
+                $outer->where('brand_id', $request->brand_id)
+                    ->orWhereHas('brands', function($q) use ($request) {
+                        $q->where('brands.id', $request->brand_id);
+                    });
             });
         }
 
@@ -76,12 +99,27 @@ class ProductController extends Controller
             return response()->json([]);
         }
 
+        $normalized = preg_replace('/[^\pL\pN]+/u', ' ', $term);
+        $tokens = array_values(array_filter(preg_split('/\s+/', (string) $normalized), fn ($token) => mb_strlen($token) >= 2));
+
         $products = Product::query()
             ->where('is_active', true)
-            ->where(function ($q) use ($term) {
+            ->where(function ($q) use ($term, $tokens) {
                 $q->where('name', 'LIKE', "%{$term}%")
                     ->orWhere('sku', 'LIKE', "%{$term}%")
                     ->orWhere('barcode', 'LIKE', "%{$term}%");
+
+                if (!empty($tokens)) {
+                    $q->orWhere(function ($allTokensQuery) use ($tokens) {
+                        foreach ($tokens as $token) {
+                            $allTokensQuery->where(function ($tokenFieldQuery) use ($token) {
+                                $tokenFieldQuery->where('name', 'LIKE', "%{$token}%")
+                                    ->orWhere('sku', 'LIKE', "%{$token}%")
+                                    ->orWhere('barcode', 'LIKE', "%{$token}%");
+                            });
+                        }
+                    });
+                }
             })
             ->orderBy('name')
             ->take(20)
@@ -104,10 +142,13 @@ class ProductController extends Controller
             'products.*' => 'integer|exists:products,id',
             'qty' => 'nullable|array',
             'qty.*' => 'nullable|integer|min:1|max:1000',
+            'show_secret_price' => 'nullable|array',
+            'show_secret_price.*' => 'nullable|boolean',
         ]);
 
         $productIds = $validated['products'] ?? [];
         $qtyMap = $validated['qty'] ?? [];
+        $showSecretPriceMap = $validated['show_secret_price'] ?? [];
 
         $products = Product::whereIn('id', $productIds)
             ->orderBy('name')
@@ -120,6 +161,7 @@ class ProductController extends Controller
             $items[] = [
                 'product' => $product,
                 'qty' => $qty,
+                'show_secret_price' => (bool) ($showSecretPriceMap[$product->id] ?? false),
             ];
         }
 
@@ -152,18 +194,22 @@ class ProductController extends Controller
             'barcode_paper_width' => (float) Setting::get('barcode_paper_width', 4),
             'barcode_labels_per_row' => (int) Setting::get('barcode_labels_per_row', 1),
             'barcode_row_gap' => (float) Setting::get('barcode_row_gap', 0.3),
+            'barcode_alignment' => (string) Setting::get('barcode_alignment', 'left'),
             'barcode_top_margin' => (float) Setting::get('barcode_top_margin', 0),
-            'barcode_left_margin' => (float) Setting::get('barcode_left_margin', 0),
+            'barcode_left_margin' => (float) Setting::get('barcode_left_margin', 0.5),
             'barcode_col_gap' => (float) Setting::get('barcode_col_gap', 0),
             'barcode_shop_name_size' => (int) Setting::get('barcode_shop_name_size', 6),
             'barcode_product_name_size' => (int) Setting::get('barcode_product_name_size', 7),
             'barcode_price_tag_size' => (int) Setting::get('barcode_price_tag_size', 9),
             'barcode_secret_code_size' => (int) Setting::get('barcode_secret_code_size', 8),
+            'barcode_number_size' => (int) Setting::get('barcode_number_size', 8),
             'barcode_height' => (float) Setting::get('barcode_height', 0.7),
             'barcode_sticker_top_padding' => (float) Setting::get('barcode_sticker_top_padding', 0.1),
             'barcode_sticker_bottom_padding' => (float) Setting::get('barcode_sticker_bottom_padding', 0.1),
             'barcode_show_cost_code' => (bool) Setting::get('barcode_show_cost_code', false),
+            'barcode_enable_selling_secret_code' => (bool) Setting::get('barcode_enable_selling_secret_code', false),
             'barcode_cost_code_map' => (array) Setting::get('barcode_cost_code_map', $defaultMap),
+            'barcode_selling_code_map' => (array) Setting::get('barcode_selling_code_map', $defaultMap),
         ];
 
         $presets = (array) Setting::get('barcode_presets', []);
@@ -171,14 +217,23 @@ class ProductController extends Controller
         if ($defaultPreset !== '') {
             foreach ($presets as $preset) {
                 if (($preset['name'] ?? '') === $defaultPreset && isset($preset['settings'])) {
-                    $settings = array_merge($settings, (array) $preset['settings']);
+                    $settings = array_replace((array) $preset['settings'], $settings);
                     break;
                 }
             }
         }
 
+        // Always respect current toggle value from settings screen for secret-code visibility.
+        // This prevents old preset values from forcing the secret code to appear when turned off.
+        $settings['barcode_show_cost_code'] = (bool) Setting::get('barcode_show_cost_code', false);
+        $settings['barcode_enable_selling_secret_code'] = (bool) Setting::get('barcode_enable_selling_secret_code', false);
+
         if (!isset($settings['barcode_cost_code_map']) || empty($settings['barcode_cost_code_map'])) {
             $settings['barcode_cost_code_map'] = $defaultMap;
+        }
+
+        if (!isset($settings['barcode_selling_code_map']) || empty($settings['barcode_selling_code_map'])) {
+            $settings['barcode_selling_code_map'] = $defaultMap;
         }
 
         return $settings;
@@ -192,7 +247,23 @@ class ProductController extends Controller
         $vatEnabled = \App\Models\Setting::get('vat_enabled', false);
         $vatRate = (float) \App\Models\Setting::get('vat_rate', 0);
 
-        return view('products.create', compact('categories', 'brands', 'units', 'vatEnabled', 'vatRate'));
+        $defaultMap = [
+            '0' => 'E',
+            '1' => 'M',
+            '2' => 'O',
+            '3' => 'D',
+            '4' => 'T',
+            '5' => 'W',
+            '6' => 'I',
+            '7' => 'N',
+            '8' => 'K',
+            '9' => 'L',
+        ];
+        $costCodeMap = (array) \App\Models\Setting::get('barcode_cost_code_map', $defaultMap);
+        $sellingCodeMap = (array) \App\Models\Setting::get('barcode_selling_code_map', $defaultMap);
+        $sellingSecretEnabled = (bool) \App\Models\Setting::get('barcode_enable_selling_secret_code', false);
+
+        return view('products.create', compact('categories', 'brands', 'units', 'vatEnabled', 'vatRate', 'costCodeMap', 'sellingCodeMap', 'sellingSecretEnabled'));
     }
 
     public function store(Request $request)
@@ -238,6 +309,7 @@ class ProductController extends Controller
 
         if ($request->hasFile('image')) {
             $validated['image'] = $request->file('image')->store('products', 'public');
+            PublicStorageSync::syncFile($validated['image']);
         }
 
         // If no units selected treat as null (means show all)
@@ -302,7 +374,7 @@ class ProductController extends Controller
             }
 
             $productData = $validated;
-            $productData['name'] = rtrim($validated['name']) . ' (' . $brand->name . ')';
+            $productData['name'] = $validated['name'];
             $productData['brand_id'] = $brandId;
             $productData['category_id'] = $categories[0] ?? null;
 
@@ -375,7 +447,23 @@ class ProductController extends Controller
         $vatEnabled = \App\Models\Setting::get('vat_enabled', false);
         $vatRate = (float) \App\Models\Setting::get('vat_rate', 0);
 
-        return view('products.edit', compact('product', 'categories', 'brands', 'units', 'vatEnabled', 'vatRate'));
+        $defaultMap = [
+            '0' => 'E',
+            '1' => 'M',
+            '2' => 'O',
+            '3' => 'D',
+            '4' => 'T',
+            '5' => 'W',
+            '6' => 'I',
+            '7' => 'N',
+            '8' => 'K',
+            '9' => 'L',
+        ];
+        $costCodeMap = (array) \App\Models\Setting::get('barcode_cost_code_map', $defaultMap);
+        $sellingCodeMap = (array) \App\Models\Setting::get('barcode_selling_code_map', $defaultMap);
+        $sellingSecretEnabled = (bool) \App\Models\Setting::get('barcode_enable_selling_secret_code', false);
+
+        return view('products.edit', compact('product', 'categories', 'brands', 'units', 'vatEnabled', 'vatRate', 'costCodeMap', 'sellingCodeMap', 'sellingSecretEnabled'));
     }
 
     public function update(Request $request, Product $product)
@@ -418,8 +506,10 @@ class ProductController extends Controller
             // Delete old image
             if ($product->image) {
                 Storage::disk('public')->delete($product->image);
+                PublicStorageSync::removeFile($product->image);
             }
             $validated['image'] = $request->file('image')->store('products', 'public');
+            PublicStorageSync::syncFile($validated['image']);
         }
 
         $oldData = $product->toArray();
@@ -450,15 +540,24 @@ class ProductController extends Controller
 
     public function destroy(Product $product)
     {
-        ActivityLog::log('delete', "Deleted product: {$product->name}", $product);
+        try {
+            ActivityLog::log('delete', "Deleted product: {$product->name}", $product);
 
-        if ($product->image) {
-            Storage::disk('public')->delete($product->image);
+            if ($product->image) {
+                Storage::disk('public')->delete($product->image);
+                PublicStorageSync::removeFile($product->image);
+            }
+
+            $product->delete();
+
+            return redirect()->route('products.index')->with('success', 'Product deleted successfully!');
+        } catch (QueryException $exception) {
+            if ((string) $exception->getCode() === '23000') {
+                return redirect()->route('products.index')->with('error', 'This product cannot be deleted because it is already used in sales or purchase records.');
+            }
+
+            throw $exception;
         }
-
-        $product->delete();
-
-        return redirect()->route('products.index')->with('success', 'Product deleted successfully!');
     }
 
     // Product import helpers
@@ -494,6 +593,27 @@ class ProductController extends Controller
         $units = Unit::where('is_active', true)->get();
         $unitsByShortName = $units->filter(fn ($unit) => filled($unit->short_name))->keyBy(fn ($unit) => strtolower($unit->short_name));
         $unitsByName = $units->filter(fn ($unit) => filled($unit->name))->keyBy(fn ($unit) => strtolower($unit->name));
+
+        $defaultMap = [
+            '0' => 'E',
+            '1' => 'M',
+            '2' => 'O',
+            '3' => 'D',
+            '4' => 'T',
+            '5' => 'W',
+            '6' => 'I',
+            '7' => 'N',
+            '8' => 'K',
+            '9' => 'L',
+        ];
+        $costCodeMap = (array) \App\Models\Setting::get('barcode_cost_code_map', $defaultMap);
+        $reverseCostCodeMap = [];
+        foreach ($costCodeMap as $digit => $code) {
+            if ($code !== null && $code !== '') {
+                $reverseCostCodeMap[strtoupper((string) $code)] = (string) $digit;
+            }
+        }
+        $zeroFallback = (bool) config('app.secret_cost_zero_fallback', false);
 
         $imported = 0;
         $issues = [];
@@ -563,11 +683,28 @@ class ProductController extends Controller
                 $issues[] = "Row {$rowNumber}: categories not found (" . implode(', ', $missingCategories) . "); only mapped the existing ones.";
             }
 
-            $costPrice = is_numeric($row['cost_price'] ?? null) ? (float) $row['cost_price'] : 0;
+            $costCode = trim((string) ($row['cost_code'] ?? $row['secret_cost_code'] ?? ''));
+            $costPrice = is_numeric($row['cost_price'] ?? null) ? (float) $row['cost_price'] : null;
             $sellingPrice = is_numeric($row['selling_price'] ?? null) ? (float) $row['selling_price'] : 0;
             $stockQuantity = is_numeric($row['stock_quantity'] ?? null) ? (int) $row['stock_quantity'] : 0;
             $alertQuantity = is_numeric($row['alert_quantity'] ?? null) ? (int) $row['alert_quantity'] : 0;
             $description = trim($row['description'] ?? '') ?: null;
+
+            if ($costCode !== '') {
+                $decodedCost = $this->decodeCostCode($costCode, $reverseCostCodeMap, $zeroFallback);
+                if ($decodedCost !== null) {
+                    if ($costPrice !== null && abs($decodedCost - $costPrice) > 0.01) {
+                        $issues[] = "Row {$rowNumber}: cost code overrides cost price (" . number_format($decodedCost, 2) . ").";
+                    }
+                    $costPrice = $decodedCost;
+                } else {
+                    $issues[] = "Row {$rowNumber}: cost code could not be decoded; using cost price value.";
+                }
+            }
+
+            if ($costPrice === null) {
+                $costPrice = 0;
+            }
 
             $product = Product::create([
                 'name' => $name,
@@ -635,6 +772,54 @@ class ProductController extends Controller
             'success' => true,
             'message' => 'Price updated successfully!'
         ]);
+    }
+
+    private function decodeCostCode(string $input, array $reverseMap, bool $zeroFallback): ?float
+    {
+        $raw = strtoupper($input);
+        $parts = explode('.', $raw);
+        $leftRaw = $parts[0] ?? '';
+        $rightRaw = count($parts) > 1 ? implode('', array_slice($parts, 1)) : '';
+
+        $leftDigits = '';
+        foreach (str_split($leftRaw) as $ch) {
+            if (isset($reverseMap[$ch])) {
+                $leftDigits .= $reverseMap[$ch];
+            } elseif ($zeroFallback && $ch !== '') {
+                $leftDigits .= '0';
+            } elseif (ctype_digit($ch)) {
+                $leftDigits .= $ch;
+            }
+        }
+
+        $rightDigits = '';
+        foreach (str_split($rightRaw) as $ch) {
+            if (isset($reverseMap[$ch])) {
+                $rightDigits .= $reverseMap[$ch];
+            } elseif ($zeroFallback && $ch !== '') {
+                $rightDigits .= '0';
+            } elseif (ctype_digit($ch)) {
+                $rightDigits .= $ch;
+            }
+        }
+
+        if ($leftDigits === '' && $rightDigits === '') {
+            return null;
+        }
+
+        if ($leftDigits === '') {
+            $leftDigits = '0';
+        }
+
+        if ($rightDigits === '') {
+            $rightDigits = '00';
+        } elseif (strlen($rightDigits) === 1) {
+            $rightDigits .= '0';
+        } elseif (strlen($rightDigits) > 2) {
+            $rightDigits = substr($rightDigits, 0, 2);
+        }
+
+        return (float) ($leftDigits . '.' . $rightDigits);
     }
 
     /**

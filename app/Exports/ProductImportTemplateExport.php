@@ -41,6 +41,7 @@ class ProductImportTemplateExport implements FromCollection, WithHeadings, Shoul
             'Brand Name',
             'Unit Short Name',
             'Cost Price',
+            'Cost Code',
             'Selling Price',
             'Profit Margin %',
             'Profit Margin Fixed',
@@ -101,10 +102,10 @@ class ProductImportTemplateExport implements FromCollection, WithHeadings, Shoul
     private function applyProfitMarginFormulas(PhpWorksheet $sheet, int $startRow, int $endRow)
     {
         for ($row = $startRow; $row <= $endRow; $row++) {
-            $percentageFormula = "=IF(AND(ISNUMBER(\$F{$row}),ISNUMBER(\$G{$row}),\$F{$row}<>0),(\$G{$row}-\$F{$row})/\$F{$row}*100,\"\")";
-            $fixedFormula = "=IF(AND(ISNUMBER(\$F{$row}),ISNUMBER(\$G{$row})),\$G{$row}-\$F{$row},\"\")";
-            $sheet->setCellValue("H{$row}", $percentageFormula);
-            $sheet->setCellValue("I{$row}", $fixedFormula);
+            $percentageFormula = "=IF(AND(ISNUMBER(\$F{$row}),ISNUMBER(\$H{$row}),\$F{$row}<>0),(\$H{$row}-\$F{$row})/\$F{$row}*100,\"\")";
+            $fixedFormula = "=IF(AND(ISNUMBER(\$F{$row}),ISNUMBER(\$H{$row})),\$H{$row}-\$F{$row},\"\")";
+            $sheet->setCellValue("I{$row}", $percentageFormula);
+            $sheet->setCellValue("J{$row}", $fixedFormula);
         }
     }
 }

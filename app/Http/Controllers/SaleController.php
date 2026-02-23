@@ -7,6 +7,7 @@ use App\Models\Sale;
 use App\Models\Customer;
 use App\Models\Setting;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use App\Support\SecretPos;
 
 class SaleController extends Controller
@@ -82,7 +83,7 @@ class SaleController extends Controller
      */
     public function print(string $id)
     {
-        $sale = Sale::with(['items.product', 'customer', 'user'])->findOrFail($id);
+        $sale = Sale::with(['items.product', 'customer', 'user', 'payments'])->findOrFail($id);
         if (SecretPos::isHidden((float)$sale->total_amount)) {
             abort(404);
         }
@@ -354,20 +355,49 @@ class SaleController extends Controller
      */
     public function destroy(string $id)
     {
-        $sale = Sale::findOrFail($id);
-        // Only allow deleting quotations from this endpoint
-        if ($sale->sale_type !== 'quotation') {
-            return redirect()->back()->with('error', 'Only quotations can be deleted from here.');
+        if (!Auth::user()?->hasPermission('sales.delete')) {
+            return redirect()->back()->with('error', 'You do not have permission to delete sales.');
         }
 
+        $sale = Sale::findOrFail($id);
+
         try {
-            // delete related items first
-            $sale->items()->delete();
-            $sale->delete();
-            return redirect()->route('quotations.index')->with('success', 'Quotation deleted successfully');
+            DB::transaction(function () use ($sale) {
+                if ($sale->sale_type === 'sale') {
+                    $sale->loadMissing(['items', 'returns.items']);
+
+                    $returnedByProduct = [];
+                    foreach ($sale->returns as $return) {
+                        foreach ($return->items as $returnItem) {
+                            $productId = (int) $returnItem->product_id;
+                            $returnedByProduct[$productId] = ($returnedByProduct[$productId] ?? 0) + (int) $returnItem->quantity;
+                        }
+                    }
+
+                    foreach ($sale->items as $item) {
+                        \App\Models\Product::where('id', $item->product_id)->increment('stock_quantity', (int) $item->quantity);
+                    }
+
+                    foreach ($returnedByProduct as $productId => $qty) {
+                        \App\Models\Product::where('id', $productId)->decrement('stock_quantity', (int) $qty);
+                    }
+                }
+
+                $sale->delete();
+            });
+
+            if ($sale->sale_type === 'quotation') {
+                return redirect()->route('quotations.index')->with('success', 'Quotation deleted successfully');
+            }
+
+            return redirect()->route('sales.index')->with('success', 'Sale deleted successfully');
         } catch (\Throwable $e) {
             report($e);
-            return redirect()->route('quotations.index')->with('error', 'Failed to delete quotation: '.$e->getMessage());
+            if ($sale->sale_type === 'quotation') {
+                return redirect()->route('quotations.index')->with('error', 'Failed to delete quotation.');
+            }
+
+            return redirect()->route('sales.index')->with('error', 'Failed to delete sale.');
         }
     }
 

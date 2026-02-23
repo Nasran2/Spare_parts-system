@@ -144,6 +144,8 @@ class POSController extends Controller
         return [
             'id' => $product->id,
             'name' => $product->name,
+            'sku' => $product->sku,
+            'barcode' => $product->barcode,
             'selling_price' => (float)$product->selling_price,
             'stock_quantity' => (int)($product->stock_quantity ?? 0),
             'image' => $product->image ? asset('storage/' . $product->image) : null,
@@ -1019,6 +1021,10 @@ class POSController extends Controller
     public function getSaleReceipt($id)
     {
         $sale = Sale::with(['items.product', 'customer', 'user', 'payments'])->findOrFail($id);
+        $tenderedAmount = (float) $sale->payments->sum('amount');
+        if ($tenderedAmount <= 0) {
+            $tenderedAmount = (float) $sale->paid_amount;
+        }
         
         return response()->json([
             'id' => $sale->id,
@@ -1029,6 +1035,7 @@ class POSController extends Controller
             'discount' => $sale->discount,
             'total_amount' => $sale->total_amount,
             'paid_amount' => $sale->paid_amount,
+            'tendered_amount' => $tenderedAmount,
             'due_amount' => $sale->due_amount,
             'payment_status' => $sale->payment_status,
             'payment_method' => $sale->payment_method,

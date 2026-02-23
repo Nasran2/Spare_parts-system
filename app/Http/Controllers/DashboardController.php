@@ -66,8 +66,21 @@ class DashboardController extends Controller
                 : $expenseQuery->whereBetween('expense_date', [$startDate, $endDate]);
             $totalExpenses = $expenseQuery->sum('amount') ?? 0;
 
-            // Net Profit (Sales - Purchase - Expenses)
-            $netProfit = $totalSales - $totalPurchase - $totalExpenses;
+            // Sales Profit = Σ(line sale total - line cost)
+            $salesProfitQuery = DB::table('sale_items')
+                ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
+                ->join('products', 'sale_items.product_id', '=', 'products.id')
+                ->where('sales.sale_type', 'sale');
+            $salesProfitQuery = $applyExclude($salesProfitQuery, 'sales.total_amount');
+            $salesProfitQuery = $useToday
+                ? $salesProfitQuery->whereDate('sales.sale_date', $todayStr)
+                : $salesProfitQuery->whereBetween('sales.sale_date', [$startDate, $endDate]);
+            $salesProfit = (float) ($salesProfitQuery
+                ->selectRaw('COALESCE(SUM(sale_items.total - (COALESCE(products.cost_price, 0) * sale_items.quantity)), 0) as sales_profit')
+                ->value('sales_profit') ?? 0);
+
+            // Net Profit (Sales Profit - Expenses)
+            $netProfit = $salesProfit - $totalExpenses;
 
             // Calculate percentage changes (compare with previous period)
             $calculatePercentageChange = function ($currentValue, $previousValue) {
@@ -100,8 +113,19 @@ class DashboardController extends Controller
             $previousExpenses = $previousExpenseQuery->sum('amount') ?? 0;
             $expenseChangePercent = $calculatePercentageChange($totalExpenses, $previousExpenses);
 
-            // Previous Period Net Profit
-            $previousNetProfit = $previousSales - $previousPurchase - $previousExpenses;
+            // Previous Period Sales Profit
+            $previousSalesProfitQuery = DB::table('sale_items')
+                ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
+                ->join('products', 'sale_items.product_id', '=', 'products.id')
+                ->where('sales.sale_type', 'sale');
+            $previousSalesProfitQuery = $applyExclude($previousSalesProfitQuery, 'sales.total_amount');
+            $previousSalesProfit = (float) ($previousSalesProfitQuery
+                ->whereBetween('sales.sale_date', [$previousStartDate, $previousEndDate])
+                ->selectRaw('COALESCE(SUM(sale_items.total - (COALESCE(products.cost_price, 0) * sale_items.quantity)), 0) as sales_profit')
+                ->value('sales_profit') ?? 0);
+
+            // Previous Period Net Profit (Sales Profit - Expenses)
+            $previousNetProfit = $previousSalesProfit - $previousExpenses;
             $profitChangePercent = $calculatePercentageChange($netProfit, $previousNetProfit);
 
             // Invoice Due within selected period (exclude hidden sales)

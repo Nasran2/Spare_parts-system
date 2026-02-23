@@ -1131,6 +1131,58 @@
                 loadProducts(term);
             }, 250);
         });
+
+        const findByCode = (list, term) => {
+            const needle = String(term || '').trim().toLowerCase();
+            if (!needle) return null;
+            return (list || []).find(p => {
+                const sku = String(p.sku || '').toLowerCase();
+                const barcode = String(p.barcode || '').toLowerCase();
+                return sku === needle || barcode === needle;
+            }) || null;
+        };
+
+        const tryAddByCode = async (term) => {
+            const needle = String(term || '').trim();
+            if (!needle) return false;
+
+            let product = findByCode(activeProductList, needle) || findByCode(PRELOADED_PRODUCTS, needle);
+            if (!product) {
+                try {
+                    const data = await fetchProducts(needle);
+                    if (Array.isArray(data)) {
+                        product = findByCode(data, needle) || (data.length === 1 ? data[0] : null);
+                    }
+                } catch (err) {
+                    console.error('Barcode search failed', err);
+                }
+            }
+
+            if (!product) return false;
+
+            const stockQty = Number(product.stock_quantity ?? 0);
+            if (Number.isFinite(stockQty) && stockQty <= 0) {
+                (window.showToast || showToast)?.('warning', 'Out of stock');
+                return true;
+            }
+
+            if (typeof window.addProductToCart !== 'function') {
+                return false;
+            }
+            await window.addProductToCart(product.id, 1, null);
+            return true;
+        };
+
+        productSearchInput.addEventListener('keydown', async (e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            const term = productSearchInput.value.trim();
+            const added = await tryAddByCode(term);
+            if (added) {
+                productSearchInput.value = '';
+                loadProducts('');
+            }
+        });
     }
 
     renderProductGrid(activeProductList);
@@ -2053,12 +2105,18 @@
         const paidAmount = Number(saleData.paid_amount || 0);
         const totalAmount = Number(saleData.total_amount || 0);
         const dueAmount = Number(saleData.due_amount || 0);
-        const isCash = (saleData.payment_method || 'cash') === 'cash';
-        const changeAmount = isCash ? Math.max(0, paidAmount - totalAmount) : 0;
+        const paymentsList = Array.isArray(saleData.payments) ? saleData.payments : [];
+        const hasCashPayment = paymentsList.length > 0
+            ? paymentsList.some(p => (p.method || '').toString().toLowerCase() === 'cash')
+            : ((saleData.payment_method || 'cash') === 'cash');
+        const summedTendered = paymentsList.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+        const tenderedAmount = Number(saleData.tendered_amount || 0) || summedTendered || paidAmount;
+        const changeAmount = hasCashPayment ? Math.max(0, tenderedAmount - totalAmount) : 0;
+        const showPaidRow = dueAmount > 0 || Math.abs(paidAmount - totalAmount) > 0.0001;
 
         let paymentLinesHtml = '';
-        if (Array.isArray(saleData.payments) && saleData.payments.length > 0) {
-            paymentLinesHtml = saleData.payments.map(p => {
+        if (paymentsList.length > 0) {
+            paymentLinesHtml = paymentsList.map(p => {
                 const m = (p.method || '').toString().replace(/_/g, ' ').toUpperCase();
                 return '<div class="payment-row"><span>' + m + ':</span><span>' + CURRENCY + Number(p.amount || 0).toFixed(2) + '</span></div>';
             }).join('');
@@ -2161,15 +2219,19 @@
 '                <span>' + paymentMethodLabel + '</span>' +
 '            </div>' +
                 (paymentLinesHtml ? paymentLinesHtml : '') +
+                (showPaidRow ? (
 '            <div class="payment-row">' +
 '                <span>Paid:</span>' +
 '                <span>' + CURRENCY + paidAmount.toFixed(2) + '</span>' +
-'            </div>' +
+'            </div>'
+                ) : '') +
+                (dueAmount > 0 ? (
 '            <div class="payment-row">' +
 '                <span>Due:</span>' +
 '                <span>' + CURRENCY + dueAmount.toFixed(2) + '</span>' +
-'            </div>' +
-                (isCash ? (
+'            </div>'
+                ) : '') +
+                (hasCashPayment && changeAmount > 0 ? (
 '            <div class="payment-row">' +
 '                <span>Change:</span>' +
 '                <span>' + CURRENCY + changeAmount.toFixed(2) + '</span>' +
@@ -2484,6 +2546,8 @@
             }
         }
     }
+
+    window.addProductToCart = addProductToCart;
     
     // Enter key to confirm
     quantityInput.addEventListener('keypress', (e) => {

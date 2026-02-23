@@ -266,18 +266,12 @@ class ReportController extends Controller
      */
     public function stock(Request $request)
     {
-        $products = Product::with(['category', 'brand', 'unit', 'saleItems', 'purchaseItems'])->get();
-        $items = $products->map(function ($p) {
-            $purchasedQty = $p->purchaseItems->sum('quantity');
-            $soldQty = $p->saleItems->sum('quantity');
-            return [
-                'product' => $p,
-                'purchased' => $purchasedQty,
-                'sold' => $soldQty,
-                'current_stock' => $p->stock_quantity,
-                'low_stock' => $p->isLowStock(),
-            ];
-        });
+        $selectedCategoryId = $request->filled('category_id') ? (int) $request->input('category_id') : null;
+        $selectedBrandId = $request->filled('brand_id') ? (int) $request->input('brand_id') : null;
+        $lowStockOnly = $request->boolean('low_stock');
+
+        $products = $this->stockBaseQuery($selectedCategoryId, $selectedBrandId, $lowStockOnly)->get();
+        $items = $this->mapStockItems($products);
 
         $summary = [
             'total_products' => $products->count(),
@@ -285,22 +279,38 @@ class ReportController extends Controller
             'total_stock' => $products->sum('stock_quantity'),
         ];
 
-        return view('reports.stock', compact('items', 'summary'));
+        $categories = \App\Models\Category::orderBy('name')->get(['id', 'name']);
+        $brands = \App\Models\Brand::orderBy('name')->get(['id', 'name']);
+
+        return view('reports.stock', compact(
+            'items',
+            'summary',
+            'categories',
+            'brands',
+            'selectedCategoryId',
+            'selectedBrandId',
+            'lowStockOnly'
+        ));
     }
 
     public function stockPdf(Request $request)
     {
-        $products = Product::with(['category', 'brand', 'unit', 'saleItems', 'purchaseItems'])->get();
+        $selectedCategoryId = $request->filled('category_id') ? (int) $request->input('category_id') : null;
+        $selectedBrandId = $request->filled('brand_id') ? (int) $request->input('brand_id') : null;
+        $lowStockOnly = $request->boolean('low_stock');
+
+        $products = $this->stockBaseQuery($selectedCategoryId, $selectedBrandId, $lowStockOnly)->get();
         $items = $products->map(function ($p) {
             $purchasedQty = $p->purchaseItems->sum('quantity');
             $soldQty = $p->saleItems->sum('quantity');
+            $isLowStock = (float) ($p->stock_quantity ?? 0) <= (float) ($p->alert_quantity ?? 0);
             return [
                 'name' => $p->name,
                 'categories' => $p->categories->pluck('name')->join(', '),
                 'purchased' => $purchasedQty,
                 'sold' => $soldQty,
                 'current_stock' => $p->stock_quantity,
-                'low_stock' => $p->isLowStock(),
+                'low_stock' => $isLowStock,
             ];
         });
         $summary = [
@@ -314,16 +324,21 @@ class ReportController extends Controller
 
     public function stockCsv(Request $request)
     {
-        $products = Product::with(['category', 'brand', 'unit', 'saleItems', 'purchaseItems'])->get();
+        $selectedCategoryId = $request->filled('category_id') ? (int) $request->input('category_id') : null;
+        $selectedBrandId = $request->filled('brand_id') ? (int) $request->input('brand_id') : null;
+        $lowStockOnly = $request->boolean('low_stock');
+
+        $products = $this->stockBaseQuery($selectedCategoryId, $selectedBrandId, $lowStockOnly)->get();
         $rows = [['Product','Category','Purchased Qty','Sold Qty','Current Stock','Status']];
         foreach ($products as $p) {
+            $isLowStock = (float) ($p->stock_quantity ?? 0) <= (float) ($p->alert_quantity ?? 0);
             $rows[] = [
                 $p->name,
                 $p->categories->pluck('name')->join(', '),
                 $p->purchaseItems->sum('quantity'),
                 $p->saleItems->sum('quantity'),
                 $p->stock_quantity,
-                $p->isLowStock() ? 'Low' : 'OK',
+                $isLowStock ? 'Low' : 'OK',
             ];
         }
         $csv = fopen('php://temp','r+'); foreach ($rows as $r) { fputcsv($csv,$r); } rewind($csv);
@@ -331,6 +346,46 @@ class ReportController extends Controller
             'Content-Type' => 'text/csv',
             'Content-Disposition' => 'attachment; filename="stock-report.csv"'
         ]);
+    }
+
+    private function stockBaseQuery(?int $categoryId, ?int $brandId, bool $lowStockOnly)
+    {
+        $query = Product::with(['category', 'categories', 'brand', 'brands', 'unit', 'saleItems', 'purchaseItems']);
+
+        if ($categoryId) {
+            $query->where(function ($q) use ($categoryId) {
+                $q->where('category_id', $categoryId)
+                  ->orWhereHas('categories', fn($cq) => $cq->whereKey($categoryId));
+            });
+        }
+
+        if ($brandId) {
+            $query->where(function ($q) use ($brandId) {
+                $q->where('brand_id', $brandId)
+                  ->orWhereHas('brands', fn($bq) => $bq->whereKey($brandId));
+            });
+        }
+
+        if ($lowStockOnly) {
+            $query->whereColumn('stock_quantity', '<=', 'alert_quantity');
+        }
+
+        return $query;
+    }
+
+    private function mapStockItems($products)
+    {
+        return $products->map(function ($p) {
+            $purchasedQty = $p->purchaseItems->sum('quantity');
+            $soldQty = $p->saleItems->sum('quantity');
+            return [
+                'product' => $p,
+                'purchased' => $purchasedQty,
+                'sold' => $soldQty,
+                'current_stock' => $p->stock_quantity,
+                'low_stock' => $p->isLowStock(),
+            ];
+        });
     }
 
     /**

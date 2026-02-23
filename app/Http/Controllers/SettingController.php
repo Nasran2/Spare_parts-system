@@ -137,27 +137,34 @@ class SettingController extends Controller
             'barcode_paper_width' => (float) Setting::get('barcode_paper_width', 4),
             'barcode_labels_per_row' => (int) Setting::get('barcode_labels_per_row', 1),
             'barcode_row_gap' => (float) Setting::get('barcode_row_gap', 0.3),
+            'barcode_alignment' => (string) Setting::get('barcode_alignment', 'left'),
             'barcode_top_margin' => (float) Setting::get('barcode_top_margin', 0),
-            'barcode_left_margin' => (float) Setting::get('barcode_left_margin', 0),
+            'barcode_left_margin' => (float) Setting::get('barcode_left_margin', 0.5),
             'barcode_col_gap' => (float) Setting::get('barcode_col_gap', 0),
 
             'barcode_shop_name_size' => (int) Setting::get('barcode_shop_name_size', 6),
             'barcode_product_name_size' => (int) Setting::get('barcode_product_name_size', 7),
             'barcode_price_tag_size' => (int) Setting::get('barcode_price_tag_size', 9),
             'barcode_secret_code_size' => (int) Setting::get('barcode_secret_code_size', 8),
+            'barcode_number_size' => (int) Setting::get('barcode_number_size', 8),
 
             'barcode_height' => (float) Setting::get('barcode_height', 0.7),
             'barcode_sticker_top_padding' => (float) Setting::get('barcode_sticker_top_padding', 0.1),
             'barcode_sticker_bottom_padding' => (float) Setting::get('barcode_sticker_bottom_padding', 0.1),
 
             'barcode_show_cost_code' => (bool) Setting::get('barcode_show_cost_code', false),
+            'barcode_enable_selling_secret_code' => (bool) Setting::get('barcode_enable_selling_secret_code', false),
             'barcode_cost_code_map' => (array) Setting::get('barcode_cost_code_map', $defaultMap),
+            'barcode_selling_code_map' => (array) Setting::get('barcode_selling_code_map', $defaultMap),
         ];
 
         $presets = (array) Setting::get('barcode_presets', []);
         $defaultPreset = (string) Setting::get('barcode_default_preset', '');
 
-        return view('settings.barcode', compact('settings', 'presets', 'defaultPreset'));
+        $zeroFallback = (bool) config('app.secret_cost_zero_fallback', false);
+        $sellingZeroFallback = (bool) config('app.secret_selling_zero_fallback', false);
+
+        return view('settings.barcode', compact('settings', 'presets', 'defaultPreset', 'zeroFallback', 'sellingZeroFallback'));
     }
 
     /**
@@ -218,6 +225,7 @@ class SettingController extends Controller
             'barcode_paper_width' => 'nullable|numeric|min:0.1|max:100',
             'barcode_labels_per_row' => 'nullable|integer|min:1|max:50',
             'barcode_row_gap' => 'nullable|numeric|min:0|max:10',
+            'barcode_alignment' => 'nullable|in:left,center,right',
             'barcode_top_margin' => 'nullable|numeric|min:0|max:10',
             'barcode_left_margin' => 'nullable|numeric|min:0|max:10',
             'barcode_col_gap' => 'nullable|numeric|min:0|max:10',
@@ -225,12 +233,16 @@ class SettingController extends Controller
             'barcode_product_name_size' => 'nullable|integer|min:1|max:72',
             'barcode_price_tag_size' => 'nullable|integer|min:1|max:72',
             'barcode_secret_code_size' => 'nullable|integer|min:1|max:72',
+            'barcode_number_size' => 'nullable|integer|min:1|max:72',
             'barcode_height' => 'nullable|numeric|min:0.1|max:10',
             'barcode_sticker_top_padding' => 'nullable|numeric|min:0|max:10',
             'barcode_sticker_bottom_padding' => 'nullable|numeric|min:0|max:10',
             'barcode_show_cost_code' => 'nullable|boolean',
+            'barcode_enable_selling_secret_code' => 'nullable|boolean',
             'barcode_cost_code' => 'nullable|array',
             'barcode_cost_code.*' => 'nullable|string|max:5',
+            'barcode_selling_code' => 'nullable|array',
+            'barcode_selling_code.*' => 'nullable|string|max:5',
             'barcode_preset_name' => 'nullable|string|max:50',
             'barcode_default_preset' => 'nullable|string|max:50',
         ]);
@@ -261,27 +273,45 @@ class SettingController extends Controller
             Setting::set('barcode_cost_code_map', $mergedMap, 'json', 'barcode');
         }
 
+        if ($request->has('barcode_selling_code')) {
+            $inputMap = (array) $request->input('barcode_selling_code', []);
+            $mergedMap = $defaultMap;
+            foreach ($inputMap as $digit => $code) {
+                $digitKey = (string) $digit;
+                if ($digitKey === '' || !array_key_exists($digitKey, $mergedMap)) {
+                    continue;
+                }
+                $mergedMap[$digitKey] = (string) $code;
+            }
+            Setting::set('barcode_selling_code_map', $mergedMap, 'json', 'barcode');
+        }
+
+        $presetSettings = [
+            'barcode_sticker_width' => (float) $request->input('barcode_sticker_width', 3),
+            'barcode_sticker_height' => (float) $request->input('barcode_sticker_height', 2),
+            'barcode_paper_width' => (float) $request->input('barcode_paper_width', 4),
+            'barcode_labels_per_row' => (int) $request->input('barcode_labels_per_row', 1),
+            'barcode_row_gap' => (float) $request->input('barcode_row_gap', 0.3),
+            'barcode_alignment' => (string) $request->input('barcode_alignment', 'left'),
+            'barcode_top_margin' => (float) $request->input('barcode_top_margin', 0),
+            'barcode_left_margin' => (float) $request->input('barcode_left_margin', 0.5),
+            'barcode_col_gap' => (float) $request->input('barcode_col_gap', 0),
+            'barcode_shop_name_size' => (int) $request->input('barcode_shop_name_size', 6),
+            'barcode_product_name_size' => (int) $request->input('barcode_product_name_size', 7),
+            'barcode_price_tag_size' => (int) $request->input('barcode_price_tag_size', 9),
+            'barcode_secret_code_size' => (int) $request->input('barcode_secret_code_size', 8),
+            'barcode_number_size' => (int) $request->input('barcode_number_size', 8),
+            'barcode_height' => (float) $request->input('barcode_height', 0.7),
+            'barcode_sticker_top_padding' => (float) $request->input('barcode_sticker_top_padding', 0.1),
+            'barcode_sticker_bottom_padding' => (float) $request->input('barcode_sticker_bottom_padding', 0.1),
+            'barcode_show_cost_code' => (bool) $request->boolean('barcode_show_cost_code', false),
+            'barcode_enable_selling_secret_code' => (bool) $request->boolean('barcode_enable_selling_secret_code', false),
+            'barcode_cost_code_map' => (array) Setting::get('barcode_cost_code_map', $defaultMap),
+            'barcode_selling_code_map' => (array) Setting::get('barcode_selling_code_map', $defaultMap),
+        ];
+
         $presetName = trim((string) $request->input('barcode_preset_name', ''));
         if ($presetName !== '') {
-            $presetSettings = [
-                'barcode_sticker_width' => (float) $request->input('barcode_sticker_width', 3),
-                'barcode_sticker_height' => (float) $request->input('barcode_sticker_height', 2),
-                'barcode_paper_width' => (float) $request->input('barcode_paper_width', 4),
-                'barcode_labels_per_row' => (int) $request->input('barcode_labels_per_row', 1),
-                'barcode_row_gap' => (float) $request->input('barcode_row_gap', 0.3),
-                'barcode_top_margin' => (float) $request->input('barcode_top_margin', 0),
-                'barcode_left_margin' => (float) $request->input('barcode_left_margin', 0),
-                'barcode_col_gap' => (float) $request->input('barcode_col_gap', 0),
-                'barcode_shop_name_size' => (int) $request->input('barcode_shop_name_size', 6),
-                'barcode_product_name_size' => (int) $request->input('barcode_product_name_size', 7),
-                'barcode_price_tag_size' => (int) $request->input('barcode_price_tag_size', 9),
-                'barcode_secret_code_size' => (int) $request->input('barcode_secret_code_size', 8),
-                'barcode_height' => (float) $request->input('barcode_height', 0.7),
-                'barcode_sticker_top_padding' => (float) $request->input('barcode_sticker_top_padding', 0.1),
-                'barcode_sticker_bottom_padding' => (float) $request->input('barcode_sticker_bottom_padding', 0.1),
-                'barcode_show_cost_code' => (bool) $request->boolean('barcode_show_cost_code', false),
-                'barcode_cost_code_map' => (array) Setting::get('barcode_cost_code_map', $defaultMap),
-            ];
 
             $presets = (array) Setting::get('barcode_presets', []);
             $updated = false;
@@ -301,7 +331,23 @@ class SettingController extends Controller
             Setting::set('barcode_presets', array_values($presets), 'json', 'barcode');
         }
 
-        unset($validated['barcode_preset_name'], $validated['barcode_cost_code']);
+        $selectedDefaultPreset = trim((string) $request->input('barcode_default_preset', ''));
+        if ($selectedDefaultPreset !== '') {
+            $presets = (array) Setting::get('barcode_presets', []);
+            $updatedDefaultPreset = false;
+            foreach ($presets as $idx => $preset) {
+                if (($preset['name'] ?? '') === $selectedDefaultPreset) {
+                    $presets[$idx]['settings'] = $presetSettings;
+                    $updatedDefaultPreset = true;
+                    break;
+                }
+            }
+            if ($updatedDefaultPreset) {
+                Setting::set('barcode_presets', array_values($presets), 'json', 'barcode');
+            }
+        }
+
+        unset($validated['barcode_preset_name'], $validated['barcode_cost_code'], $validated['barcode_selling_code']);
 
         foreach ($validated as $key => $value) {
             if ($key === 'shop_logo') { continue; }
@@ -326,7 +372,7 @@ class SettingController extends Controller
                 $group = 'barcode';
             }
 
-            if (in_array($key, ['low_stock_warning', 'invoice_show_logo', 'quotation_show_logo', 'vat_enabled', 'pos_card_fee_enabled', 'pos_card_fee_record_expense', 'barcode_show_cost_code'])) {
+            if (in_array($key, ['low_stock_warning', 'invoice_show_logo', 'quotation_show_logo', 'vat_enabled', 'pos_card_fee_enabled', 'pos_card_fee_record_expense', 'barcode_show_cost_code', 'barcode_enable_selling_secret_code'])) {
                 $type = 'boolean';
             }
 

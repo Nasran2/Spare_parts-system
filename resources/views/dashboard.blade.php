@@ -277,7 +277,7 @@
                     <i class="fas fa-exclamation-triangle text-red-600 mr-2"></i>
                     Low Stock Alerts
                 </h3>
-                <a href="{{ route('reports.stock') }}" class="text-blue-600 hover:text-blue-700 text-sm font-medium">
+                <a href="{{ route('reports.stock', ['low_stock' => 1]) }}" class="text-blue-600 hover:text-blue-700 text-sm font-medium">
                     View All <i class="fas fa-arrow-right ml-1"></i>
                 </a>
             </div>

@@ -35,13 +35,16 @@
                             <th class="px-4 py-3 text-left">Product</th>
                             <th class="px-4 py-3 text-left">Barcode</th>
                             <th class="px-4 py-3 text-left">Price</th>
+                            @if(($settings['barcode_enable_selling_secret_code'] ?? false))
+                                <th class="px-4 py-3 text-left">Secret Price</th>
+                            @endif
                             <th class="px-4 py-3 text-left">Qty</th>
                             <th class="px-4 py-3 text-left">Remove</th>
                         </tr>
                     </thead>
                     <tbody id="selectedRows" class="divide-y">
                         <tr>
-                            <td colspan="5" class="px-4 py-6 text-center text-gray-500">No products selected.</td>
+                            <td colspan="{{ ($settings['barcode_enable_selling_secret_code'] ?? false) ? 6 : 5 }}" class="px-4 py-6 text-center text-gray-500">No products selected.</td>
                         </tr>
                     </tbody>
                 </table>
@@ -61,6 +64,8 @@ const searchInput = document.getElementById('barcodeSearch');
 const searchResults = document.getElementById('searchResults');
 const selectedRows = document.getElementById('selectedRows');
 const selectedMap = new Map();
+const SELLING_SECRET_ENABLED = {{ ($settings['barcode_enable_selling_secret_code'] ?? false) ? 'true' : 'false' }};
+const EMPTY_COLSPAN = SELLING_SECRET_ENABLED ? 6 : 5;
 
 function formatPrice(value) {
     const num = Number(value || 0);
@@ -69,7 +74,7 @@ function formatPrice(value) {
 
 function renderSelected() {
     if (selectedMap.size === 0) {
-        selectedRows.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">No products selected.</td></tr>';
+        selectedRows.innerHTML = `<tr><td colspan="${EMPTY_COLSPAN}" class="px-4 py-6 text-center text-gray-500">No products selected.</td></tr>`;
         return;
     }
     selectedRows.innerHTML = '';
@@ -82,6 +87,14 @@ function renderSelected() {
             </td>
             <td class="px-4 py-3 text-gray-600">${item.barcode || ''}</td>
             <td class="px-4 py-3 text-gray-600">${formatPrice(item.selling_price)}</td>
+            ${SELLING_SECRET_ENABLED ? `
+            <td class="px-4 py-3">
+                <label class="inline-flex items-center gap-2">
+                    <input type="hidden" name="show_secret_price[${item.id}]" value="0">
+                    <input type="checkbox" name="show_secret_price[${item.id}]" value="1" ${item.show_secret_price ? 'checked' : ''} class="rounded text-indigo-600 border-gray-300">
+                    <span class="text-xs text-gray-600">ON</span>
+                </label>
+            </td>` : ''}
             <td class="px-4 py-3">
                 <input type="number" name="qty[${item.id}]" min="1" value="${item.qty}" class="w-20 px-3 py-1 border border-gray-300 rounded-lg">
             </td>
@@ -141,8 +154,8 @@ searchResults?.addEventListener('click', (event) => {
         .then(items => {
             const item = items.find(p => p.id === id);
             if (!item) return;
-            const existing = selectedMap.get(id) || { qty: 0 };
-            selectedMap.set(id, { ...item, qty: existing.qty + 1 });
+            const existing = selectedMap.get(id) || { qty: 0, show_secret_price: false };
+            selectedMap.set(id, { ...item, qty: existing.qty + 1, show_secret_price: !!existing.show_secret_price });
             renderSelected();
         });
 });
@@ -153,6 +166,26 @@ selectedRows?.addEventListener('click', (event) => {
     const id = Number(btn.getAttribute('data-remove'));
     selectedMap.delete(id);
     renderSelected();
+});
+
+selectedRows?.addEventListener('input', (event) => {
+    const row = event.target.closest('tr');
+    if (!row) return;
+    const hidden = row.querySelector('input[name="products[]"]');
+    if (!hidden) return;
+
+    const id = Number(hidden.value);
+    const current = selectedMap.get(id);
+    if (!current) return;
+
+    if (event.target.matches('input[name^="qty["]')) {
+        const qty = Math.max(1, Number(event.target.value || 1));
+        selectedMap.set(id, { ...current, qty });
+    }
+
+    if (event.target.matches('input[name^="show_secret_price["][type="checkbox"]')) {
+        selectedMap.set(id, { ...current, show_secret_price: !!event.target.checked });
+    }
 });
 </script>
 @endsection

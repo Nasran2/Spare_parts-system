@@ -28,6 +28,26 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Secret Cost Code Zero Fallback
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, any unmapped secret code letter will be treated as digit 0.
+    |
+    */
+    'secret_cost_zero_fallback' => (bool) env('SECRET_COST_ZERO_FALLBACK', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Secret Selling Code Zero Fallback
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, any unmapped secret selling code letter will be treated as digit 0.
+    |
+    */
+    'secret_selling_zero_fallback' => (bool) env('SECRET_SELLING_ZERO_FALLBACK', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
     |

@@ -61,6 +61,11 @@
         </table>
         @php($vatEnabled = (bool) \App\Models\Setting::get('vat_enabled', false))
         @php($vatRate = (float) \App\Models\Setting::get('vat_rate', 0))
+        @php($payments = $sale->payments ?? collect())
+        @php($tenderedAmount = (float) $payments->sum('amount'))
+        @php($hasCashPayment = $payments->isNotEmpty() ? $payments->contains(fn($p) => strtolower((string) ($p->payment_method ?? '')) === 'cash') : strtolower((string) $sale->payment_method) === 'cash')
+        @php($changeAmount = $hasCashPayment ? max(0, $tenderedAmount - (float) $sale->total_amount) : 0)
+        @php($showPaidRow = ((float) $sale->due_amount > 0) || (abs((float) $sale->paid_amount - (float) $sale->total_amount) > 0.0001))
         <div class="totals">
             <div class="totals-row"><span>Subtotal</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->subtotal, $currency) }}</span></div>
             <div class="totals-row"><span>Discount</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->discount, $currency) }}</span></div>
@@ -68,8 +73,18 @@
             <div class="totals-row"><span>VAT{{ $vatRate ? ' ('.$vatRate.'%)' : '' }}</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->tax, $currency) }}</span></div>
             @endif
             <div class="totals-row grand"><span>Total</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->total_amount, $currency) }}</span></div>
+            @if($tenderedAmount > 0)
+            <div class="totals-row"><span>Tendered</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $tenderedAmount, $currency) }}</span></div>
+            @endif
+            @if($showPaidRow)
             <div class="totals-row"><span>Paid</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->paid_amount, $currency) }}</span></div>
+            @endif
+            @if((float) $sale->due_amount > 0)
             <div class="totals-row"><span>Due</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->due_amount, $currency) }}</span></div>
+            @endif
+            @if($changeAmount > 0)
+            <div class="totals-row"><span>Change</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $changeAmount, $currency) }}</span></div>
+            @endif
             <div class="totals-row"><span>Status</span><span>{{ ucfirst($sale->payment_status) }}</span></div>
         </div>
         <div class="footer">

@@ -99,13 +99,15 @@
                                             <i class="fas fa-exchange-alt"></i>
                                         </button>
                                     </form>
-                                    <form action="{{ route('sales.destroy', $sale->id) }}" method="POST" onsubmit="return confirm('Delete this quotation? This cannot be undone.');">
-                                        @csrf
-                                        @method('DELETE')
-                                        <button type="submit" class="p-2 text-red-700 hover:bg-red-50 rounded-lg transition" title="Delete Quotation">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
-                                    </form>
+                                    @if(auth()->user()?->hasPermission('sales.delete'))
+                                        <form action="{{ route('sales.destroy', $sale->id) }}" method="POST" onsubmit="return confirm('Delete this quotation? This cannot be undone.');">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="p-2 text-red-700 hover:bg-red-50 rounded-lg transition" title="Delete Quotation">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </form>
+                                    @endif
                                 </div>
                             </td>
                         </tr>

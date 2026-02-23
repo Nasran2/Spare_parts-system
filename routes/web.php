@@ -1,6 +1,9 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Http\Request;
+use App\Support\PublicStorageSync;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ProductController;
@@ -213,6 +216,20 @@ Route::middleware('auth')->group(function () {
     Route::get('settings/pos', [SettingController::class, 'pos'])->name('settings.pos');
     Route::get('settings/barcode', [SettingController::class, 'barcode'])->name('settings.barcode');
     Route::post('settings/save', [SettingController::class, 'save'])->name('settings.save');
+    Route::get('settings/storage-link', function (Request $request) {
+        if (!$request->user()?->hasPermission('settings.edit')) {
+            abort(403);
+        }
+
+        $result = PublicStorageSync::linkAndSyncAll();
+        $message = 'Storage setup completed. Synced ' . $result['files_synced'] . ' file(s).';
+
+        if (!$result['link_created']) {
+            $message .= ' Symlink could not be created on this hosting, but manual copy is active.';
+        }
+
+        return redirect()->route('settings.index')->with('success', $message);
+    })->name('settings.storage-link');
     
     // Activity Log
     Route::get('activity-log', [ActivityLogController::class, 'index'])->name('activity-log.index');
@@ -230,4 +247,9 @@ Route::middleware('auth')->group(function () {
 
     // Purchase Returns
     Route::resource('purchase-returns', PurchaseReturnController::class);
+});
+
+Route::get('/run-migrate', function () {
+    Artisan::call('migrate', ['--force' => true]);
+    return "Migration completed!";
 });

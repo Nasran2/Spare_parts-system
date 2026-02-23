@@ -51,7 +51,7 @@
                         <h4 class="font-bold text-gray-700 mb-4">
                             <i class="fas fa-ruler-combined text-blue-600 mr-2"></i>Label Dimensions (cm)
                         </h4>
-                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
                             <div>
                                 <label class="block text-sm font-semibold text-gray-700 mb-2">Sticker Width *</label>
                                 <input type="number" step="0.01" min="0.1" name="barcode_sticker_width" value="{{ old('barcode_sticker_width', $settings['barcode_sticker_width']) }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
@@ -73,6 +73,15 @@
                                 <input type="number" step="0.01" min="0" name="barcode_row_gap" value="{{ old('barcode_row_gap', $settings['barcode_row_gap']) }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                             </div>
                             <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Sheet Alignment</label>
+                                <select name="barcode_alignment" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                    @php($alignValue = old('barcode_alignment', $settings['barcode_alignment'] ?? 'left'))
+                                    <option value="left" {{ $alignValue === 'left' ? 'selected' : '' }}>Left</option>
+                                    <option value="center" {{ $alignValue === 'center' ? 'selected' : '' }}>Center</option>
+                                    <option value="right" {{ $alignValue === 'right' ? 'selected' : '' }}>Right</option>
+                                </select>
+                            </div>
+                            <div>
                                 <label class="block text-sm font-semibold text-gray-700 mb-2">Top Margin</label>
                                 <input type="number" step="0.01" min="0" name="barcode_top_margin" value="{{ old('barcode_top_margin', $settings['barcode_top_margin']) }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                             </div>
@@ -83,6 +92,14 @@
                             <div>
                                 <label class="block text-sm font-semibold text-gray-700 mb-2">Col Gap (Horizontal)</label>
                                 <input type="number" step="0.01" min="0" name="barcode_col_gap" value="{{ old('barcode_col_gap', $settings['barcode_col_gap']) }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Pad Top</label>
+                                <input type="number" step="0.01" min="0" name="barcode_sticker_top_padding" value="{{ old('barcode_sticker_top_padding', $settings['barcode_sticker_top_padding']) }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Pad Bottom</label>
+                                <input type="number" step="0.01" min="0" name="barcode_sticker_bottom_padding" value="{{ old('barcode_sticker_bottom_padding', $settings['barcode_sticker_bottom_padding']) }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                             </div>
                         </div>
                     </div>
@@ -108,6 +125,10 @@
                                 <label class="block text-sm font-semibold text-gray-700 mb-2">Secret Code</label>
                                 <input type="number" step="1" min="1" name="barcode_secret_code_size" value="{{ old('barcode_secret_code_size', $settings['barcode_secret_code_size']) }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                             </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Barcode Number</label>
+                                <input type="number" step="1" min="1" name="barcode_number_size" value="{{ old('barcode_number_size', $settings['barcode_number_size']) }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            </div>
                         </div>
                     </div>
 
@@ -120,14 +141,36 @@
                                 <label class="block text-sm font-semibold text-gray-700 mb-2">Barcode Height (cm)</label>
                                 <input type="number" step="0.01" min="0.1" name="barcode_height" value="{{ old('barcode_height', $settings['barcode_height']) }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                             </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 class="font-bold text-gray-700 mb-4">
+                            <i class="fas fa-tags text-indigo-600 mr-2"></i>Selling Secret Code
+                        </h4>
+                        @if($sellingZeroFallback ?? false)
+                            <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                                Selling zero fallback is enabled: any unmapped letter will be treated as digit 0.
+                            </p>
+                        @endif
+                        <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                             <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">Sticker Top Padding (cm)</label>
-                                <input type="number" step="0.01" min="0" name="barcode_sticker_top_padding" value="{{ old('barcode_sticker_top_padding', $settings['barcode_sticker_top_padding']) }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                <label class="font-semibold text-gray-700">Enable Selling Secret Code</label>
+                                <p class="text-sm text-gray-500">When enabled, product forms and barcode print can use encoded selling price.</p>
                             </div>
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">Sticker Bottom Padding (cm)</label>
-                                <input type="number" step="0.01" min="0" name="barcode_sticker_bottom_padding" value="{{ old('barcode_sticker_bottom_padding', $settings['barcode_sticker_bottom_padding']) }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="hidden" name="barcode_enable_selling_secret_code" value="0">
+                                <input type="checkbox" name="barcode_enable_selling_secret_code" value="1" {{ old('barcode_enable_selling_secret_code', $settings['barcode_enable_selling_secret_code'] ?? false) ? 'checked' : '' }} class="sr-only peer">
+                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
+                        </div>
+                        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mt-4">
+                            @for($d = 0; $d <= 9; $d++)
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Digit {{ $d }}</label>
+                                    <input type="text" name="barcode_selling_code[{{ $d }}]" value="{{ old('barcode_selling_code.'.$d, $settings['barcode_selling_code_map'][(string) $d] ?? '') }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" maxlength="5">
+                                </div>
+                            @endfor
                         </div>
                     </div>
 
@@ -135,6 +178,11 @@
                         <h4 class="font-bold text-gray-700 mb-4">
                             <i class="fas fa-user-secret text-slate-600 mr-2"></i>Cost Secret Code (0-9)
                         </h4>
+                        @if($zeroFallback)
+                            <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                                Zero fallback is enabled: any unmapped letter will be treated as digit 0.
+                            </p>
+                        @endif
                         <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg mb-4">
                             <div>
                                 <label class="font-semibold text-gray-700">Show Cost Secret Code</label>
@@ -199,9 +247,25 @@ function applyPreset(name) {
         }
     }
 
+    if (preset.settings.barcode_enable_selling_secret_code !== undefined) {
+        const toggle = document.querySelector('input[name="barcode_enable_selling_secret_code"][type="checkbox"]');
+        if (toggle) {
+            toggle.checked = !!preset.settings.barcode_enable_selling_secret_code;
+        }
+    }
+
     if (preset.settings.barcode_cost_code_map) {
         Object.entries(preset.settings.barcode_cost_code_map).forEach(([digit, code]) => {
             const input = document.querySelector(`[name="barcode_cost_code[${digit}]"]`);
+            if (input) {
+                input.value = code;
+            }
+        });
+    }
+
+    if (preset.settings.barcode_selling_code_map) {
+        Object.entries(preset.settings.barcode_selling_code_map).forEach(([digit, code]) => {
+            const input = document.querySelector(`[name="barcode_selling_code[${digit}]"]`);
             if (input) {
                 input.value = code;
             }

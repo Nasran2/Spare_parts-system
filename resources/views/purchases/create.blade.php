@@ -71,6 +71,7 @@
             <div class="flex-1 relative">
                 <input type="text" id="product_search" placeholder="Enter Product name / SKU / Scan bar code" class="w-full border border-gray-300 rounded px-3 py-2 pl-10 focus:ring-2 focus:ring-blue-500">
                 <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+                <div id="product_suggestions" class="hidden absolute left-0 right-0 mt-1 bg-white border border-gray-200 rounded shadow-lg z-30 max-h-64 overflow-y-auto"></div>
             </div>
             <button type="button" onclick="openProductModal()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
                 <i class="fas fa-plus mr-2"></i>Add new product
@@ -239,18 +240,22 @@
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Product Name <span class="text-red-500">*</span></label>
                     <input type="text" name="name" required class="w-full border rounded px-3 py-2" />
                 </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">SKU / Barcode</label>
+                    <input type="text" name="sku" class="w-full border rounded px-3 py-2" placeholder="Auto-generated if left blank" />
+                </div>
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Unit <span class="text-red-500">*</span></label>
                     <select name="unit_id" class="w-full border rounded px-3 py-2" required>
                         <option value="">-- Select --</option>
                         @foreach(\App\Models\Unit::where('is_active', true)->get() as $u)
-                        <option value="{{ $u->id }}">{{ $u->name }}</option>
+                        <option value="{{ $u->id }}">{{ $u->name }}{{ $u->short_name ? ' (' . $u->short_name . ')' : '' }}</option>
                         @endforeach
                     </select>
                 </div>
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Category</label>
-                    <select name="category_id" class="w-full border rounded px-3 py-2">
+                    <select name="categories[]" class="w-full border rounded px-3 py-2">
                         <option value="">-- Select --</option>
                         @foreach(\App\Models\Category::where('is_active', true)->get() as $c)
                         <option value="{{ $c->id }}">{{ $c->name }}</option>
@@ -259,12 +264,27 @@
                 </div>
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Brand</label>
-                    <select name="brand_id" class="w-full border rounded px-3 py-2">
+                    <select name="brands[]" class="w-full border rounded px-3 py-2">
                         <option value="">-- Select --</option>
                         @foreach(\App\Models\Brand::where('is_active', true)->get() as $b)
                         <option value="{{ $b->id }}">{{ $b->name }}</option>
                         @endforeach
                     </select>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Show Unit Prices For</label>
+                    <p class="text-xs text-gray-500 mb-2">Uncheck units you do not want to display. Leave all checked to show prices for every unit.</p>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 border rounded px-3 py-2 bg-gray-50">
+                        @foreach(\App\Models\Unit::where('is_active', true)->get() as $u)
+                            @php
+                                $m = rtrim(rtrim(number_format((float)$u->base_unit_multiplier, 3, '.', ''), '0'), '.');
+                            @endphp
+                            <label class="flex items-center space-x-2 px-2 py-1 border rounded bg-white">
+                                <input type="checkbox" name="visible_units[]" value="{{ $u->id }}" class="text-blue-600 rounded" checked>
+                                <span class="text-xs text-gray-700">{{ $u->short_name ?: $u->name }} (x{{ $m }})</span>
+                            </label>
+                        @endforeach
+                    </div>
                 </div>
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Cost Price <span class="text-red-500">*</span></label>
@@ -274,10 +294,38 @@
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Selling Price <span class="text-red-500">*</span></label>
                     <input type="number" step="0.01" name="selling_price" required class="w-full border rounded px-3 py-2" />
                 </div>
+                @if((bool) \App\Models\Setting::get('barcode_enable_selling_secret_code', false))
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Secret Selling Code</label>
+                    <input type="text" id="quick_secret_selling_code" class="w-full border rounded px-3 py-2" placeholder="Type secret code to fill selling price" />
+                </div>
+                @endif
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Secret Cost Code</label>
+                    <input type="text" id="quick_secret_cost_code" class="w-full border rounded px-3 py-2" placeholder="Type secret code to fill cost price" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Profit Margin</label>
+                    <div class="flex gap-2">
+                        <input type="number" step="0.01" min="0" id="quick_profit_margin_percent" class="w-full border rounded px-3 py-2" placeholder="Margin %" />
+                        <input type="number" step="0.01" min="0" id="quick_profit_margin_fixed" class="w-full border rounded px-3 py-2" placeholder="Fixed" />
+                    </div>
+                </div>
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Stock Quantity <span class="text-red-500">*</span></label>
                     <input type="number" name="stock_quantity" value="0" min="0" required class="w-full border rounded px-3 py-2" />
-                    <input type="hidden" name="alert_quantity" value="1" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Alert Quantity <span class="text-red-500">*</span></label>
+                    <input type="number" name="alert_quantity" value="1" min="0" required class="w-full border rounded px-3 py-2" />
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Description</label>
+                    <textarea name="description" rows="2" class="w-full border rounded px-3 py-2" placeholder="Optional"></textarea>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Product Image</label>
+                    <input type="file" name="image" accept="image/*" class="w-full border rounded px-3 py-2" />
                 </div>
             </div>
             <div class="mt-6 flex items-center gap-2">
@@ -342,6 +390,25 @@
 @push('scripts')
 <script>
 const PRODUCTS = @json($productsData);
+const QUICK_COST_CODE_MAP = @json((array) \App\Models\Setting::get('barcode_cost_code_map'));
+const QUICK_SELLING_CODE_MAP = @json((array) \App\Models\Setting::get('barcode_selling_code_map'));
+if (!Object.keys(QUICK_COST_CODE_MAP || {}).length) {
+    Object.assign(QUICK_COST_CODE_MAP, {
+        '0': 'E',
+        '1': 'M',
+        '2': 'O',
+        '3': 'D',
+        '4': 'T',
+        '5': 'W',
+        '6': 'I',
+        '7': 'N',
+        '8': 'K',
+        '9': 'L'
+    });
+}
+if (!Object.keys(QUICK_SELLING_CODE_MAP || {}).length) {
+    Object.assign(QUICK_SELLING_CODE_MAP, QUICK_COST_CODE_MAP);
+}
 let rowIndex = 0;
 
 function formatMoney(v) {
@@ -394,8 +461,8 @@ function addItemRow(productData = null) {
         </td>
         <td class="border px-2 py-2">
             <div class="flex items-center">
-                <input type="number" step="0.01" class="profit-margin-input w-full text-right border-0 focus:ring-0 text-sm" value="20" oninput="recalcSellingPrice(this)" />
-                <select class="profit-type-select text-xs border-0 focus:ring-0 bg-transparent" onchange="recalcSellingPrice(this)">
+                <input type="number" step="0.01" class="profit-margin-input w-full text-right border-0 focus:ring-0 text-sm" value="20" oninput="recalcSellingPrice(this, true)" />
+                <select class="profit-type-select text-xs border-0 focus:ring-0 bg-transparent" onchange="recalcSellingPrice(this, true)">
                     <option value="percent">%</option>
                     <option value="fixed">Fixed</option>
                 </select>
@@ -432,7 +499,9 @@ function onProductChange(sel) {
         tr.querySelector('.cost-before-discount-input').value = cost;
         tr.querySelector('.cost-before-discount-input').dataset.originalCost = cost;
         tr.querySelector('.cost-input').value = cost;
-        tr.querySelector('.sell-input').value = selling;
+        const sellInput = tr.querySelector('.sell-input');
+        sellInput.value = selling;
+        sellInput.dataset.userEdited = '';
     }
     recalcRow(sel);
     applyShippingToAll();
@@ -571,15 +640,38 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.target.classList.contains('cost-input')) {
             e.target.dataset.userEdited = 'true';
         }
+
+        if (e.target.classList.contains('sell-input')) {
+            e.target.dataset.userEdited = 'true';
+
+            const tr = e.target.closest('tr');
+            if (!tr) return;
+
+            const cost = parseFloat(tr.querySelector('.cost-input').value || 0);
+            const sell = parseFloat(e.target.value || 0);
+            const type = tr.querySelector('.profit-type-select').value;
+            const marginInput = tr.querySelector('.profit-margin-input');
+
+            if (!Number.isFinite(cost) || !Number.isFinite(sell)) return;
+
+            const fixedMargin = sell - cost;
+            const percentMargin = sell > 0 ? (fixedMargin / sell) * 100 : 0;
+            marginInput.value = (type === 'percent' ? percentMargin : fixedMargin).toFixed(2);
+        }
     });
 });
 
-function recalcSellingPrice(el) {
+function recalcSellingPrice(el, force = false) {
     const tr = el.closest('tr');
     const cost = parseFloat(tr.querySelector('.cost-input').value || 0);
     const marginInput = tr.querySelector('.profit-margin-input');
     const margin = parseFloat(marginInput.value || 0);
     const type = tr.querySelector('.profit-type-select').value;
+    const sellInput = tr.querySelector('.sell-input');
+
+    if (!force && sellInput.dataset.userEdited) {
+        return;
+    }
     
     let selling = 0;
     if (type === 'percent') {
@@ -588,7 +680,10 @@ function recalcSellingPrice(el) {
         selling = cost + margin;
     }
     
-    tr.querySelector('.sell-input').value = selling.toFixed(2);
+    sellInput.value = selling.toFixed(2);
+    if (force) {
+        sellInput.dataset.userEdited = '';
+    }
 }
 
 function removeRow(btn) {
@@ -719,11 +814,170 @@ function closeProductModal() {
     document.getElementById('productModal').classList.add('hidden');
 }
 
+function setupQuickProductPricingTools() {
+    const form = document.getElementById('quickProductForm');
+    if (!form) return;
+
+    const costInput = form.querySelector('input[name="cost_price"]');
+    const sellingInput = form.querySelector('input[name="selling_price"]');
+    const percentInput = document.getElementById('quick_profit_margin_percent');
+    const fixedInput = document.getElementById('quick_profit_margin_fixed');
+    const secretCodeInput = document.getElementById('quick_secret_cost_code');
+    const sellingSecretCodeInput = document.getElementById('quick_secret_selling_code');
+
+    if (!costInput || !sellingInput || !percentInput || !fixedInput || !secretCodeInput) return;
+
+    const reverseCostMap = Object.fromEntries(
+        Object.entries(QUICK_COST_CODE_MAP).map(([digit, code]) => [String(code || '').toUpperCase(), String(digit)])
+    );
+    const reverseSellingMap = Object.fromEntries(
+        Object.entries(QUICK_SELLING_CODE_MAP).map(([digit, code]) => [String(code || '').toUpperCase(), String(digit)])
+    );
+
+    const decodeSecretToNumber = (value, reverseMap) => {
+        const raw = (value || '').toUpperCase().trim();
+        if (!raw) return null;
+
+        let decoded = '';
+        for (const ch of raw) {
+            if (ch === '.') {
+                decoded += '.';
+                continue;
+            }
+            if (!(ch in reverseMap)) {
+                return null;
+            }
+            decoded += reverseMap[ch];
+        }
+
+        const numeric = Number(decoded);
+        return Number.isFinite(numeric) ? numeric : null;
+    };
+
+    const encodeNumberToSecret = (value, map) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) {
+            return '';
+        }
+        const fixed = numeric.toFixed(2);
+        let encoded = '';
+        for (const ch of fixed) {
+            if (ch === '.') {
+                encoded += '.';
+                continue;
+            }
+            encoded += map[ch] ?? ch;
+        }
+        return encoded;
+    };
+
+    const onPercentageChange = () => {
+        const cost = parseFloat(costInput.value || 0);
+        const percentage = parseFloat(percentInput.value || 0);
+        const denominator = 1 - (percentage / 100);
+
+        if (cost > 0 && percentage >= 0 && denominator > 0) {
+            const selling = cost / denominator;
+            const fixedAmount = selling - cost;
+            fixedInput.value = fixedAmount.toFixed(2);
+            sellingInput.value = selling.toFixed(2);
+        } else {
+            fixedInput.value = '';
+            sellingInput.value = cost.toFixed(2);
+        }
+    };
+
+    const onFixedAmountChange = () => {
+        const cost = parseFloat(costInput.value || 0);
+        const fixedAmount = parseFloat(fixedInput.value || 0);
+
+        if (cost > 0 && fixedAmount >= 0) {
+            const selling = cost + fixedAmount;
+            const percentage = selling > 0 ? (fixedAmount / selling) * 100 : 0;
+            percentInput.value = percentage.toFixed(2);
+            sellingInput.value = selling.toFixed(2);
+        } else {
+            percentInput.value = '';
+            sellingInput.value = cost.toFixed(2);
+        }
+    };
+
+    const onSellingPriceChange = () => {
+        const cost = parseFloat(costInput.value || 0);
+        const selling = parseFloat(sellingInput.value || 0);
+        const fixedAmount = selling - cost;
+        const percentage = selling > 0 ? (fixedAmount / selling) * 100 : 0;
+
+        if (Number.isFinite(fixedAmount)) {
+            fixedInput.value = fixedAmount.toFixed(2);
+        }
+        if (Number.isFinite(percentage)) {
+            percentInput.value = percentage.toFixed(2);
+        }
+    };
+
+    const onCostPriceChange = () => {
+        if ((fixedInput.value || '') !== '') {
+            onFixedAmountChange();
+            return;
+        }
+        if ((percentInput.value || '') !== '') {
+            onPercentageChange();
+            return;
+        }
+        const cost = parseFloat(costInput.value || 0);
+        sellingInput.value = cost.toFixed(2);
+        if (secretCodeInput) {
+            secretCodeInput.value = encodeNumberToSecret(costInput.value || 0, QUICK_COST_CODE_MAP);
+        }
+        if (sellingSecretCodeInput) {
+            sellingSecretCodeInput.value = encodeNumberToSecret(sellingInput.value || 0, QUICK_SELLING_CODE_MAP);
+        }
+    };
+
+    const onSecretCodeInput = () => {
+        const numeric = decodeSecretToNumber(secretCodeInput.value || '', reverseCostMap);
+        if (!Number.isFinite(numeric)) return;
+
+        costInput.value = numeric.toFixed(2);
+        onCostPriceChange();
+    };
+
+    const onSellingSecretCodeInput = () => {
+        if (!sellingSecretCodeInput) return;
+        const numeric = decodeSecretToNumber(sellingSecretCodeInput.value || '', reverseSellingMap);
+        if (!Number.isFinite(numeric)) return;
+
+        sellingInput.value = numeric.toFixed(2);
+        onSellingPriceChange();
+    };
+
+    percentInput.addEventListener('input', onPercentageChange);
+    fixedInput.addEventListener('input', onFixedAmountChange);
+    sellingInput.addEventListener('input', onSellingPriceChange);
+    costInput.addEventListener('input', onCostPriceChange);
+    secretCodeInput.addEventListener('input', onSecretCodeInput);
+
+    sellingInput.addEventListener('input', () => {
+        if (!sellingSecretCodeInput || document.activeElement === sellingSecretCodeInput) return;
+        sellingSecretCodeInput.value = encodeNumberToSecret(sellingInput.value || 0, QUICK_SELLING_CODE_MAP);
+    });
+
+    if (sellingSecretCodeInput) {
+        sellingSecretCodeInput.addEventListener('input', onSellingSecretCodeInput);
+    }
+
+    secretCodeInput.value = encodeNumberToSecret(costInput.value || 0, QUICK_COST_CODE_MAP);
+    if (sellingSecretCodeInput) {
+        sellingSecretCodeInput.value = encodeNumberToSecret(sellingInput.value || 0, QUICK_SELLING_CODE_MAP);
+    }
+}
+
+setupQuickProductPricingTools();
+
 document.getElementById('quickProductForm').addEventListener('submit', async function(e){
     e.preventDefault();
     const data = new FormData(e.target);
-    data.append('sku', '');
-    data.append('barcode', '');
     
     try {
         const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
@@ -738,7 +992,14 @@ document.getElementById('quickProductForm').addEventListener('submit', async fun
             return;
         }
         const p = json.product;
-        PRODUCTS.push({ id: p.id, name: p.name, cost_price: parseFloat(p.cost_price), selling_price: parseFloat(p.selling_price) });
+        PRODUCTS.push({
+            id: p.id,
+            name: p.name,
+            cost_price: parseFloat(p.cost_price),
+            selling_price: parseFloat(p.selling_price),
+            sku: p.sku || '',
+            barcode: p.barcode || ''
+        });
         
         // Update all selects
         document.querySelectorAll('.product-select').forEach(sel => {
@@ -820,37 +1081,158 @@ document.getElementById('quickSupplierForm').addEventListener('submit', async fu
     }
 });
 
-// Product search
-document.getElementById('product_search').addEventListener('input', function(e) {
-    const term = e.target.value.toLowerCase();
-    if (term.length < 2) return;
-    
-    const found = PRODUCTS.find(p => 
-        p.name.toLowerCase().includes(term) || 
-        (p.sku && p.sku.toLowerCase().includes(term))
-    );
-    
-    if (found) {
-        // Check if product already exists in table
-        let existingRow = null;
-        document.querySelectorAll('#itemsBody tr').forEach(tr => {
-            const select = tr.querySelector('.product-select');
-            if (select && select.value == found.id) {
-                existingRow = tr;
-            }
-        });
-        
-        if (existingRow) {
-            // Increase quantity of existing row
-            const qtyInput = existingRow.querySelector('.qty-input');
-            qtyInput.value = parseInt(qtyInput.value || 0) + 1;
-            recalcRow(qtyInput);
-        } else {
-            // Add new row with product
-            addItemRow(found);
+// Product search / barcode scan handling
+const productSearchInput = document.getElementById('product_search');
+const productSuggestions = document.getElementById('product_suggestions');
+let productSearchTimer = null;
+let lastAutoAddSignature = '';
+let lastAutoAddAt = 0;
+const AUTO_ADD_DEDUPE_MS = 300;
+
+function normalizeTerm(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function addOrIncrementProduct(found) {
+    let existingRow = null;
+    document.querySelectorAll('#itemsBody tr').forEach(tr => {
+        const select = tr.querySelector('.product-select');
+        if (select && select.value == found.id) {
+            existingRow = tr;
         }
-        
-        e.target.value = '';
+    });
+
+    if (existingRow) {
+        const qtyInput = existingRow.querySelector('.qty-input');
+        qtyInput.value = parseInt(qtyInput.value || 0) + 1;
+        recalcRow(qtyInput);
+    } else {
+        addItemRow(found);
+    }
+}
+
+function hideProductSuggestions() {
+    productSuggestions.innerHTML = '';
+    productSuggestions.classList.add('hidden');
+}
+
+function findExactProduct(term) {
+    return PRODUCTS.find(p => {
+        const name = normalizeTerm(p.name);
+        const sku = normalizeTerm(p.sku);
+        const barcode = normalizeTerm(p.barcode);
+        return name === term || sku === term || barcode === term;
+    }) || null;
+}
+
+function getPartialMatches(term, limit = 8) {
+    return PRODUCTS
+        .filter(p => {
+            const name = normalizeTerm(p.name);
+            const sku = normalizeTerm(p.sku);
+            const barcode = normalizeTerm(p.barcode);
+            return name.includes(term) || sku.includes(term) || barcode.includes(term);
+        })
+        .slice(0, limit);
+}
+
+function tryAutoAddExact(term, source = 'input') {
+    const found = findExactProduct(term);
+    if (!found) return false;
+
+    const now = Date.now();
+    const signature = `${source}:${term}:${found.id}`;
+    if (signature === lastAutoAddSignature && (now - lastAutoAddAt) < AUTO_ADD_DEDUPE_MS) {
+        return true;
+    }
+
+    lastAutoAddSignature = signature;
+    lastAutoAddAt = now;
+    addOrIncrementProduct(found);
+    productSearchInput.value = '';
+    hideProductSuggestions();
+    return true;
+}
+
+function renderProductSuggestions(matches) {
+    if (!matches.length) {
+        hideProductSuggestions();
+        return;
+    }
+
+    productSuggestions.innerHTML = matches.map(p => {
+        const name = p.name || '';
+        const sku = p.sku || '-';
+        const barcode = p.barcode || '-';
+        return `
+            <button
+                type="button"
+                class="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                data-product-id="${p.id}"
+            >
+                <div class="text-sm font-medium text-gray-800">${name}</div>
+                <div class="text-xs text-gray-500">SKU: ${sku} | Barcode: ${barcode}</div>
+            </button>
+        `;
+    }).join('');
+
+    productSuggestions.classList.remove('hidden');
+}
+
+function handleProductSearchInput(rawTerm) {
+    const term = normalizeTerm(rawTerm);
+    if (!term) {
+        hideProductSuggestions();
+        return;
+    }
+
+    if (tryAutoAddExact(term, 'input')) {
+        return;
+    }
+
+    if (term.length < 2) {
+        hideProductSuggestions();
+        return;
+    }
+
+    const matches = getPartialMatches(term);
+    renderProductSuggestions(matches);
+}
+
+productSearchInput.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    clearTimeout(productSearchTimer);
+    const term = normalizeTerm(e.target.value);
+    if (!term) return;
+    tryAutoAddExact(term, 'enter');
+});
+
+productSearchInput.addEventListener('input', function(e) {
+    clearTimeout(productSearchTimer);
+    const term = e.target.value;
+    productSearchTimer = setTimeout(() => {
+        handleProductSearchInput(term);
+    }, 180);
+});
+
+productSuggestions.addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-product-id]');
+    if (!btn) return;
+
+    const productId = btn.getAttribute('data-product-id');
+    const found = PRODUCTS.find(p => String(p.id) === String(productId));
+    if (!found) return;
+
+    addOrIncrementProduct(found);
+    productSearchInput.value = '';
+    hideProductSuggestions();
+    productSearchInput.focus();
+});
+
+document.addEventListener('click', function(e) {
+    if (!productSuggestions.contains(e.target) && e.target !== productSearchInput) {
+        hideProductSuggestions();
     }
 });
 

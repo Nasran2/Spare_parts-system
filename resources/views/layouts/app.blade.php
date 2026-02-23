@@ -579,21 +579,25 @@
 
         <!-- Page Content -->
         <main class="flex-1 p-4 md:p-6 lg:p-8">
-            @if (session('success'))
-                <div class="bg-green-50 border-l-4 border-green-500 p-4 mb-6 rounded-lg shadow-sm">
-                    <div class="flex items-center">
-                        <i class="fas fa-check-circle text-green-500 mr-3 text-xl"></i>
-                        <p class="text-green-700">{{ session('success') }}</p>
-                    </div>
-                </div>
-            @endif
+            @if (session('success') || session('error'))
+                <div class="fixed top-4 right-4 z-[9999] space-y-3 w-[92vw] max-w-md">
+                    @if (session('success'))
+                        <div class="bg-green-50 border-l-4 border-green-500 p-4 rounded-lg shadow-lg">
+                            <div class="flex items-start">
+                                <i class="fas fa-check-circle text-green-500 mr-3 text-xl mt-0.5"></i>
+                                <p class="text-green-700">{{ session('success') }}</p>
+                            </div>
+                        </div>
+                    @endif
 
-            @if (session('error'))
-                <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-6 rounded-lg shadow-sm">
-                    <div class="flex items-center">
-                        <i class="fas fa-exclamation-circle text-red-500 mr-3 text-xl"></i>
-                        <p class="text-red-700">{{ session('error') }}</p>
-                    </div>
+                    @if (session('error'))
+                        <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg shadow-lg">
+                            <div class="flex items-start">
+                                <i class="fas fa-exclamation-circle text-red-500 mr-3 text-xl mt-0.5"></i>
+                                <p class="text-red-700">{{ session('error') }}</p>
+                            </div>
+                        </div>
+                    @endif
                 </div>
             @endif
 

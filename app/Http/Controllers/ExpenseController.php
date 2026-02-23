@@ -7,6 +7,7 @@ use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use Illuminate\Support\Facades\Storage;
 use Carbon\Carbon;
+use App\Support\PublicStorageSync;
 
 class ExpenseController extends Controller
 {
@@ -70,6 +71,7 @@ class ExpenseController extends Controller
 
         if ($request->hasFile('receipt')) {
             $validated['receipt'] = $request->file('receipt')->store('receipts', 'public');
+            PublicStorageSync::syncFile($validated['receipt']);
         }
 
         $validated['user_id'] = $request->user()->id;
@@ -139,8 +141,10 @@ class ExpenseController extends Controller
         if ($request->hasFile('receipt')) {
             if ($expense->receipt) {
                 Storage::disk('public')->delete($expense->receipt);
+                PublicStorageSync::removeFile($expense->receipt);
             }
             $validated['receipt'] = $request->file('receipt')->store('receipts', 'public');
+            PublicStorageSync::syncFile($validated['receipt']);
         }
 
         $expense->update($validated);
@@ -156,6 +160,7 @@ class ExpenseController extends Controller
         $expense = Expense::findOrFail($id);
         if ($expense->receipt) {
             Storage::disk('public')->delete($expense->receipt);
+            PublicStorageSync::removeFile($expense->receipt);
         }
         $expense->delete();
         return redirect()->route('expenses.index')->with('success', 'Expense deleted');

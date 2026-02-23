@@ -7,6 +7,7 @@ use App\Models\Purchase;
 use App\Models\PurchaseItem;
 use App\Models\Product;
 use Illuminate\Support\Facades\DB;
+use App\Support\PublicStorageSync;
 
 class PurchaseController extends Controller
 {
@@ -35,6 +36,8 @@ class PurchaseController extends Controller
                 'name' => $p->name,
                 'cost_price' => (float) $p->cost_price,
                 'selling_price' => (float) $p->selling_price,
+                'sku' => $p->sku,
+                'barcode' => $p->barcode,
             ];
         })->values()->toArray();
         
@@ -104,6 +107,7 @@ class PurchaseController extends Controller
             $documentPath = null;
             if ($request->hasFile('document')) {
                 $documentPath = $request->file('document')->store('purchases', 'public');
+                PublicStorageSync::syncFile($documentPath);
             }
 
             // Payment calculation

@@ -201,6 +201,21 @@
                 @enderror
             </div>
 
+            <!-- Secret Cost Code -->
+            <div>
+                <label for="secret_cost_code" class="block text-sm font-semibold text-gray-700 mb-2">
+                    <i class="fas fa-user-secret text-slate-600 mr-2"></i>Secret Cost Code
+                </label>
+                <input
+                    type="text"
+                    id="secret_cost_code"
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Type secret code to fill cost price"
+                >
+                <p class="text-xs text-gray-500 mt-1">Cost price will update automatically as you type.</p>
+                <p id="secret_cost_preview" class="text-xs text-slate-700 mt-1"></p>
+            </div>
+
             <!-- Profit Margin -->
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-2">
@@ -271,6 +286,22 @@
                     <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
                 @enderror
             </div>
+
+            @if(($sellingSecretEnabled ?? false))
+            <div>
+                <label for="secret_selling_code" class="block text-sm font-semibold text-gray-700 mb-2">
+                    <i class="fas fa-user-secret text-indigo-600 mr-2"></i>Secret Selling Code
+                </label>
+                <input
+                    type="text"
+                    id="secret_selling_code"
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Type secret code to fill selling price"
+                >
+                <p class="text-xs text-gray-500 mt-1">Selling price will update automatically as you type.</p>
+                <p id="secret_selling_preview" class="text-xs text-indigo-700 mt-1"></p>
+            </div>
+            @endif
 
             <!-- Stock Quantity -->
             <div>
@@ -645,11 +676,12 @@ document.getElementById('brandForm').addEventListener('submit', async function(e
 function onPercentageChange() {
     const costPrice = parseFloat(document.getElementById('cost_price').value) || 0;
     const percentage = parseFloat(document.getElementById('profit_margin_percent').value) || 0;
-    if (costPrice > 0 && percentage >= 0) {
-        const fixedAmount = costPrice * (percentage / 100);
+    const denominator = 1 - (percentage / 100);
+    if (costPrice > 0 && percentage >= 0 && denominator > 0) {
+        const baseSelling = costPrice / denominator;
+        const fixedAmount = baseSelling - costPrice;
         document.getElementById('profit_margin_fixed').value = fixedAmount.toFixed(2);
 
-        const baseSelling = costPrice + fixedAmount;
         const vatRate = parseFloat({{ json_encode($vatRate ?? 0) }});
         const vatEnabled = Boolean({{ json_encode($vatEnabled ?? false) }});
         const vatType = document.getElementById('vat_type') ? document.getElementById('vat_type').value : 'exclusive';
@@ -668,10 +700,10 @@ function onFixedAmountChange() {
     const costPrice = parseFloat(document.getElementById('cost_price').value) || 0;
     const fixedAmount = parseFloat(document.getElementById('profit_margin_fixed').value) || 0;
     if (costPrice > 0 && fixedAmount >= 0) {
-        const percentage = (fixedAmount / costPrice) * 100;
+        const baseSelling = costPrice + fixedAmount;
+        const percentage = baseSelling > 0 ? (fixedAmount / baseSelling) * 100 : 0;
         document.getElementById('profit_margin_percent').value = percentage.toFixed(2);
 
-        const baseSelling = costPrice + fixedAmount;
         const vatRate = parseFloat({{ json_encode($vatRate ?? 0) }});
         const vatEnabled = Boolean({{ json_encode($vatEnabled ?? false) }});
         const vatType = document.getElementById('vat_type') ? document.getElementById('vat_type').value : 'exclusive';
@@ -721,7 +753,7 @@ function onSellingPriceChange() {
     }
 
     const fixedAmount = baseSelling - costPrice;
-    const percentage = costPrice > 0 ? (fixedAmount / costPrice) * 100 : 0;
+    const percentage = baseSelling > 0 ? (fixedAmount / baseSelling) * 100 : 0;
 
     if (!isNaN(fixedAmount)) {
         document.getElementById('profit_margin_fixed').value = fixedAmount.toFixed(2);
@@ -732,5 +764,252 @@ function onSellingPriceChange() {
 }
 
 document.getElementById('selling_price').addEventListener('input', onSellingPriceChange);
+
+var sellingSecretEnabled = {{ json_encode((bool) ($sellingSecretEnabled ?? false)) }};
+var costSecretMap = @json($costCodeMap ?? []);
+var sellingSecretMap = @json($sellingCodeMap ?? ($costCodeMap ?? []));
+
+var secretInput = document.getElementById('secret_cost_code');
+var secretPreview = document.getElementById('secret_cost_preview');
+var costInput = document.getElementById('cost_price');
+var sellingInput = document.getElementById('selling_price');
+var sellingSecretInput = document.getElementById('secret_selling_code');
+var sellingSecretPreview = document.getElementById('secret_selling_preview');
+var costZeroFallback = {{ json_encode((bool) config('app.secret_cost_zero_fallback', false)) }};
+var sellingZeroFallback = {{ json_encode((bool) config('app.secret_selling_zero_fallback', false)) }};
+
+function buildReverseMap(map) {
+    var reverseMap = {};
+    for (var digitKey in map) {
+        if (!Object.prototype.hasOwnProperty.call(map, digitKey)) continue;
+        var codeVal = map[digitKey];
+        if (codeVal !== null && codeVal !== undefined && codeVal !== '') {
+            reverseMap[String(codeVal).toUpperCase()] = String(digitKey);
+        }
+    }
+    return reverseMap;
+}
+
+function pickZeroFallbackChar(map) {
+    if (map['0'] && map['0'] !== '') {
+        return '';
+    }
+    var alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+    var used = {};
+    for (var key in map) {
+        if (!Object.prototype.hasOwnProperty.call(map, key)) continue;
+        var val = String(map[key] || '').toUpperCase();
+        for (var i = 0; i < val.length; i++) {
+            used[val[i]] = true;
+        }
+    }
+    for (var a = 0; a < alphabet.length; a++) {
+        if (!used[alphabet[a]]) {
+            return alphabet[a];
+        }
+    }
+    return '';
+}
+
+var costReverseSecretMap = buildReverseMap(costSecretMap);
+var sellingReverseSecretMap = buildReverseMap(sellingSecretMap);
+var costZeroFallbackChar = pickZeroFallbackChar(costSecretMap);
+var sellingZeroFallbackChar = pickZeroFallbackChar(sellingSecretMap);
+
+function decodeSecretAmount(value, reverseMap, zeroFallback) {
+    var raw = String(value || '').toUpperCase();
+    var parts = raw.split('.');
+    var leftRaw = parts[0] || '';
+    var rightRaw = parts.length > 1 ? parts.slice(1).join('') : '';
+
+    var leftDigits = '';
+    for (var i = 0; i < leftRaw.length; i++) {
+        var chLeft = leftRaw[i];
+        if (reverseMap[chLeft] !== undefined) {
+            leftDigits += reverseMap[chLeft];
+        } else if (/\d/.test(chLeft)) {
+            leftDigits += chLeft;
+        } else if (zeroFallback && /[A-Z]/.test(chLeft)) {
+            leftDigits += '0';
+        }
+    }
+
+    var rightDigits = '';
+    for (var j = 0; j < rightRaw.length; j++) {
+        var chRight = rightRaw[j];
+        if (reverseMap[chRight] !== undefined) {
+            rightDigits += reverseMap[chRight];
+        } else if (/\d/.test(chRight)) {
+            rightDigits += chRight;
+        } else if (zeroFallback && /[A-Z]/.test(chRight)) {
+            rightDigits += '0';
+        }
+    }
+
+    if (leftDigits.length === 0 && rightDigits.length === 0) {
+        return '';
+    }
+
+    if (leftDigits.length === 0) {
+        leftDigits = '0';
+    }
+    if (rightDigits.length === 0) {
+        rightDigits = '00';
+    } else if (rightDigits.length === 1) {
+        rightDigits = rightDigits + '0';
+    } else if (rightDigits.length > 2) {
+        rightDigits = rightDigits.slice(0, 2);
+    }
+
+    return parseInt(leftDigits, 10) + '.' + rightDigits;
+}
+
+function decodeSecretCost(value) {
+    var amount = decodeSecretAmount(value, costReverseSecretMap, costZeroFallback);
+    if (!amount) {
+        if (secretPreview) {
+            secretPreview.textContent = '';
+        }
+        return;
+    }
+    if (secretPreview) {
+        secretPreview.textContent = 'Decoded Cost: ' + amount;
+    }
+    if (costInput) {
+        costInput.value = amount;
+        costInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+}
+
+function decodeSecretSelling(value) {
+    var amount = decodeSecretAmount(value, sellingReverseSecretMap, sellingZeroFallback);
+    if (!amount) {
+        if (sellingSecretPreview) {
+            sellingSecretPreview.textContent = '';
+        }
+        return;
+    }
+    if (sellingSecretPreview) {
+        sellingSecretPreview.textContent = 'Decoded Selling: ' + amount;
+    }
+    if (sellingInput) {
+        sellingInput.value = amount;
+        sellingInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+}
+
+if (secretInput) {
+    secretInput.addEventListener('input', function (event) {
+        decodeSecretCost(event.target.value);
+    });
+}
+
+function encodeAmountToSecret(value) {
+    return encodeAmountToSecretWithMap(value, costSecretMap, costZeroFallback, costZeroFallbackChar);
+}
+
+function encodeAmountToSecretWithMap(value, map, zeroFallback, zeroFallbackChar) {
+    var raw = parseFloat(value || 0);
+    if (isNaN(raw)) {
+        return '';
+    }
+    var fixed = Number(raw).toFixed(2);
+    var parts = fixed.split('.');
+    var intPart = parts[0] || '0';
+    var decPart = parts[1] || '00';
+
+    var encodedInt = '';
+    for (var i = 0; i < intPart.length; i++) {
+        var dInt = intPart[i];
+        if (dInt === '0' && zeroFallback && (!map['0'] || map['0'] === '')) {
+            encodedInt += (zeroFallbackChar || '0');
+        } else {
+            encodedInt += (map[dInt] !== undefined ? map[dInt] : dInt);
+        }
+    }
+
+    var encodedDec = '';
+    for (var j = 0; j < decPart.length; j++) {
+        var dDec = decPart[j];
+        if (dDec === '0' && zeroFallback && (!map['0'] || map['0'] === '')) {
+            encodedDec += (zeroFallbackChar || '0');
+        } else {
+            encodedDec += (map[dDec] !== undefined ? map[dDec] : dDec);
+        }
+    }
+
+    if (decPart === '00') {
+        return encodedInt;
+    }
+    return encodedInt + '.' + encodedDec;
+}
+
+function encodeCostToSecret(value) {
+    return encodeAmountToSecretWithMap(value, costSecretMap, costZeroFallback, costZeroFallbackChar);
+}
+
+function encodeSellingToSecret(value) {
+    return encodeAmountToSecretWithMap(value, sellingSecretMap, sellingZeroFallback, sellingZeroFallbackChar);
+}
+
+if (costInput) {
+    costInput.addEventListener('input', function (event) {
+        if (document.activeElement === secretInput) {
+            return;
+        }
+        var encoded = encodeCostToSecret(event.target.value);
+        if (secretInput) {
+            secretInput.value = encoded;
+        }
+        if (encoded && secretPreview) {
+            secretPreview.textContent = 'Encoded Cost: ' + encoded;
+        }
+    });
+}
+
+if (sellingSecretEnabled && sellingSecretInput) {
+    sellingSecretInput.addEventListener('input', function (event) {
+        decodeSecretSelling(event.target.value);
+    });
+}
+
+if (sellingSecretEnabled && sellingInput) {
+    sellingInput.addEventListener('input', function (event) {
+        if (document.activeElement === sellingSecretInput) {
+            return;
+        }
+        var encoded = encodeSellingToSecret(event.target.value);
+        if (sellingSecretInput) {
+            sellingSecretInput.value = encoded;
+        }
+        if (sellingSecretPreview) {
+            sellingSecretPreview.textContent = encoded ? ('Encoded Selling: ' + encoded) : '';
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    if (costInput) {
+        var initialEncoded = encodeAmountToSecret(costInput.value);
+        if (secretInput) {
+            secretInput.value = initialEncoded;
+        }
+        if (secretPreview) {
+            secretPreview.textContent = initialEncoded ? ('Encoded Cost: ' + initialEncoded) : '';
+        }
+    }
+    if (sellingSecretEnabled && sellingInput && sellingSecretInput) {
+        var initialSellingEncoded = encodeSellingToSecret(sellingInput.value);
+        sellingSecretInput.value = initialSellingEncoded;
+        if (sellingSecretPreview) {
+            sellingSecretPreview.textContent = initialSellingEncoded ? ('Encoded Selling: ' + initialSellingEncoded) : '';
+        }
+    }
+    if (document.getElementById('selling_price')?.value !== '') {
+        onSellingPriceChange();
+    } else {
+        onCostPriceChange();
+    }
+});
 </script>
 @endsection
