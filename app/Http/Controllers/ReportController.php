@@ -269,8 +269,9 @@ class ReportController extends Controller
         $selectedCategoryId = $request->filled('category_id') ? (int) $request->input('category_id') : null;
         $selectedBrandId = $request->filled('brand_id') ? (int) $request->input('brand_id') : null;
         $lowStockOnly = $request->boolean('low_stock');
+        $search = $request->filled('search') ? trim((string) $request->input('search')) : null;
 
-        $products = $this->stockBaseQuery($selectedCategoryId, $selectedBrandId, $lowStockOnly)->get();
+        $products = $this->stockBaseQuery($selectedCategoryId, $selectedBrandId, $lowStockOnly, $search)->get();
         $items = $this->mapStockItems($products);
 
         $summary = [
@@ -289,7 +290,8 @@ class ReportController extends Controller
             'brands',
             'selectedCategoryId',
             'selectedBrandId',
-            'lowStockOnly'
+            'lowStockOnly',
+            'search'
         ));
     }
 
@@ -298,8 +300,9 @@ class ReportController extends Controller
         $selectedCategoryId = $request->filled('category_id') ? (int) $request->input('category_id') : null;
         $selectedBrandId = $request->filled('brand_id') ? (int) $request->input('brand_id') : null;
         $lowStockOnly = $request->boolean('low_stock');
+        $search = $request->filled('search') ? trim((string) $request->input('search')) : null;
 
-        $products = $this->stockBaseQuery($selectedCategoryId, $selectedBrandId, $lowStockOnly)->get();
+        $products = $this->stockBaseQuery($selectedCategoryId, $selectedBrandId, $lowStockOnly, $search)->get();
         $items = $products->map(function ($p) {
             $purchasedQty = $p->purchaseItems->sum('quantity');
             $soldQty = $p->saleItems->sum('quantity');
@@ -327,8 +330,9 @@ class ReportController extends Controller
         $selectedCategoryId = $request->filled('category_id') ? (int) $request->input('category_id') : null;
         $selectedBrandId = $request->filled('brand_id') ? (int) $request->input('brand_id') : null;
         $lowStockOnly = $request->boolean('low_stock');
+        $search = $request->filled('search') ? trim((string) $request->input('search')) : null;
 
-        $products = $this->stockBaseQuery($selectedCategoryId, $selectedBrandId, $lowStockOnly)->get();
+        $products = $this->stockBaseQuery($selectedCategoryId, $selectedBrandId, $lowStockOnly, $search)->get();
         $rows = [['Product','Category','Purchased Qty','Sold Qty','Current Stock','Status']];
         foreach ($products as $p) {
             $isLowStock = (float) ($p->stock_quantity ?? 0) <= (float) ($p->alert_quantity ?? 0);
@@ -348,9 +352,16 @@ class ReportController extends Controller
         ]);
     }
 
-    private function stockBaseQuery(?int $categoryId, ?int $brandId, bool $lowStockOnly)
+    private function stockBaseQuery(?int $categoryId, ?int $brandId, bool $lowStockOnly, ?string $search = null)
     {
         $query = Product::with(['category', 'categories', 'brand', 'brands', 'unit', 'saleItems', 'purchaseItems']);
+
+        if ($search !== null && $search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('barcode', 'like', "%{$search}%");
+            });
+        }
 
         if ($categoryId) {
             $query->where(function ($q) use ($categoryId) {

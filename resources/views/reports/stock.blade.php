@@ -14,13 +14,26 @@
     </div>
 
     <div class="bg-white p-4 rounded shadow">
-        <form method="GET" action="{{ route('reports.stock') }}" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+        <form id="stockReportFilters" method="GET" action="{{ route('reports.stock') }}" class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Stock Filter</label>
                 <select name="low_stock" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
                     <option value="">All Products</option>
                     <option value="1" {{ !empty($lowStockOnly) ? 'selected' : '' }}>Low Stock Only</option>
                 </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Search</label>
+                <input
+                    id="stockReportSearch"
+                    type="text"
+                    name="search"
+                    value="{{ $search ?? '' }}"
+                    placeholder="Name or barcode"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    autocomplete="off"
+                />
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
@@ -96,3 +109,21 @@
     </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+(() => {
+    const form = document.getElementById('stockReportFilters');
+    const searchInput = document.getElementById('stockReportSearch');
+    if (!form || !searchInput) return;
+
+    let timer = null;
+    const debounceMs = 400;
+
+    searchInput.addEventListener('input', () => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => form.submit(), debounceMs);
+    });
+})();
+</script>
+@endpush
