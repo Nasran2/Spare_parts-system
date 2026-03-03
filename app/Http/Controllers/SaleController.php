@@ -9,6 +9,9 @@ use App\Models\Setting;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Support\SecretPos;
+use App\Models\SaleReturnItem;
+use App\Models\SaleReturn;
+use App\Services\SaleRecalculationService;
 
 class SaleController extends Controller
 {
@@ -17,7 +20,7 @@ class SaleController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Sale::with(['customer', 'user'])->orderByDesc('created_at');
+        $query = Sale::with(['customer', 'user', 'returns'])->orderByDesc('created_at');
 
         // Filters: date range, customer, status
         if ($request->filled('date_from')) {
@@ -37,6 +40,27 @@ class SaleController extends Controller
         $query = SecretPos::excludeHiddenRanges($query, 'total_amount');
 
         $sales = $query->paginate(20)->appends($request->query());
+
+        // Make sure totals are up-to-date for invoices that have returns.
+        // (Older data or some flows might have recorded returns without recalculating the Sale row.)
+        foreach ($sales->getCollection() as $sale) {
+            if ($sale->returns->count() > 0) {
+                SaleRecalculationService::recalculateSaleFinancials($sale);
+            }
+        }
+
+        // Exchange return credit per sale (returns used during POS exchange checkout)
+        $exchangeCredits = DB::table('sale_return_items')
+            ->join('sale_returns', 'sale_return_items.sale_return_id', '=', 'sale_returns.id')
+            ->whereIn('sale_returns.exchange_sale_id', $sales->getCollection()->pluck('id')->all())
+            ->selectRaw('sale_returns.exchange_sale_id as exchange_sale_id, SUM(sale_return_items.total) as total')
+            ->groupBy('sale_returns.exchange_sale_id')
+            ->pluck('total', 'exchange_sale_id');
+
+        $sales->getCollection()->transform(function ($sale) use ($exchangeCredits) {
+            $sale->exchange_return_amount = (float) ($exchangeCredits[$sale->id] ?? 0);
+            return $sale;
+        });
         $customers = Customer::orderBy('name')->get(['id','name']);
 
         $currency = config('app.currency', 'Rs ');
@@ -69,13 +93,63 @@ class SaleController extends Controller
      */
     public function show(string $id)
     {
-        $sale = Sale::with(['items.product', 'customer', 'user'])->findOrFail($id);
+        $sale = Sale::with(['items.product', 'customer', 'user', 'payments'])->findOrFail($id);
         // Block access to hidden bills entirely
         if (SecretPos::isHidden((float)$sale->total_amount)) {
             abort(404);
         }
+
+        if ($sale->returns()->exists()) {
+            SaleRecalculationService::recalculateSaleFinancials($sale);
+            $sale->refresh();
+            $sale->load(['items.product', 'customer', 'user', 'payments']);
+        }
+
+        $returnedQtyByItem = SaleRecalculationService::returnedQtyBySaleItem($sale->id);
+        $netItems = $sale->items
+            ->map(function ($it) use ($returnedQtyByItem) {
+                $returned = (int) ($returnedQtyByItem[$it->id] ?? 0);
+                $netQty = max(0, (int) $it->quantity - $returned);
+                $it->net_quantity = $netQty;
+                $it->net_total = round($netQty * (float) $it->unit_price, 2);
+
+                $originalUnitPrice = (float) ($it->product?->selling_price ?? $it->unit_price);
+                if ($originalUnitPrice < (float) $it->unit_price) {
+                    $originalUnitPrice = (float) $it->unit_price;
+                }
+                $it->display_unit_price = round($originalUnitPrice, 2);
+                $it->line_discount_amount = round(max(0.0, ($originalUnitPrice - (float) $it->unit_price) * $netQty), 2);
+                return $it;
+            })
+            ->filter(fn ($it) => (int) ($it->net_quantity ?? 0) > 0)
+            ->values();
+
+        $displaySubtotal = round((float) $netItems->sum(fn ($it) => (float) ($it->net_total ?? 0)), 2);
+
+        $lineDiscountTotal = (float) $netItems->sum(fn ($it) => (float) ($it->line_discount_amount ?? 0));
+        $cartDiscountAmount = max(0.0, round((float) $sale->discount - $lineDiscountTotal, 2));
         $currency = config('app.currency', 'Rs ');
-        return view('sales.show', compact('sale','currency'));
+
+        $returnItems = SaleReturnItem::with(['product'])
+            ->whereHas('return', fn ($q) => $q->where('sale_id', $sale->id))
+            ->get();
+
+        $exchangeReturnItems = SaleReturnItem::with(['product'])
+            ->whereHas('return', fn ($q) => $q->where('exchange_sale_id', $sale->id))
+            ->get();
+        $exchangeReturnAmount = round((float) $exchangeReturnItems->sum('total'), 2);
+
+        return view('sales.show', compact(
+            'sale',
+            'currency',
+            'netItems',
+            'returnedQtyByItem',
+            'cartDiscountAmount',
+            'displaySubtotal',
+            'returnItems',
+            'exchangeReturnItems',
+            'exchangeReturnAmount'
+        ));
     }
 
     /**
@@ -87,6 +161,72 @@ class SaleController extends Controller
         if (SecretPos::isHidden((float)$sale->total_amount)) {
             abort(404);
         }
+
+        if ($sale->returns()->exists()) {
+            SaleRecalculationService::recalculateSaleFinancials($sale);
+            $sale->refresh();
+            $sale->load(['items.product', 'customer', 'user', 'payments']);
+        }
+
+        $hasReturns = $sale->returns()->exists();
+
+        $exchangeReturnAmount = 0.0;
+        $exchangeReturnItems = collect();
+        if (SaleReturn::query()->where('exchange_sale_id', $sale->id)->exists()) {
+            $exchangeReturnItems = SaleReturnItem::with(['product'])
+                ->whereHas('return', fn ($q) => $q->where('exchange_sale_id', $sale->id))
+                ->get();
+            $exchangeReturnAmount = max(0.0, round((float) $exchangeReturnItems->sum('total'), 2));
+        }
+
+        $returnAmount = 0.0;
+        $originalTotalForDisplay = null;
+        if ($hasReturns) {
+            $returnAmount = (float) DB::table('sale_return_items')
+                ->join('sale_returns', 'sale_return_items.sale_return_id', '=', 'sale_returns.id')
+                ->where('sale_returns.sale_id', $sale->id)
+                ->sum('sale_return_items.total');
+            $returnAmount = max(0.0, round($returnAmount, 2));
+            $originalTotalForDisplay = round((float) $sale->total_amount + $returnAmount, 2);
+        }
+
+        $returnItems = collect();
+        if ($hasReturns) {
+            $returnItems = SaleReturnItem::with(['product'])
+                ->whereHas('return', fn ($q) => $q->where('sale_id', $sale->id))
+                ->get();
+        }
+
+        $returnedQtyByItem = SaleRecalculationService::returnedQtyBySaleItem($sale->id);
+        $netItems = $sale->items
+            ->map(function ($it) use ($returnedQtyByItem) {
+                $returned = (int) ($returnedQtyByItem[$it->id] ?? 0);
+                $netQty = max(0, (int) $it->quantity - $returned);
+                $it->net_quantity = $netQty;
+                $it->net_total = round($netQty * (float) $it->unit_price, 2);
+
+                $originalUnitPrice = (float) ($it->product?->selling_price ?? $it->unit_price);
+                if ($originalUnitPrice < (float) $it->unit_price) {
+                    $originalUnitPrice = (float) $it->unit_price;
+                }
+                $it->display_unit_price = round($originalUnitPrice, 2);
+                $it->line_discount_amount = round(max(0.0, ($originalUnitPrice - (float) $it->unit_price) * $netQty), 2);
+                return $it;
+            })
+            ->filter(fn ($it) => (int) ($it->net_quantity ?? 0) > 0)
+            ->values();
+
+        $displaySubtotal = round((float) $netItems->sum(fn ($it) => (float) ($it->net_total ?? 0)), 2);
+
+        $lineDiscountTotal = (float) $netItems->sum(fn ($it) => (float) ($it->line_discount_amount ?? 0));
+        $cartDiscountAmount = max(0.0, round((float) $sale->discount - $lineDiscountTotal, 2));
+
+        $invoicePaperSize = Setting::get('invoice_paper_size', 'a4');
+        $paperSize = strtolower((string) ($invoicePaperSize ?? 'a4'));
+        $invoiceShowLogo = (bool) Setting::get('invoice_show_logo', true);
+        $invoiceFooterText = (string) Setting::get('invoice_footer_text', 'Thank you for your business!');
+        $invoiceTerms = (string) Setting::get('invoice_terms', '');
+
         $shop = [
             'name' => Setting::get('shop_name') ?? Setting::get('business_name') ?? config('app.name'),
             'address' => Setting::get('shop_address') ?? Setting::get('business_address') ?? '',
@@ -94,8 +234,43 @@ class SaleController extends Controller
             'email' => Setting::get('shop_email') ?? Setting::get('business_email') ?? '',
             'logo' => Setting::get('shop_logo') ?? null,
         ];
+
+        $logoValue = $shop['logo'] ?? null;
+        $logoSrc = null;
+        if (!empty($logoValue)) {
+            if (preg_match('#^https?://#i', (string) $logoValue) || str_starts_with((string) $logoValue, '/')) {
+                $logoSrc = (string) $logoValue;
+            } else {
+                if (is_file(public_path((string) $logoValue))) {
+                    $logoSrc = asset((string) $logoValue);
+                } elseif (is_file(public_path('storage/' . (string) $logoValue))) {
+                    $logoSrc = asset('storage/' . (string) $logoValue);
+                } else {
+                    $logoSrc = asset((string) $logoValue);
+                }
+            }
+        }
         $currency = config('app.currency', 'Rs ');
-        return view('sales.print', compact('sale', 'shop','currency'));
+        return view('sales.print', compact(
+            'sale',
+            'netItems',
+            'returnItems',
+            'shop',
+            'paperSize',
+            'logoSrc',
+            'hasReturns',
+            'returnAmount',
+            'originalTotalForDisplay',
+            'exchangeReturnItems',
+            'exchangeReturnAmount',
+            'cartDiscountAmount',
+            'displaySubtotal',
+            'currency',
+            'invoicePaperSize',
+            'invoiceShowLogo',
+            'invoiceFooterText',
+            'invoiceTerms'
+        ));
     }
 
     /**
@@ -107,7 +282,7 @@ class SaleController extends Controller
         $data = $request->validate([
             'items' => 'required|array',
             'items.*.sale_item_id' => 'required|integer|exists:sale_items,id',
-            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.quantity' => 'required|integer|min:0',
             'notes' => 'nullable|string|max:1000',
         ]);
 
@@ -130,7 +305,16 @@ class SaleController extends Controller
             foreach ($data['items'] as $ritem) {
                 $saleItem = $itemMap->get($ritem['sale_item_id']);
                 if (!$saleItem) { continue; }
-                $qty = min((int)$ritem['quantity'], (int)$saleItem->quantity);
+
+                $alreadyReturned = (int) SaleReturnItem::where('sale_item_id', $saleItem->id)->sum('quantity');
+                $remainingQty = max(0, (int) $saleItem->quantity - $alreadyReturned);
+                $requestedQty = (int) $ritem['quantity'];
+                if ($requestedQty <= 0) { continue; }
+                if ($requestedQty > $remainingQty) {
+                    throw new \Exception("Return quantity cannot exceed remaining quantity ({$remainingQty}) for {$saleItem->product?->name}");
+                }
+
+                $qty = $requestedQty;
                 $unit = (float)$saleItem->unit_price;
                 $line = $qty * $unit;
                 $subtotal += $line;
@@ -150,9 +334,14 @@ class SaleController extends Controller
 
             $return->subtotal = round($subtotal, 2);
             $return->total_refund = round($subtotal, 2); // simple: refund subtotal; taxes/discounts ignored for now
+            if ((float) $return->total_refund <= 0) {
+                throw new \Exception('No items selected for return.');
+            }
             $return->save();
 
-            // Optionally adjust sale due/paid; keeping as-is for simplicity.
+            $sale->refresh();
+            $sale->load(['items', 'payments']);
+            SaleRecalculationService::recalculateSaleFinancials($sale);
 
             \Illuminate\Support\Facades\DB::commit();
             return redirect()->route('sales.show', $sale->id)->with('success', 'Return processed successfully');
@@ -247,7 +436,7 @@ class SaleController extends Controller
         $pdf->loadView('quotations.pdf', compact('sale','shop','currency'));
         $pdf->setPaper('A4', 'portrait');
         // Stream inline (do not force download) so it can be previewed/printed in-browser.
-        return $pdf->stream($sale->sale_no . '.pdf', ['Attachment' => false]);
+        return $pdf->stream($sale->sale_no . '.pdf');
     }
 
     /**
@@ -445,7 +634,7 @@ class SaleController extends Controller
 
         // Log activity
         \App\Models\ActivityLog::create([
-            'user_id' => auth()->id(),
+            'user_id' => Auth::id(),
             'action' => 'updated',
             'model_type' => 'sale',
             'model_id' => $sale->id,

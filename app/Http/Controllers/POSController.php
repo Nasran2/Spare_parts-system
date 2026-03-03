@@ -215,7 +215,7 @@ class POSController extends Controller
             'quantity' => 'required|integer|min:1',
         ]);
 
-        $saleItem = SaleItem::with('product')->find($request->sale_item_id);
+        $saleItem = SaleItem::with(['product', 'sale'])->find($request->sale_item_id);
         
         // Validate remaining quantity
         $returnedQty = \App\Models\SaleReturnItem::where('sale_item_id', $saleItem->id)->sum('quantity');
@@ -282,6 +282,7 @@ class POSController extends Controller
 
             $createdSale = null;
             $createdReturn = null;
+            $createdReturnIds = [];
 
             // Process Returns
             if (!empty($returnItemsData)) {
@@ -311,6 +312,7 @@ class POSController extends Controller
                         'total_refund' => $totalRefund,
                         'notes' => 'POS Exchange/Return',
                     ]);
+                    $createdReturnIds[] = $saleReturn->id;
 
                     foreach ($items as $item) {
                         $qty = abs($item['qty']);
@@ -326,8 +328,8 @@ class POSController extends Controller
                             'sale_item_id' => $item['sale_item_id'],
                             'product_id' => $item['id'],
                             'quantity' => $qty,
-                            'return_price' => $item['price'],
-                            'total' => $qty * $item['price'],
+                            'unit_price' => (float) $item['price'],
+                            'total' => $qty * (float) $item['price'],
                         ]);
 
                         // Increment Stock
@@ -335,6 +337,12 @@ class POSController extends Controller
                         if ($product) {
                             $product->increment('stock_quantity', $qty);
                         }
+                    }
+
+                    // Update the original sale totals/status after return items are recorded
+                    $originalSale = \App\Models\Sale::with(['items.product', 'payments'])->find($saleId);
+                    if ($originalSale) {
+                        \App\Services\SaleRecalculationService::recalculateSaleFinancials($originalSale);
                     }
                     $createdReturn = $saleReturn;
                 }
@@ -445,6 +453,10 @@ class POSController extends Controller
                 if (!empty($normalizedPayments)) {
                     $paidCash = (float) collect($normalizedPayments)->sum('amount');
                 }
+
+                // Track tendered money for receipt (before change is returned).
+                // Note: salePaid below is capped at total to reflect net payment.
+                $tenderedAmount = max(0, $paidCash);
                 
                 $returnCredit = 0;
                 if (!empty($returnItemsData)) {
@@ -471,6 +483,7 @@ class POSController extends Controller
                     'discount'      => $discountAmount,
                     'total_amount'  => $effectiveTotalAmount,
                     'paid_amount'   => $salePaid,
+                    'tendered_amount' => $tenderedAmount,
                     'due_amount'    => $due,
                     'payment_status'=> $due > 0 ? 'partial' : 'paid',
                     'payment_method'=> $paymentMethod,
@@ -555,6 +568,13 @@ class POSController extends Controller
                     }
                 }
                 $createdSale = $sale;
+
+                // If this transaction included returns, link those return records to this new sale
+                // so the printed receipt/invoice can show returned items + credit.
+                if (!empty($createdReturnIds)) {
+                    \App\Models\SaleReturn::whereIn('id', $createdReturnIds)
+                        ->update(['exchange_sale_id' => $sale->id]);
+                }
             }
 
             DB::commit();
@@ -642,8 +662,14 @@ class POSController extends Controller
         $discountAmount = $lineDiscountTotal + $cartDiscount;
         $taxAmount = round(($subtotal - $discountAmount) * ((float)($cart['tax_rate'] ?? 0)) / 100, 2);
         $total = $subtotal - $discountAmount + $taxAmount;
+
+        // Net subtotal after item-level discounts (cart discount not applied yet)
+        $netSubtotal = max(0.0, round($subtotal - $lineDiscountTotal, 2));
         $cart['totals'] = [
             'subtotal' => round($subtotal, 2),
+            'net_subtotal' => $netSubtotal,
+            'line_discount_amount' => round($lineDiscountTotal, 2),
+            'cart_discount_amount' => round($cartDiscount, 2),
             'discount_amount' => round($discountAmount, 2),
             'tax_amount' => round($taxAmount, 2),
             'total' => round($total, 2),
@@ -1021,7 +1047,13 @@ class POSController extends Controller
     public function getSaleReceipt($id)
     {
         $sale = Sale::with(['items.product', 'customer', 'user', 'payments'])->findOrFail($id);
-        $tenderedAmount = (float) $sale->payments->sum('amount');
+        $tenderedAmount = 0.0;
+        if (isset($sale->tendered_amount)) {
+            $tenderedAmount = (float) $sale->tendered_amount;
+        }
+        if ($tenderedAmount <= 0) {
+            $tenderedAmount = (float) $sale->payments->sum('amount');
+        }
         if ($tenderedAmount <= 0) {
             $tenderedAmount = (float) $sale->paid_amount;
         }
@@ -1029,7 +1061,10 @@ class POSController extends Controller
         return response()->json([
             'id' => $sale->id,
             'sale_no' => $sale->sale_no,
-            'sale_date' => $sale->sale_date,
+            // Use created_at for printable datetime (sale_date column is DATE-only)
+            'sale_date' => $sale->created_at
+                ? $sale->created_at->timezone(config('app.timezone'))->toIso8601String()
+                : null,
             'subtotal' => $sale->subtotal,
             'tax' => $sale->tax,
             'discount' => $sale->discount,
@@ -1070,5 +1105,34 @@ class POSController extends Controller
             ->where('due_amount', '>', 0)
             ->sum('due_amount');
         return response()->json(['customer_id' => (int)$id, 'outstanding_due' => (float)$due]);
+    }
+
+    /**
+     * Recent transactions for POS (last 13 sales)
+     */
+    public function recentSales(Request $request)
+    {
+        $sales = Sale::query()
+            ->with('customer:id,name')
+            ->withCount('returns')
+            ->where('sale_type', 'sale')
+            ->orderByDesc('created_at')
+            ->limit(10)
+            ->get(['id', 'sale_no', 'customer_id', 'total_amount', 'created_at']);
+
+        return response()->json(
+            $sales->map(function (Sale $sale) {
+                return [
+                    'id' => $sale->id,
+                    'sale_no' => $sale->sale_no,
+                    'customer_name' => $sale->customer?->name ?: 'Walk-in',
+                    'total_amount' => (float) $sale->total_amount,
+                    'is_returned' => ((int) ($sale->returns_count ?? 0)) > 0,
+                    'created_at' => $sale->created_at
+                        ? $sale->created_at->timezone(config('app.timezone'))->toIso8601String()
+                        : null,
+                ];
+            })->values()
+        );
     }
 }

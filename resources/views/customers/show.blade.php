@@ -40,6 +40,12 @@
                     <div>
                         <label class="block text-xs font-semibold text-gray-600">Date Range</label>
                         <div class="flex gap-2">
+                            @include('partials.quick-date-filter', [
+                                'fromName' => 'start_date',
+                                'toName' => 'end_date',
+                                'inline' => true,
+                                'selectClass' => 'px-3 py-2 border rounded w-40',
+                            ])
                             <input type="date" name="start_date" value="{{ $start }}" class="px-3 py-2 border rounded w-40">
                             <span class="self-center text-gray-500">to</span>
                             <input type="date" name="end_date" value="{{ $end }}" class="px-3 py-2 border rounded w-40">

@@ -35,17 +35,83 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach($sale->items as $it)
+                    @foreach(($netItems ?? $sale->items) as $it)
                         <tr class="border-b">
-                            <td class="py-2 pr-4">{{ $it->product->name ?? ('#'.$it->product_id) }}</td>
-                            <td class="py-2 pr-4 text-right">{{ $it->quantity }}</td>
-                                <td class="py-2 pr-4 text-right">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $it->unit_price, $currency) }}</td>
-                                <td class="py-2 pr-4 text-right">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $it->total, $currency) }}</td>
+                            <td class="py-2 pr-4">
+                                <div>{{ $it->product->name ?? ('#'.$it->product_id) }}</div>
+                                @if(((float) ($it->line_discount_amount ?? 0)) > 0)
+                                    <div class="text-xs text-red-600 font-semibold">Discount: -{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, (float) ($it->line_discount_amount ?? 0), $currency) }}</div>
+                                @endif
+                            </td>
+                            <td class="py-2 pr-4 text-right">{{ $it->net_quantity ?? $it->quantity }}</td>
+                            <td class="py-2 pr-4 text-right">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $it->display_unit_price ?? $it->unit_price, $currency) }}</td>
+                            <td class="py-2 pr-4 text-right">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $it->net_total ?? $it->total, $currency) }}</td>
                         </tr>
                     @endforeach
                 </tbody>
             </table>
         </div>
+
+        @php
+            $exchangeCredit = (float) ($exchangeReturnAmount ?? 0);
+            $netAfterExchange = round(((float) $sale->total_amount) - $exchangeCredit, 2);
+        @endphp
+
+        @if((!empty($exchangeReturnItems) && $exchangeReturnItems->count() > 0) || (!empty($returnItems) && $returnItems->count() > 0))
+            <div class="mt-6 space-y-3">
+                @if(!empty($exchangeReturnItems) && $exchangeReturnItems->count() > 0)
+                    <div class="text-sm font-semibold text-gray-800">Returned Items (Exchange Credit)</div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full text-sm">
+                            <thead>
+                                <tr class="text-left text-gray-600 border-b">
+                                    <th class="py-2 pr-4">Item</th>
+                                    <th class="py-2 pr-4 text-right">Qty</th>
+                                    <th class="py-2 pr-4 text-right">Unit Price</th>
+                                    <th class="py-2 pr-4 text-right">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($exchangeReturnItems as $rit)
+                                    <tr class="border-b bg-red-50/30">
+                                        <td class="py-2 pr-4">{{ $rit->product?->name ?? ('#'.$rit->product_id) }}</td>
+                                        <td class="py-2 pr-4 text-right">{{ -1 * (int) $rit->quantity }}</td>
+                                        <td class="py-2 pr-4 text-right">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, (float) $rit->unit_price, $currency) }}</td>
+                                        <td class="py-2 pr-4 text-right">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, -1 * (float) $rit->total, $currency) }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+
+                @if(!empty($returnItems) && $returnItems->count() > 0)
+                    <div class="text-sm font-semibold text-gray-800">Returned From This Invoice</div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full text-sm">
+                            <thead>
+                                <tr class="text-left text-gray-600 border-b">
+                                    <th class="py-2 pr-4">Item</th>
+                                    <th class="py-2 pr-4 text-right">Qty</th>
+                                    <th class="py-2 pr-4 text-right">Unit Price</th>
+                                    <th class="py-2 pr-4 text-right">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($returnItems as $rit)
+                                    <tr class="border-b bg-red-50/30">
+                                        <td class="py-2 pr-4">{{ $rit->product?->name ?? ('#'.$rit->product_id) }}</td>
+                                        <td class="py-2 pr-4 text-right">{{ -1 * (int) $rit->quantity }}</td>
+                                        <td class="py-2 pr-4 text-right">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, (float) $rit->unit_price, $currency) }}</td>
+                                        <td class="py-2 pr-4 text-right">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, -1 * (float) $rit->total, $currency) }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+            </div>
+        @endif
 
         <div class="grid md:grid-cols-2 gap-6 mt-6">
             <div class="space-y-2">
@@ -56,10 +122,9 @@
                     <div class="text-gray-800">{{ $sale->notes }}</div>
                 @endif
                 <div class="text-sm text-gray-500">Payment Method</div>
-                @php $method = $sale->payment_method; @endphp
                 <div>
                     <span class="px-2 py-1 text-xs font-semibold rounded
-                        @switch($method)
+                        @switch($sale->payment_method)
                             @case('cash') bg-gray-200 text-gray-800 @break
                             @case('card') bg-blue-100 text-blue-700 @break
                             @case('bank_transfer') bg-purple-100 text-purple-700 @break
@@ -67,7 +132,7 @@
                             @default bg-gray-100 text-gray-600
                         @endswitch
                     ">
-                        {{ str_replace('_',' ', ucfirst($method)) }}
+                        {{ str_replace('_',' ', ucfirst((string) ($sale->payment_method ?? ''))) }}
                     </span>
                 </div>
                 <div class="pt-3">
@@ -82,10 +147,25 @@
                 </div>
             </div>
             <div class="space-y-2 bg-gray-50 rounded-lg p-4">
-                    <div class="flex justify-between"><span>Subtotal</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->subtotal, $currency) }}</span></div>
-                    <div class="flex justify-between"><span>Discount</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->discount, $currency) }}</span></div>
+                    <div class="flex justify-between"><span>Subtotal</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, (float) ($displaySubtotal ?? $sale->subtotal), $currency) }}</span></div>
+                    @if(((float) ($cartDiscountAmount ?? 0)) > 0)
+                        <div class="flex justify-between"><span>Discount</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, (float) $cartDiscountAmount, $currency) }}</span></div>
+                    @endif
                     <div class="flex justify-between"><span>Tax</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->tax, $currency) }}</span></div>
                 <div class="flex justify-between font-semibold border-t pt-2"><span>Total</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->total_amount, $currency) }}</span></div>
+
+                @if($exchangeCredit > 0)
+                    @php
+                        $customerPay = max(0.0, $netAfterExchange);
+                        $refundDue = max(0.0, -1 * $netAfterExchange);
+                    @endphp
+                    <div class="flex justify-between text-red-700"><span>Return Credit</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, -1 * $exchangeCredit, $currency) }}</span></div>
+                    @if($refundDue > 0)
+                        <div class="flex justify-between font-semibold"><span>Refund Due</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $refundDue, $currency) }}</span></div>
+                    @elseif($customerPay > 0)
+                        <div class="flex justify-between font-semibold"><span>Customer Pay</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $customerPay, $currency) }}</span></div>
+                    @endif
+                @endif
                 <div class="flex justify-between text-green-700"><span>Paid</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->paid_amount, $currency) }}</span></div>
                 <div class="flex justify-between text-amber-700"><span>Due</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->due_amount, $currency) }}</span></div>
                 <div class="flex justify-between"><span>Status</span>
@@ -109,14 +189,18 @@
             @csrf
             <div class="space-y-2 max-h-64 overflow-y-auto">
                 @foreach($sale->items as $it)
+                    @php
+                        $alreadyReturned = (int) (($returnedQtyByItem[$it->id] ?? 0));
+                        $remainingQty = max(0, (int)$it->quantity - $alreadyReturned);
+                    @endphp
                     <div class="border rounded-lg p-3 flex items-center justify-between">
                         <div>
                             <div class="font-semibold text-sm">{{ $it->product->name ?? ('#'.$it->product_id) }}</div>
-                            <div class="text-xs text-gray-500">Sold: {{ $it->quantity }} @ {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $it->unit_price, $currency) }}</div>
+                            <div class="text-xs text-gray-500">Sold: {{ $it->quantity }}, Returned: {{ $alreadyReturned }}, Remaining: {{ $remainingQty }} @ {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $it->unit_price, $currency) }}</div>
                         </div>
                         <div class="flex items-center space-x-2">
                             <input type="hidden" name="items[{{ $it->id }}][sale_item_id]" value="{{ $it->id }}">
-                            <input type="number" name="items[{{ $it->id }}][quantity]" value="0" min="0" max="{{ $it->quantity }}" class="w-20 px-2 py-1 border rounded">
+                            <input type="number" name="items[{{ $it->id }}][quantity]" value="0" min="0" max="{{ $remainingQty }}" class="w-20 px-2 py-1 border rounded" {{ $remainingQty <= 0 ? 'disabled' : '' }}>
                         </div>
                     </div>
                 @endforeach

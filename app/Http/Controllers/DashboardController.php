@@ -44,8 +44,9 @@ class DashboardController extends Controller
             $salesQuery = $applyExclude(Sale::where('sale_type', 'sale'));
             $salesQuery = $useToday
                 ? $salesQuery->whereDate('sale_date', $todayStr)
-                : $salesQuery->whereBetween('sale_date', [$startDate, $endDate]);
-            $totalSales = $salesQuery->sum('total_amount') ?? 0;
+                : $salesQuery->whereDate('sale_date', '>=', $startDate)->whereDate('sale_date', '<=', $endDate);
+            $salesRevenue = $salesQuery->sum('total_amount') ?? 0;
+            $totalSales = $salesRevenue;
             // Secret POS: override total sales amount if configured
             $overrideTotal = (float) \App\Models\Setting::get('secretpos.override_total_sales_amount', 0);
             if ($overrideTotal > 0) {
@@ -56,28 +57,45 @@ class DashboardController extends Controller
             $purchaseQuery = Purchase::query();
             $purchaseQuery = $useToday
                 ? $purchaseQuery->whereDate('purchase_date', $todayStr)
-                : $purchaseQuery->whereBetween('purchase_date', [$startDate, $endDate]);
+                : $purchaseQuery->whereDate('purchase_date', '>=', $startDate)->whereDate('purchase_date', '<=', $endDate);
             $totalPurchase = $purchaseQuery->sum('total_amount') ?? 0;
 
             // Total Expenses
             $expenseQuery = Expense::query();
             $expenseQuery = $useToday
                 ? $expenseQuery->whereDate('expense_date', $todayStr)
-                : $expenseQuery->whereBetween('expense_date', [$startDate, $endDate]);
+                : $expenseQuery->whereDate('expense_date', '>=', $startDate)->whereDate('expense_date', '<=', $endDate);
             $totalExpenses = $expenseQuery->sum('amount') ?? 0;
 
-            // Sales Profit = Σ(line sale total - line cost)
-            $salesProfitQuery = DB::table('sale_items')
+            // Sales Profit = Sales Revenue - COGS
+            // Important: use sales.total_amount (after discount) for revenue,
+            // not sale_items.total (pre-discount), otherwise dashboard profit is overstated.
+            $returnAgg = DB::table('sale_return_items')
+                ->select(
+                    'sale_item_id',
+                    DB::raw('SUM(quantity) as returned_qty'),
+                    DB::raw('SUM(total) as returned_total')
+                )
+                ->groupBy('sale_item_id');
+
+            $cogsQuery = DB::table('sale_items')
                 ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
                 ->join('products', 'sale_items.product_id', '=', 'products.id')
+                ->leftJoinSub($returnAgg, 'r', function ($join) {
+                    $join->on('sale_items.id', '=', 'r.sale_item_id');
+                })
                 ->where('sales.sale_type', 'sale');
-            $salesProfitQuery = $applyExclude($salesProfitQuery, 'sales.total_amount');
-            $salesProfitQuery = $useToday
-                ? $salesProfitQuery->whereDate('sales.sale_date', $todayStr)
-                : $salesProfitQuery->whereBetween('sales.sale_date', [$startDate, $endDate]);
-            $salesProfit = (float) ($salesProfitQuery
-                ->selectRaw('COALESCE(SUM(sale_items.total - (COALESCE(products.cost_price, 0) * sale_items.quantity)), 0) as sales_profit')
-                ->value('sales_profit') ?? 0);
+
+            $cogsQuery = $applyExclude($cogsQuery, 'sales.total_amount');
+            $cogsQuery = $useToday
+                ? $cogsQuery->whereDate('sales.sale_date', $todayStr)
+                : $cogsQuery->whereDate('sales.sale_date', '>=', $startDate)->whereDate('sales.sale_date', '<=', $endDate);
+
+            $cogs = (float) ($cogsQuery
+                ->selectRaw('COALESCE(SUM(COALESCE(products.cost_price, 0) * (CASE WHEN (sale_items.quantity - COALESCE(r.returned_qty, 0)) > 0 THEN (sale_items.quantity - COALESCE(r.returned_qty, 0)) ELSE 0 END)), 0) as cogs')
+                ->value('cogs') ?? 0);
+
+            $salesProfit = (float) $salesRevenue - $cogs;
 
             // Net Profit (Sales Profit - Expenses)
             $netProfit = $salesProfit - $totalExpenses;
@@ -97,32 +115,38 @@ class DashboardController extends Controller
 
             // Previous Period Sales
             $previousSalesQuery = $applyExclude(Sale::where('sale_type', 'sale'));
-            $previousSalesQuery = $previousSalesQuery->whereBetween('sale_date', [$previousStartDate, $previousEndDate]);
+            $previousSalesQuery = $previousSalesQuery->whereDate('sale_date', '>=', $previousStartDate)->whereDate('sale_date', '<=', $previousEndDate);
             $previousSales = $previousSalesQuery->sum('total_amount') ?? 0;
             $salesChangePercent = $calculatePercentageChange($totalSales, $previousSales);
 
             // Previous Period Purchase
             $previousPurchaseQuery = Purchase::query();
-            $previousPurchaseQuery = $previousPurchaseQuery->whereBetween('purchase_date', [$previousStartDate, $previousEndDate]);
+            $previousPurchaseQuery = $previousPurchaseQuery->whereDate('purchase_date', '>=', $previousStartDate)->whereDate('purchase_date', '<=', $previousEndDate);
             $previousPurchase = $previousPurchaseQuery->sum('total_amount') ?? 0;
             $purchaseChangePercent = $calculatePercentageChange($totalPurchase, $previousPurchase);
 
             // Previous Period Expenses
             $previousExpenseQuery = Expense::query();
-            $previousExpenseQuery = $previousExpenseQuery->whereBetween('expense_date', [$previousStartDate, $previousEndDate]);
+            $previousExpenseQuery = $previousExpenseQuery->whereDate('expense_date', '>=', $previousStartDate)->whereDate('expense_date', '<=', $previousEndDate);
             $previousExpenses = $previousExpenseQuery->sum('amount') ?? 0;
             $expenseChangePercent = $calculatePercentageChange($totalExpenses, $previousExpenses);
 
-            // Previous Period Sales Profit
-            $previousSalesProfitQuery = DB::table('sale_items')
+            // Previous Period Sales Profit = Previous Sales Revenue - Previous COGS
+            $previousCogsQuery = DB::table('sale_items')
                 ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
                 ->join('products', 'sale_items.product_id', '=', 'products.id')
+                ->leftJoinSub($returnAgg, 'r', function ($join) {
+                    $join->on('sale_items.id', '=', 'r.sale_item_id');
+                })
                 ->where('sales.sale_type', 'sale');
-            $previousSalesProfitQuery = $applyExclude($previousSalesProfitQuery, 'sales.total_amount');
-            $previousSalesProfit = (float) ($previousSalesProfitQuery
-                ->whereBetween('sales.sale_date', [$previousStartDate, $previousEndDate])
-                ->selectRaw('COALESCE(SUM(sale_items.total - (COALESCE(products.cost_price, 0) * sale_items.quantity)), 0) as sales_profit')
-                ->value('sales_profit') ?? 0);
+
+            $previousCogsQuery = $applyExclude($previousCogsQuery, 'sales.total_amount');
+            $previousCogs = (float) ($previousCogsQuery
+                ->whereDate('sales.sale_date', '>=', $previousStartDate)->whereDate('sales.sale_date', '<=', $previousEndDate)
+                ->selectRaw('COALESCE(SUM(COALESCE(products.cost_price, 0) * (CASE WHEN (sale_items.quantity - COALESCE(r.returned_qty, 0)) > 0 THEN (sale_items.quantity - COALESCE(r.returned_qty, 0)) ELSE 0 END)), 0) as cogs')
+                ->value('cogs') ?? 0);
+
+            $previousSalesProfit = (float) $previousSales - $previousCogs;
 
             // Previous Period Net Profit (Sales Profit - Expenses)
             $previousNetProfit = $previousSalesProfit - $previousExpenses;
@@ -132,14 +156,14 @@ class DashboardController extends Controller
             $dueQuery = $applyExclude(Sale::where('payment_status', '!=', 'paid'));
             $dueQuery = $useToday
                 ? $dueQuery->whereDate('sale_date', $todayStr)
-                : $dueQuery->whereBetween('sale_date', [$startDate, $endDate]);
+                : $dueQuery->whereDate('sale_date', '>=', $startDate)->whereDate('sale_date', '<=', $endDate);
             $invoiceDue = $dueQuery->sum('due_amount') ?? 0;
 
             // Due Invoice Count within selected period
             $dueCountQuery = $applyExclude(Sale::where('payment_status', '!=', 'paid'));
             $dueCountQuery = $useToday
                 ? $dueCountQuery->whereDate('sale_date', $todayStr)
-                : $dueCountQuery->whereBetween('sale_date', [$startDate, $endDate]);
+                : $dueCountQuery->whereDate('sale_date', '>=', $startDate)->whereDate('sale_date', '<=', $endDate);
             $dueInvoiceCount = $dueCountQuery->count();
 
             // Total Products
@@ -154,7 +178,7 @@ class DashboardController extends Controller
             $recentQuery = Sale::with('customer')->where('sale_type', 'sale');
             $recentQuery = $useToday
                 ? $recentQuery->whereDate('sale_date', $todayStr)
-                : $recentQuery->whereBetween('sale_date', [$startDate, $endDate]);
+                : $recentQuery->whereDate('sale_date', '>=', $startDate)->whereDate('sale_date', '<=', $endDate);
             $recentSales = $recentQuery->orderBy('created_at', 'desc')->limit(5)->get();
 
             // Low Stock Products (top 5)
@@ -173,14 +197,17 @@ class DashboardController extends Controller
                 $topProducts = DB::table('sale_items')
                     ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
                     ->join('products', 'sale_items.product_id', '=', 'products.id')
+                    ->leftJoinSub($returnAgg, 'r', function ($join) {
+                        $join->on('sale_items.id', '=', 'r.sale_item_id');
+                    })
                     ->where('sales.sale_date', '>=', Carbon::now()->subDays(30))
                     ->where('sales.sale_type', 'sale')
                     ->select(
                         'products.id',
                         'products.name',
                         'products.sku',
-                        DB::raw('SUM(sale_items.quantity) as sold_quantity'),
-                        DB::raw('SUM(sale_items.total) as total_sales')
+                        DB::raw('SUM(CASE WHEN (sale_items.quantity - COALESCE(r.returned_qty, 0)) > 0 THEN (sale_items.quantity - COALESCE(r.returned_qty, 0)) ELSE 0 END) as sold_quantity'),
+                        DB::raw('SUM(CASE WHEN (sale_items.total - COALESCE(r.returned_total, 0)) > 0 THEN (sale_items.total - COALESCE(r.returned_total, 0)) ELSE 0 END) as total_sales')
                     )
                     ->groupBy('products.id', 'products.name', 'products.sku')
                     ->orderBy('sold_quantity', 'desc')

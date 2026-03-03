@@ -60,7 +60,7 @@
         </form>
     </div>
 
-    <div class="grid md:grid-cols-3 gap-4">
+    <div class="grid md:grid-cols-6 gap-4">
         <div class="bg-white p-4 rounded shadow">
             <p class="text-xs text-gray-500">Total Products</p>
             <p class="text-xl font-semibold">{{ $summary['total_products'] }}</p>
@@ -73,6 +73,18 @@
             <p class="text-xs text-gray-500">Total Units In Stock</p>
             <p class="text-xl font-semibold">{{ $summary['total_stock'] }}</p>
         </div>
+        <div class="bg-white p-4 rounded shadow">
+            <p class="text-xs text-gray-500">Total Cost Price</p>
+            <p class="text-xl font-semibold">{{ number_format($summary['total_cost_value'] ?? 0, 2) }}</p>
+        </div>
+        <div class="bg-white p-4 rounded shadow">
+            <p class="text-xs text-gray-500">Total Selling Price</p>
+            <p class="text-xl font-semibold">{{ number_format($summary['total_selling_value'] ?? 0, 2) }}</p>
+        </div>
+        <div class="bg-white p-4 rounded shadow">
+            <p class="text-xs text-gray-500">After Sale Profit (Selling - Cost)</p>
+            <p class="text-xl font-semibold {{ ($summary['expected_profit'] ?? 0) >= 0 ? 'text-green-600' : 'text-red-600' }}">{{ number_format($summary['expected_profit'] ?? 0, 2) }}</p>
+        </div>
     </div>
 
     <div class="bg-white rounded shadow overflow-hidden">
@@ -82,6 +94,8 @@
                     <th class="px-3 py-2">Product</th>
                     <th class="px-3 py-2">Category</th>
                     <th class="px-3 py-2">Brand</th>
+                    <th class="px-3 py-2">Cost Price</th>
+                    <th class="px-3 py-2">Selling Price</th>
                     <th class="px-3 py-2">Purchased Qty</th>
                     <th class="px-3 py-2">Sold Qty</th>
                     <th class="px-3 py-2">Current Stock</th>
@@ -94,6 +108,8 @@
                         <td class="px-3 py-2 font-medium">{{ $row['product']->name }}</td>
                         <td class="px-3 py-2">{{ $row['product']->categories->pluck('name')->join(', ') ?: ($row['product']->category->name ?? '-') }}</td>
                         <td class="px-3 py-2">{{ $row['product']->brands->pluck('name')->join(', ') ?: ($row['product']->brand->name ?? '-') }}</td>
+                        <td class="px-3 py-2">{{ number_format((float) ($row['product']->cost_price ?? 0), 2) }}</td>
+                        <td class="px-3 py-2">{{ number_format((float) ($row['product']->selling_price ?? 0), 2) }}</td>
                         <td class="px-3 py-2">{{ $row['purchased'] }}</td>
                         <td class="px-3 py-2">{{ $row['sold'] }}</td>
                         <td class="px-3 py-2">{{ $row['current_stock'] }}</td>
@@ -102,7 +118,7 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="7" class="px-3 py-6 text-center text-gray-500">No product data.</td></tr>
+                    <tr><td colspan="9" class="px-3 py-6 text-center text-gray-500">No product data.</td></tr>
                 @endforelse
             </tbody>
         </table>

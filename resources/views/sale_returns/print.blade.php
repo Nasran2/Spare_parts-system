@@ -1,157 +1,103 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Return Bill #{{ $return->id }}</title>
     <style>
-        body {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 12px;
-            margin: 0;
-            padding: 20px;
-            background-color: #fff;
+        * { box-sizing: border-box; }
+        @page { margin: 0; }
+        body { font-family: Arial, sans-serif; margin:0; padding:16px; background:#fff; color:#000; font-size:12px; }
+        body.paper-80mm, body.paper-58mm { padding:8px; }
+        .receipt {
+            width: auto;
+            max-width: 420px;
+            margin:0 auto;
+            border: 1px solid #000;
+            padding: 16px;
         }
-        .container {
-            max-width: 300px;
-            margin: 0 auto;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 10px;
-            border-bottom: 1px dashed #000;
-            padding-bottom: 10px;
-        }
-        .shop-name {
-            font-size: 16px;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-        .bill-title {
-            font-size: 14px;
-            font-weight: bold;
-            margin: 10px 0;
-            text-transform: uppercase;
-        }
-        .info-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 3px;
-        }
-        .items-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 10px 0;
-            border-top: 1px dashed #000;
-            border-bottom: 1px dashed #000;
-        }
-        .items-table th {
-            text-align: left;
-            padding: 5px 0;
-            border-bottom: 1px dashed #000;
-        }
-        .items-table td {
-            padding: 5px 0;
-        }
-        .text-right {
-            text-align: right;
-        }
-        .total-section {
-            margin-top: 10px;
-            border-top: 1px dashed #000;
-            padding-top: 5px;
-        }
-        .footer {
-            text-align: center;
-            margin-top: 20px;
-            font-size: 10px;
-        }
-        .watermark {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) rotate(-45deg);
-            font-size: 40px;
-            font-weight: bold;
-            color: rgba(255, 0, 0, 0.2);
-            border: 5px solid rgba(255, 0, 0, 0.2);
-            padding: 10px 20px;
-            z-index: -1;
-            pointer-events: none;
-            text-transform: uppercase;
-        }
-        @media print {
-            body { margin: 0; padding: 0; }
-            .no-print { display: none; }
-            .watermark {
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
-            }
-        }
+        body.paper-80mm .receipt { width: 80mm; max-width: 300px; border: 0; padding: 8px; }
+        body.paper-58mm .receipt { width: 58mm; max-width: 220px; border: 0; padding: 8px; }
+        h1 { font-size: 18px; margin:0 0 4px; text-align:center; }
+        body.paper-80mm h1, body.paper-58mm h1 { font-size:16px; }
+        .title { text-align:center; font-weight:700; font-size:13px; margin: 6px 0 10px; text-transform: uppercase; }
+        .shop { text-align:center; font-size:14px; line-height:1.4; margin-bottom:12px; }
+        table { width:100%; border-collapse:collapse; margin-top:8px; }
+        th, td { font-size:14px; padding:4px; border-bottom:1px solid #000; }
+        th { text-align:left; }
+        .totals { margin-top:10px; }
+        .totals-row { display:flex; justify-content:space-between; font-size:14px; margin-bottom:4px; }
+        .grand { border-top:1px dashed #000; padding-top:6px; font-size:16px; font-weight:700; }
+        .footer { margin-top:14px; font-size:14px; text-align:center; border-top:1px dashed #000; padding-top:8px; }
+        .terms { text-align:left; margin-bottom:6px; white-space:pre-wrap; }
+
+        .paper-feed { height: 0; }
+        body.paper-80mm .paper-feed { height: 24mm; }
+        body.paper-58mm .paper-feed { height: 22mm; }
+        @media print { body { padding:0; } }
     </style>
 </head>
-<body onload="window.print()">
-    <div class="container" style="position: relative;">
-        <div class="watermark">RETURNED</div>
-        <div class="header">
-            <div class="shop-name">{{ $shopName }}</div>
-            <div>{{ $shopAddress }}</div>
-            <div>Tel: {{ $shopPhone }}</div>
+<body class="{{ in_array($paperSize ?? 'a4', ['80mm','58mm'], true) ? 'paper-'.($paperSize ?? 'a4') : 'paper-a4' }}">
+    <div class="receipt">
+        @if(($invoiceShowLogo ?? true) && !empty($logoSrc))
+            <div style="text-align:center; margin-bottom:6px;">
+                <img src="{{ $logoSrc }}" alt="Logo" style="max-height:60px; max-width:180px; object-fit:contain;" />
+            </div>
+        @endif
+
+        <h1>{{ $shop['name'] }}</h1>
+        <div class="shop">
+            {{ $shop['address'] }}<br>
+            @if($shop['phone']) Tel: {{ $shop['phone'] }}<br>@endif
+            @if($shop['email']) Email: {{ $shop['email'] }}<br>@endif
         </div>
 
-        <div class="header" style="border: none; padding-bottom: 0;">
-            <div class="bill-title">CREDIT NOTE / RETURN BILL</div>
+        <div class="title">Credit Note / Return Bill</div>
+
+        <div style="font-size:12px; margin-bottom:8px;">
+            <div style="display:flex; justify-content:space-between;"><span>Return #</span><span>{{ $return->id }}</span></div>
+            <div style="display:flex; justify-content:space-between;"><span>Date</span><span>{{ $return->return_date?->timezone(config('app.timezone'))->format('Y-m-d H:i') }}</span></div>
+            <div style="display:flex; justify-content:space-between;"><span>Orig. Invoice</span><span>{{ $return->sale?->sale_no }}</span></div>
+            <div style="display:flex; justify-content:space-between;"><span>Cashier</span><span>{{ $return->user?->name }}</span></div>
+            <div style="display:flex; justify-content:space-between;"><span>Customer</span><span>{{ $return->sale?->customer?->name ?? 'Walk-in Customer' }}</span></div>
         </div>
 
-        <div class="info-row">
-            <span>Return ID:</span>
-            <span>#{{ $return->id }}</span>
-        </div>
-        <div class="info-row">
-            <span>Date:</span>
-            <span>{{ $return->return_date->format('d/m/Y H:i') }}</span>
-        </div>
-        <div class="info-row">
-            <span>Orig. Sale:</span>
-            <span>{{ $return->sale->sale_no }}</span>
-        </div>
-        <div class="info-row">
-            <span>Customer:</span>
-            <span>{{ $return->sale->customer->name ?? 'Walk-in' }}</span>
-        </div>
-
-        <table class="items-table">
+        <table>
             <thead>
                 <tr>
-                    <th style="width: 40%">Item</th>
-                    <th style="width: 20%" class="text-right">Qty</th>
-                    <th style="width: 20%" class="text-right">Price</th>
-                    <th style="width: 20%" class="text-right">Total</th>
+                    <th>Item</th>
+                    <th style="text-align:right;">Qty</th>
+                    <th style="text-align:right;">Price</th>
+                    <th style="text-align:right;">Total</th>
                 </tr>
             </thead>
             <tbody>
-                @foreach($return->items as $item)
-                <tr>
-                    <td>{{ $item->product->name }}</td>
-                    <td class="text-right">{{ $item->quantity }}</td>
-                    <td class="text-right">{{ number_format($item->unit_price, 2) }}</td>
-                    <td class="text-right">{{ number_format($item->total, 2) }}</td>
-                </tr>
+                @foreach($return->items as $it)
+                    <tr>
+                        <td>{{ $it->product?->name ?? ('#'.$it->product_id) }}</td>
+                        <td style="text-align:right;">{{ $it->quantity }}</td>
+                        <td style="text-align:right;">{{ \App\Support\SecretPos::currencyMaskForSale($return->total_refund, $it->unit_price, $currency) }}</td>
+                        <td style="text-align:right;">{{ \App\Support\SecretPos::currencyMaskForSale($return->total_refund, $it->total, $currency) }}</td>
+                    </tr>
                 @endforeach
             </tbody>
         </table>
 
-        <div class="total-section">
-            <div class="info-row" style="font-weight: bold; font-size: 14px;">
-                <span>TOTAL REFUND:</span>
-                <span>{{ number_format($return->total_refund, 2) }}</span>
-            </div>
+        <div class="totals">
+            <div class="totals-row grand"><span>Total Refund</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($return->total_refund, $return->total_refund, $currency) }}</span></div>
         </div>
 
         <div class="footer">
-            <p>Thank you for your business!</p>
-            <p>Software by VehiclePOS</p>
+            @if(!empty($invoiceTerms))
+                <div class="terms">
+                    <strong>Terms &amp; Conditions:</strong>
+                    <div>{{ $invoiceTerms }}</div>
+                </div>
+            @endif
+            {{ $invoiceFooterText ?? 'Thank you for your business!' }}
         </div>
+
+        <div class="paper-feed"></div>
     </div>
+    <script>window.print();</script>
 </body>
 </html>

@@ -19,7 +19,7 @@
 
     <!-- Filters -->
     <form method="GET" class="bg-white rounded-xl shadow-md p-4 space-y-4">
-        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-6 gap-4">
             <div>
                 <label class="text-xs font-semibold text-gray-600">Date From</label>
                 <input type="date" name="date_from" value="{{ $filters['date_from'] ?? '' }}" class="mt-1 w-full px-3 py-2 border rounded-lg">
@@ -28,6 +28,7 @@
                 <label class="text-xs font-semibold text-gray-600">Date To</label>
                 <input type="date" name="date_to" value="{{ $filters['date_to'] ?? '' }}" class="mt-1 w-full px-3 py-2 border rounded-lg">
             </div>
+            @include('partials.quick-date-filter', ['fromName' => 'date_from', 'toName' => 'date_to'])
             <div>
                 <label class="text-xs font-semibold text-gray-600">Customer</label>
                 <select name="customer_id" class="mt-1 w-full px-3 py-2 border rounded-lg">
@@ -92,7 +93,27 @@
                         </td>
                         <td class="px-6 py-4 text-right">
                             <div class="text-sm">
-                                <div class="font-semibold text-gray-800">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->total_amount, $currency) }}</div>
+                                @php
+                                    $exchangeCredit = (float) ($sale->exchange_return_amount ?? 0);
+                                    $netPayable = round(((float) $sale->total_amount) - $exchangeCredit, 2);
+                                    $refundDue = max(0.0, -1 * $netPayable);
+                                @endphp
+
+                                @if($exchangeCredit > 0)
+                                    <div class="font-semibold text-gray-800">
+                                        @if($refundDue > 0)
+                                            Refund: {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $refundDue, $currency) }}
+                                        @else
+                                            Net: {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, max(0, $netPayable), $currency) }}
+                                        @endif
+                                    </div>
+                                    <div class="mt-0.5 text-[11px] text-gray-500">
+                                        Total {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, (float) $sale->total_amount, $currency) }}
+                                        • Return {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, -1 * $exchangeCredit, $currency) }}
+                                    </div>
+                                @else
+                                    <div class="font-semibold text-gray-800">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->total_amount, $currency) }}</div>
+                                @endif
                                 <div class="mt-0.5 text-xs">
                                     <span class="text-green-700">Paid: {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->paid_amount, $currency) }}</span>
                                     <span class="ml-2 {{ ($sale->due_amount ?? 0) > 0 ? 'text-red-700 font-semibold' : 'text-gray-500' }}">Balance: {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->due_amount, $currency) }}</span>
@@ -100,33 +121,21 @@
                             </div>
                         </td>
                         <td class="px-6 py-4 text-center">
-                            @php $status = $sale->payment_status; @endphp
                             <span class="px-3 py-1 rounded-full text-xs font-semibold
-                                {{ $status === 'paid' ? 'bg-green-100 text-green-700' : ($status === 'partial' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700') }}">
-                                {{ ucfirst($status) }}
+                                {{ ($sale->payment_status === 'paid') ? 'bg-green-100 text-green-700' : (($sale->payment_status === 'partial') ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700') }}">
+                                {{ ucfirst((string) ($sale->payment_status ?? 'unpaid')) }}
                             </span>
                         </td>
                         <td class="px-6 py-4 text-center">
-                            @php $method = $sale->payment_method; @endphp
-                            <span class="px-2 py-1 text-xs font-semibold rounded
-                                @switch($method)
-                                    @case('cash') bg-gray-200 text-gray-800 @break
-                                    @case('card') bg-blue-100 text-blue-700 @break
-                                    @case('bank_transfer') bg-purple-100 text-purple-700 @break
-                                    @case('mobile_payment') bg-teal-100 text-teal-700 @break
-                                    @default bg-gray-100 text-gray-600
-                                @endswitch
-                            ">
-                                {{ str_replace('_',' ', ucfirst($method)) }}
+                            <span class="px-2 py-1 text-xs font-semibold rounded {{ match ((string) ($sale->payment_method ?? 'cash')) { 'cash' => 'bg-gray-200 text-gray-800', 'card' => 'bg-blue-100 text-blue-700', 'bank_transfer' => 'bg-purple-100 text-purple-700', 'mobile_payment' => 'bg-teal-100 text-teal-700', default => 'bg-gray-100 text-gray-600', } }}">
+                                {{ str_replace('_', ' ', ucfirst((string) ($sale->payment_method ?? 'cash'))) }}
                             </span>
                         </td>
                         <td class="px-6 py-4 text-center">
-                            @php 
-                                $type = $sale->sale_type ?? 'sale'; 
-                                $hasReturns = $sale->returns->count() > 0;
-                            @endphp
-                            <span title="{{ ucfirst($type) }}" class="inline-flex h-3 w-3 rounded-full align-middle {{ $type === 'sale' ? 'bg-blue-500' : 'bg-amber-500' }}"></span>
-                            @if($hasReturns)
+                            <span title="{{ ucfirst((string) ($sale->sale_type ?? 'sale')) }}" class="inline-flex h-3 w-3 rounded-full align-middle {{ (($sale->sale_type ?? 'sale') === 'sale') ? 'bg-blue-500' : 'bg-amber-500' }}"></span>
+                            @if(((float) ($sale->exchange_return_amount ?? 0)) > 0)
+                                <span class="ml-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">EXCHANGE</span>
+                            @elseif($sale->returns->count() > 0)
                                 <span class="ml-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">RETURNED</span>
                             @endif
                         </td>

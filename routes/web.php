@@ -117,6 +117,7 @@ Route::middleware('auth')->group(function () {
     
     // POS
     Route::get('pos', [POSController::class, 'index'])->name('pos.index');
+    Route::get('pos/recent-sales', [POSController::class, 'recentSales'])->name('pos.recent-sales');
     // POS AJAX Cart Endpoints
     Route::post('pos/cart/add', [POSController::class, 'addToCart'])->name('pos.cart.add');
     Route::post('pos/cart/add-return', [POSController::class, 'addReturnItem'])->name('pos.cart.add-return');

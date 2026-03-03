@@ -11,6 +11,12 @@
             <form method="GET" action="{{ route('reports.customer-due') }}" class="flex items-center gap-2">
                 <input type="date" name="from" value="{{ $from }}" class="px-3 py-2 border rounded-lg">
                 <input type="date" name="to" value="{{ $to }}" class="px-3 py-2 border rounded-lg">
+                @include('partials.quick-date-filter', [
+                    'fromName' => 'from',
+                    'toName' => 'to',
+                    'inline' => true,
+                    'selectClass' => 'px-3 py-2 border rounded-lg',
+                ])
                 <button class="px-3 py-2 bg-gray-100 rounded-lg">Filter</button>
                 <a href="{{ route('reports.customer-due') }}" class="px-3 py-2 text-sm text-gray-600">Reset</a>
                 <a href="{{ route('reports.customer-due.csv', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-emerald-600 text-white rounded-lg"><i class="fas fa-file-excel mr-1"></i>Excel</a>

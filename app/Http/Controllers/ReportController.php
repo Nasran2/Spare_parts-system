@@ -16,6 +16,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use App\Models\Setting;
 
 class ReportController extends Controller
@@ -274,10 +275,17 @@ class ReportController extends Controller
         $products = $this->stockBaseQuery($selectedCategoryId, $selectedBrandId, $lowStockOnly, $search)->get();
         $items = $this->mapStockItems($products);
 
+        $totalCostValue = (float) $products->sum(fn($p) => (float) ($p->stock_quantity ?? 0) * (float) ($p->cost_price ?? 0));
+        $totalSellingValue = (float) $products->sum(fn($p) => (float) ($p->stock_quantity ?? 0) * (float) ($p->selling_price ?? 0));
+        $expectedProfit = $totalSellingValue - $totalCostValue;
+
         $summary = [
             'total_products' => $products->count(),
             'low_stock' => $items->where('low_stock', true)->count(),
             'total_stock' => $products->sum('stock_quantity'),
+            'total_cost_value' => $totalCostValue,
+            'total_selling_value' => $totalSellingValue,
+            'expected_profit' => $expectedProfit,
         ];
 
         $categories = \App\Models\Category::orderBy('name')->get(['id', 'name']);
@@ -310,16 +318,27 @@ class ReportController extends Controller
             return [
                 'name' => $p->name,
                 'categories' => $p->categories->pluck('name')->join(', '),
+                'brand' => $p->brands->pluck('name')->join(', ') ?: ($p->brand?->name ?? '-'),
+                'cost_price' => (float) ($p->cost_price ?? 0),
+                'selling_price' => (float) ($p->selling_price ?? 0),
                 'purchased' => $purchasedQty,
                 'sold' => $soldQty,
                 'current_stock' => $p->stock_quantity,
                 'low_stock' => $isLowStock,
             ];
         });
+
+        $totalCostValue = (float) $products->sum(fn($p) => (float) ($p->stock_quantity ?? 0) * (float) ($p->cost_price ?? 0));
+        $totalSellingValue = (float) $products->sum(fn($p) => (float) ($p->stock_quantity ?? 0) * (float) ($p->selling_price ?? 0));
+        $expectedProfit = $totalSellingValue - $totalCostValue;
+
         $summary = [
             'total_products' => $products->count(),
             'low_stock' => $items->where('low_stock', true)->count(),
             'total_stock' => $products->sum('stock_quantity'),
+            'total_cost_value' => $totalCostValue,
+            'total_selling_value' => $totalSellingValue,
+            'expected_profit' => $expectedProfit,
         ];
         $pdf = Pdf::loadView('reports.pdf.stock', compact('items','summary'))->setPaper('a4', 'portrait');
         return $pdf->download('stock-report.pdf');
@@ -333,12 +352,14 @@ class ReportController extends Controller
         $search = $request->filled('search') ? trim((string) $request->input('search')) : null;
 
         $products = $this->stockBaseQuery($selectedCategoryId, $selectedBrandId, $lowStockOnly, $search)->get();
-        $rows = [['Product','Category','Purchased Qty','Sold Qty','Current Stock','Status']];
+        $rows = [['Product','Category','Cost Price','Selling Price','Purchased Qty','Sold Qty','Current Stock','Status']];
         foreach ($products as $p) {
             $isLowStock = (float) ($p->stock_quantity ?? 0) <= (float) ($p->alert_quantity ?? 0);
             $rows[] = [
                 $p->name,
                 $p->categories->pluck('name')->join(', '),
+                number_format((float) ($p->cost_price ?? 0), 2),
+                number_format((float) ($p->selling_price ?? 0), 2),
                 $p->purchaseItems->sum('quantity'),
                 $p->saleItems->sum('quantity'),
                 $p->stock_quantity,
@@ -413,7 +434,12 @@ class ReportController extends Controller
 
         $saleItemIds = $visible->pluck('id');
         $saleItems = SaleItem::with('product')->whereIn('sale_id', $saleItemIds)->get();
-        $cogs = $saleItems->sum(fn($i) => $i->quantity * ($i->product?->cost_price ?? 0));
+        $returnedAgg = $this->returnedAggForSaleItemIds($saleItems->pluck('id')->all());
+        $returnedQty = $returnedAgg['qty'];
+        $cogs = $saleItems->sum(function ($i) use ($returnedQty) {
+            $netQty = max(0, (int) $i->quantity - (int) ($returnedQty[$i->id] ?? 0));
+            return $netQty * (float) ($i->product?->cost_price ?? 0);
+        });
         $grossProfit = $salesRevenue - $cogs;
 
         $expenses = Expense::when($from, fn($q) => $q->whereDate('expense_date', '>=', $from))
@@ -440,7 +466,12 @@ class ReportController extends Controller
         $visible = $sales->reject(fn($s) => \App\Support\SecretPos::isHidden((float) $s->total_amount));
         $salesRevenue = $visible->sum('total_amount');
         $saleItems = SaleItem::with('product')->whereIn('sale_id', $visible->pluck('id'))->get();
-        $cogs = $saleItems->sum(fn($i) => $i->quantity * ($i->product?->cost_price ?? 0));
+        $returnedAgg = $this->returnedAggForSaleItemIds($saleItems->pluck('id')->all());
+        $returnedQty = $returnedAgg['qty'];
+        $cogs = $saleItems->sum(function ($i) use ($returnedQty) {
+            $netQty = max(0, (int) $i->quantity - (int) ($returnedQty[$i->id] ?? 0));
+            return $netQty * (float) ($i->product?->cost_price ?? 0);
+        });
         $grossProfit = $salesRevenue - $cogs;
         $expenses = Expense::when($from, fn($q) => $q->whereDate('expense_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('expense_date', '<=', $to))->get();
@@ -459,7 +490,12 @@ class ReportController extends Controller
         $visible = $sales->reject(fn($s) => \App\Support\SecretPos::isHidden((float) $s->total_amount));
         $salesRevenue = $visible->sum('total_amount');
         $saleItems = SaleItem::with('product')->whereIn('sale_id', $visible->pluck('id'))->get();
-        $cogs = $saleItems->sum(fn($i) => $i->quantity * ($i->product?->cost_price ?? 0));
+        $returnedAgg = $this->returnedAggForSaleItemIds($saleItems->pluck('id')->all());
+        $returnedQty = $returnedAgg['qty'];
+        $cogs = $saleItems->sum(function ($i) use ($returnedQty) {
+            $netQty = max(0, (int) $i->quantity - (int) ($returnedQty[$i->id] ?? 0));
+            return $netQty * (float) ($i->product?->cost_price ?? 0);
+        });
         $grossProfit = $salesRevenue - $cogs;
         $expenses = Expense::when($from, fn($q) => $q->whereDate('expense_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('expense_date', '<=', $to))->get();
@@ -495,16 +531,51 @@ class ReportController extends Controller
             });
 
         $items = $itemsQuery->get();
-        $top = $items->groupBy('product_id')->map(function ($group) {
+        $returnedAgg = $this->returnedAggForSaleItemIds($items->pluck('id')->all());
+        $returnedQty = $returnedAgg['qty'];
+        $returnedTotal = $returnedAgg['total'];
+        $top = $items->groupBy('product_id')->map(function ($group) use ($returnedQty, $returnedTotal) {
             $product = $group->first()->product;
+            $netQty = $group->sum(function ($i) use ($returnedQty) {
+                return max(0, (int) $i->quantity - (int) ($returnedQty[$i->id] ?? 0));
+            });
+            $netRevenue = $group->sum(function ($i) use ($returnedTotal) {
+                return max(0.0, (float) $i->total - (float) ($returnedTotal[$i->id] ?? 0));
+            });
             return [
                 'product' => $product,
-                'quantity' => $group->sum('quantity'),
-                'revenue' => $group->sum(fn($i) => $i->quantity * $i->unit_price),
+                'quantity' => $netQty,
+                'revenue' => $netRevenue,
             ];
         })->sortByDesc('quantity')->values()->take(15);
 
         return view('reports.trending', compact('top', 'from', 'to'));
+    }
+
+    protected function returnedAggForSaleItemIds(array $saleItemIds): array
+    {
+        $saleItemIds = array_values(array_filter($saleItemIds, fn ($v) => !is_null($v)));
+        if (empty($saleItemIds)) {
+            return ['qty' => [], 'total' => []];
+        }
+
+        $rows = DB::table('sale_return_items')
+            ->select(
+                'sale_item_id',
+                DB::raw('SUM(quantity) as qty'),
+                DB::raw('SUM(total) as total')
+            )
+            ->whereIn('sale_item_id', $saleItemIds)
+            ->groupBy('sale_item_id')
+            ->get();
+
+        $qty = [];
+        $total = [];
+        foreach ($rows as $r) {
+            $qty[(int) $r->sale_item_id] = (int) $r->qty;
+            $total[(int) $r->sale_item_id] = (float) $r->total;
+        }
+        return ['qty' => $qty, 'total' => $total];
     }
 
     /**

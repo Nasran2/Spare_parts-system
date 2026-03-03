@@ -170,7 +170,7 @@
                     <div class="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
                         <div class="text-slate-600">Items: <span id="items-count" class="font-semibold">0</span></div>
                         <div class="text-slate-600">Subtotal: <span id="subtotal" class="font-semibold">{{ $currency }} 0.00</span></div>
-                        <div class="text-slate-600">Discount: <span id="discount-amount" class="font-semibold text-red-600">{{ $currency }} 0.00</span></div>
+                        <div class="text-slate-600 js-cart-discount-row hidden">Discount: <span id="discount-amount" class="font-semibold text-red-600">{{ $currency }} 0.00</span></div>
                         <div class="text-slate-600">Tax: <span id="tax-amount" class="font-semibold">{{ $currency }} 0.00</span></div>
                         <div class="text-slate-600">Total: <span id="total" class="font-bold text-indigo-700">{{ $currency }} 0.00</span></div>
                     </div>
@@ -263,7 +263,7 @@
                         <div class="text-xs text-slate-500">TOTAL PAYABLE</div>
                         <div id="total-payable-bottom" class="text-2xl font-extrabold text-slate-900">{{ $currency }} 0.00</div>
                     </div>
-                    <button type="button" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm">
+                    <button id="btn-recent-transactions" type="button" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm">
                         <i class="fas fa-clock mr-1"></i>Recent Transactions
                     </button>
                 </div>
@@ -345,7 +345,7 @@
                         <span class="text-gray-600">Tax (0%):</span>
                         <span id="tax-amount" class="font-semibold">{{ $currency }} 0.00</span>
                     </div>
-                    <div class="flex justify-between text-sm">
+                    <div class="flex justify-between text-sm js-cart-discount-row hidden">
                         <span class="text-gray-600">Discount:</span>
                         <span id="discount-amount" class="font-semibold text-red-600">{{ $currency }} 0.00</span>
                     </div>
@@ -609,6 +609,21 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Transactions Modal -->
+<div id="recent-transactions-modal" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-3xl mx-4 overflow-hidden">
+        <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+            <h3 class="text-lg font-bold text-gray-800">Recent Transactions</h3>
+            <button class="text-gray-500 hover:text-gray-700" data-close-recent-transactions type="button">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-6">
+            <div id="recent-transactions-list" class="space-y-3"></div>
         </div>
     </div>
 </div>
@@ -983,10 +998,25 @@
             mobileBadge.textContent = String(Object.keys(items).length);
         }
 
-        document.getElementById('subtotal').textContent = currency(cart.totals.subtotal);
-        document.getElementById('discount-amount').textContent = currency(cart.totals.discount_amount);
-        document.getElementById('tax-amount').textContent = currency(cart.totals.tax_amount);
-        document.getElementById('total').textContent = currency(cart.totals.total);
+        const netSubtotal = Number(cart?.totals?.net_subtotal ?? cart?.totals?.subtotal ?? 0);
+        document.querySelectorAll('#subtotal').forEach((el) => {
+            el.textContent = currency(netSubtotal);
+        });
+
+        const cartDiscountAmount = Number(cart?.totals?.cart_discount_amount ?? 0);
+        document.querySelectorAll('#discount-amount').forEach((el) => {
+            el.textContent = currency(cartDiscountAmount);
+        });
+        document.querySelectorAll('.js-cart-discount-row').forEach((row) => {
+            row.classList.toggle('hidden', !(cartDiscountAmount > 0));
+        });
+
+        document.querySelectorAll('#tax-amount').forEach((el) => {
+            el.textContent = currency(cart.totals.tax_amount);
+        });
+        document.querySelectorAll('#total').forEach((el) => {
+            el.textContent = currency(cart.totals.total);
+        });
 
         updatePayableUI(cart.totals.total);
 
@@ -1016,13 +1046,44 @@
     const toastHost = document.createElement('div');
     toastHost.className = 'fixed top-4 right-4 z-50 space-y-2';
     document.body.appendChild(toastHost);
-    function showToast(type, message){
+    function showToast(type, message, options){
+        const opts = options && typeof options === 'object' ? options : {};
         const color = type === 'error' ? 'bg-red-600' : (type === 'warning' ? 'bg-amber-500' : 'bg-emerald-600');
+        const durationMs = Number.isFinite(Number(opts.duration)) ? Number(opts.duration) : 2500;
+        const actionText = typeof opts.actionText === 'string' && opts.actionText.trim() ? opts.actionText.trim() : null;
+
         const el = document.createElement('div');
         el.className = `${color} text-white px-4 py-3 rounded shadow-lg transition-opacity`;
-        el.textContent = message;
+
+        if (!actionText) {
+            el.textContent = message;
+        } else {
+            el.classList.add('flex', 'items-center', 'gap-3');
+
+            const msg = document.createElement('div');
+            msg.className = 'flex-1 text-sm';
+            msg.textContent = message;
+
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'shrink-0 text-xs px-3 py-1.5 rounded bg-white/20 hover:bg-white/30';
+            btn.textContent = actionText;
+
+            btn.addEventListener('click', () => {
+                if (el.__toastTimer) clearTimeout(el.__toastTimer);
+                el.style.opacity = '0';
+                setTimeout(() => el.remove(), 150);
+            });
+
+            el.appendChild(msg);
+            el.appendChild(btn);
+        }
+
         toastHost.appendChild(el);
-        setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 2500);
+        el.__toastTimer = setTimeout(() => {
+            el.style.opacity = '0';
+            setTimeout(() => el.remove(), 300);
+        }, Math.max(500, durationMs));
     }
 
     // Make toast available to other scripts (outside this IIFE)
@@ -1345,6 +1406,279 @@
     document.querySelectorAll('[data-close-hold]').forEach(btn => btn.addEventListener('click', closeHoldModal));
     document.getElementById('btn-hold')?.addEventListener('click', openHoldModal);
     document.getElementById('btn-open-holds')?.addEventListener('click', openHoldModal);
+
+    // Return / Exchange
+    const returnModal = document.getElementById('return-modal');
+    const btnReturnMode = document.getElementById('btn-return-mode');
+    const closeReturnModalBtn = document.getElementById('close-return-modal');
+    const returnSearchTerm = document.getElementById('return-search-term');
+    const btnSearchSale = document.getElementById('btn-search-sale');
+    const returnResultsWrap = document.getElementById('return-search-results');
+    const returnSaleInfo = document.getElementById('return-sale-info');
+    const returnItemsList = document.getElementById('return-items-list');
+    const searchSaleEndpoint = '{{ route('pos.search-sale') }}';
+    const addReturnItemEndpoint = '{{ route('pos.cart.add-return') }}';
+
+    function resetReturnModal(){
+        if (returnSearchTerm) returnSearchTerm.value = '';
+        if (returnSaleInfo) returnSaleInfo.textContent = '';
+        if (returnItemsList) returnItemsList.innerHTML = '';
+        returnResultsWrap?.classList.add('hidden');
+    }
+
+    function openReturnModal(){
+        if (!returnModal) return;
+        resetReturnModal();
+        returnModal.classList.remove('hidden');
+        setTimeout(() => returnSearchTerm?.focus(), 10);
+    }
+
+    function closeReturnModal(){
+        returnModal?.classList.add('hidden');
+        resetReturnModal();
+    }
+
+    btnReturnMode?.addEventListener('click', (e) => {
+        e.preventDefault();
+        openReturnModal();
+    });
+    closeReturnModalBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        closeReturnModal();
+    });
+    returnModal?.addEventListener('click', (e) => {
+        if (e.target === returnModal) closeReturnModal();
+    });
+
+    async function doSearchSale(){
+        const term = (returnSearchTerm?.value || '').trim();
+        if (!term) {
+            showToast('warning', 'Enter Sale ID or Invoice Number');
+            return;
+        }
+        if (returnResultsWrap) {
+            returnResultsWrap.classList.remove('hidden');
+        }
+        if (returnSaleInfo) {
+            returnSaleInfo.textContent = 'Searching...';
+        }
+        if (returnItemsList) {
+            returnItemsList.innerHTML = `
+                <tr>
+                    <td class="px-4 py-6 text-center text-slate-500" colspan="6">
+                        <i class="fas fa-spinner fa-spin mr-2"></i>Loading...
+                    </td>
+                </tr>
+            `;
+        }
+        try {
+            const payload = await postJSON(searchSaleEndpoint, { term });
+            const sale = payload.sale || {};
+            const items = Array.isArray(payload.items) ? payload.items : [];
+            if (returnSaleInfo) {
+                const dateText = sale.date ? new Date(sale.date).toLocaleString() : '';
+                returnSaleInfo.textContent = `Invoice: ${sale.sale_no || sale.id || ''} • Customer: ${sale.customer || 'Walk-in'}${dateText ? ' • Date: ' + dateText : ''}`;
+            }
+            if (returnItemsList) {
+                if (!items.length) {
+                    returnItemsList.innerHTML = `
+                        <tr>
+                            <td class="px-4 py-6 text-center text-slate-500" colspan="6">No items found</td>
+                        </tr>
+                    `;
+                } else {
+                    returnItemsList.innerHTML = items.map(it => {
+                        const remaining = Number(it.remaining_qty || 0);
+                        const disabled = remaining <= 0;
+                        const qtyMax = Math.max(0, remaining);
+                        const price = currency(Number(it.unit_price || 0));
+                        return `
+                            <tr class="hover:bg-slate-50">
+                                <td class="px-4 py-2">${escapeHtml(it.product_name || '')}</td>
+                                <td class="px-4 py-2 text-right">${Number(it.sold_qty || 0)}</td>
+                                <td class="px-4 py-2 text-right">${Number(it.returned_qty || 0)}</td>
+                                <td class="px-4 py-2 text-right font-semibold ${disabled ? 'text-rose-600' : 'text-slate-900'}">${remaining}</td>
+                                <td class="px-4 py-2 text-right">${price}</td>
+                                <td class="px-4 py-2">
+                                    <div class="flex items-center gap-2 justify-end">
+                                        <input type="number" min="1" max="${escapeAttr(qtyMax)}" value="1" class="w-20 px-2 py-1 border rounded text-right return-qty" data-sale-item-id="${escapeAttr(it.sale_item_id)}" ${disabled ? 'disabled' : ''}>
+                                        <button type="button" class="px-3 py-1.5 text-xs rounded-lg ${disabled ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-rose-600 text-white hover:bg-rose-700'}" data-action="add-return" data-sale-item-id="${escapeAttr(it.sale_item_id)}" ${disabled ? 'disabled' : ''}>
+                                            Return
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
+                }
+            }
+        } catch (err) {
+            if (returnSaleInfo) {
+                returnSaleInfo.textContent = '';
+            }
+            if (returnItemsList) {
+                returnItemsList.innerHTML = `
+                    <tr>
+                        <td class="px-4 py-6 text-center text-rose-600" colspan="6">${escapeHtml(err.message || 'Sale not found')}</td>
+                    </tr>
+                `;
+            }
+            showToast('error', err.message || 'Sale not found');
+        }
+    }
+
+    btnSearchSale?.addEventListener('click', (e) => {
+        e.preventDefault();
+        doSearchSale();
+    });
+    returnSearchTerm?.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        doSearchSale();
+    });
+
+    returnItemsList?.addEventListener('click', async (e) => {
+        const btn = e.target.closest('button[data-action="add-return"]');
+        if (!btn || btn.disabled) return;
+        const saleItemId = btn.dataset.saleItemId;
+        if (!saleItemId) return;
+        const cssEscape = (value) => {
+            if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(String(value));
+            return String(value).replace(/[^a-zA-Z0-9_\-]/g, '\\$&');
+        };
+        const qtyInput = returnItemsList.querySelector(`input.return-qty[data-sale-item-id="${cssEscape(saleItemId)}"]`);
+        const qty = Math.max(1, parseInt(qtyInput?.value || '1'));
+        try {
+            const cart = await postJSON(addReturnItemEndpoint, { sale_item_id: saleItemId, quantity: qty });
+            renderCart(cart);
+            showToast('success', 'Return item added to cart');
+        } catch (err) {
+            showToast('error', err.message || 'Unable to add return item');
+        }
+    });
+
+    // Recent transactions
+    const recentTransactionsBtn = document.getElementById('btn-recent-transactions');
+    const recentTransactionsModal = document.getElementById('recent-transactions-modal');
+    const recentTransactionsList = document.getElementById('recent-transactions-list');
+    const recentSalesEndpoint = '{{ route('pos.recent-sales') }}';
+    const salesBaseUrl = @json(url('sales'));
+    const buildSalePrintUrl = (saleId) => `${salesBaseUrl}/${encodeURIComponent(saleId)}/print`;
+
+    function closeRecentTransactionsModal(){
+        recentTransactionsModal?.classList.add('hidden');
+    }
+
+    async function fetchRecentSales(){
+        const res = await fetch(recentSalesEndpoint, {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
+        });
+        if (!res.ok) {
+            const payload = await res.json().catch(() => ({}));
+            throw new Error(payload.message || 'Unable to load recent transactions');
+        }
+        const data = await res.json();
+        return Array.isArray(data) ? data : [];
+    }
+
+    function renderRecentSales(sales = []){
+        if (!recentTransactionsList) return;
+        if (!sales.length) {
+            recentTransactionsList.innerHTML = `
+                <div class="text-sm text-gray-500 text-center py-10">
+                    <i class="fas fa-receipt text-3xl mb-2"></i>
+                    <div>No recent sales found</div>
+                </div>
+            `;
+            return;
+        }
+
+        recentTransactionsList.innerHTML = `
+            <div class="overflow-x-auto border border-slate-200 rounded-xl">
+                <table class="min-w-full text-sm">
+                    <thead class="bg-slate-50 text-slate-600">
+                        <tr>
+                            <th class="text-left px-4 py-3 font-semibold">Invoice</th>
+                            <th class="text-left px-4 py-3 font-semibold">Customer</th>
+                            <th class="text-left px-4 py-3 font-semibold">Date</th>
+                            <th class="text-right px-4 py-3 font-semibold">Total</th>
+                            <th class="text-right px-4 py-3 font-semibold">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                        ${sales.map(sale => {
+                            const invoice = escapeHtml(sale.sale_no || '');
+                            const returnedBadge = sale.is_returned
+                                ? `<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-extrabold">RETURNED</span>`
+                                : '';
+                            const customer = escapeHtml(sale.customer_name || 'Walk-in');
+                            const dateText = sale.created_at ? new Date(sale.created_at).toLocaleString() : '';
+                            const total = currency(Number(sale.total_amount || 0));
+                            return `
+                                <tr class="hover:bg-slate-50">
+                                    <td class="px-4 py-3 font-semibold text-slate-800">${invoice}${returnedBadge}</td>
+                                    <td class="px-4 py-3 text-slate-700">${customer}</td>
+                                    <td class="px-4 py-3 text-slate-600">${escapeHtml(dateText)}</td>
+                                    <td class="px-4 py-3 text-right font-semibold text-slate-900">${total}</td>
+                                    <td class="px-4 py-3 text-right">
+                                        <button type="button" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700" data-action="print" data-sale-id="${escapeAttr(sale.id)}">
+                                            <i class="fas fa-print mr-1"></i>Print
+                                        </button>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    async function openRecentTransactionsModal(){
+        if (!recentTransactionsModal) return;
+        recentTransactionsModal.classList.remove('hidden');
+        if (recentTransactionsList) {
+            recentTransactionsList.innerHTML = `
+                <div class="text-sm text-slate-600 text-center py-10">
+                    <i class="fas fa-spinner fa-spin text-indigo-600 text-2xl mb-2"></i>
+                    <div>Loading...</div>
+                </div>
+            `;
+        }
+        try {
+            const sales = await fetchRecentSales();
+            renderRecentSales(sales);
+        } catch (err) {
+            renderRecentSales([]);
+            showToast('error', err.message || 'Unable to load recent transactions');
+        }
+    }
+
+    recentTransactionsBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        openRecentTransactionsModal();
+    });
+
+    document.querySelectorAll('[data-close-recent-transactions]').forEach(btn => btn.addEventListener('click', closeRecentTransactionsModal));
+    recentTransactionsModal?.addEventListener('click', (e) => {
+        if (e.target === recentTransactionsModal) closeRecentTransactionsModal();
+    });
+
+    recentTransactionsList?.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-action]');
+        if (!btn) return;
+        const action = btn.dataset.action;
+        const saleId = btn.dataset.saleId;
+        if (action === 'print' && saleId) {
+            const url = buildSalePrintUrl(saleId);
+            const w = window.open(url, '_blank');
+            if (w) {
+                w.focus();
+                w.onload = () => w.print();
+            }
+        }
+    });
 
     const confirmHoldBtn = document.getElementById('confirm-hold');
     confirmHoldBtn?.addEventListener('click', async () => {
@@ -1877,7 +2211,24 @@
                 // ignore, fallback below
             }
 
-            const saleForPrint = receiptData || res.sale || { id: res.sale_id, sale_no: res.sale_id };
+            const resolvedSaleId = Number(
+                receiptData?.id
+                ?? receiptData?.sale_id
+                ?? res?.sale_id
+                ?? res?.sale?.id
+                ?? 0
+            ) || null;
+
+            const saleForPrint = {
+                ...(res?.sale || {}),
+                ...(receiptData || {}),
+                id: resolvedSaleId,
+                sale_id: resolvedSaleId,
+                sale_no: receiptData?.sale_no
+                    ?? res?.sale?.sale_no
+                    ?? res?.sale_no
+                    ?? (resolvedSaleId ? String(resolvedSaleId) : ''),
+            };
             window.__lastReceiptSaleData = saleForPrint;
             showPrintReceipt(saleForPrint);
             const cart = await postJSON('{{ route('pos.cart.clear') }}');
@@ -2059,199 +2410,22 @@
         closeMultiPay();
     });
 
-    // Print Receipt Function
+    // Print Receipt Function (Unified with Sales print blade)
     async function showPrintReceipt(saleData) {
-        const PAPER_SIZE = '{{ $invoicePaperSize ?? "a4" }}';
-        const CURRENCY = '{{ $currency }} ';
-        const VAT_ENABLED = {{ \App\Models\Setting::get('vat_enabled', false) ? 'true' : 'false' }};
-        const VAT_RATE = {{ (float) \App\Models\Setting::get('vat_rate', 0) }};
-        const DEV_NAME = '{{ config('services.developer.name') }}';
-        const DEV_WEB = '{{ config('services.developer.website') }}';
-        const DEV_PHONE = '{{ config('services.developer.phone') }}';
-        
-        // Paper size configurations
-        const paperSizes = {
-            'a4': { width: '210mm', maxWidth: '210mm', padding: '16px' },
-            'letter': { width: '8.5in', maxWidth: '8.5in', padding: '16px' },
-            '80mm': { width: '80mm', maxWidth: '300px', padding: '8px' },
-            '58mm': { width: '58mm', maxWidth: '220px', padding: '6px' }
-        };
-        
-        const config = paperSizes[PAPER_SIZE] || paperSizes['a4'];
-        
-        // Build items HTML
-        let itemsHTML = '';
-        if (saleData.items && saleData.items.length > 0) {
-            itemsHTML = saleData.items.map(item => {
-                return '<tr>' +
-                    '<td>' + (item.product_name || '') + '</td>' +
-                    '<td class="text-right">' + Number(item.quantity || 0) + '</td>' +
-                    '<td class="text-right">' + CURRENCY + Number(item.unit_price || 0).toFixed(2) + '</td>' +
-                    '<td class="text-right">' + CURRENCY + Number(item.total || 0).toFixed(2) + '</td>' +
-                    '</tr>';
-            }).join('');
+        const saleId = Number(saleData?.id ?? saleData?.sale_id ?? 0) || null;
+        if (!saleId) {
+            showToast('error', 'Cannot print: missing sale ID. Please open print from Sales list for this bill.');
+            return;
         }
-        
-        // Customer row if exists
-        const customerRow = saleData.customer_name ? 
-            '<div><span>Customer:</span><span>' + saleData.customer_name + '</span></div>' : '';
 
-        const saleDateText = saleData.sale_date
-            ? new Date(saleData.sale_date).toLocaleString()
-            : new Date().toLocaleString();
-
-        const cashierName = saleData.cashier_name || 'Admin';
-        const paymentMethodLabel = (saleData.payment_method || '').toString().replace(/_/g, ' ').toUpperCase() || 'CASH';
-        const paidAmount = Number(saleData.paid_amount || 0);
-        const totalAmount = Number(saleData.total_amount || 0);
-        const dueAmount = Number(saleData.due_amount || 0);
-        const paymentsList = Array.isArray(saleData.payments) ? saleData.payments : [];
-        const hasCashPayment = paymentsList.length > 0
-            ? paymentsList.some(p => (p.method || '').toString().toLowerCase() === 'cash')
-            : ((saleData.payment_method || 'cash') === 'cash');
-        const summedTendered = paymentsList.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-        const tenderedAmount = Number(saleData.tendered_amount || 0) || summedTendered || paidAmount;
-        const changeAmount = hasCashPayment ? Math.max(0, tenderedAmount - totalAmount) : 0;
-        const showPaidRow = dueAmount > 0 || Math.abs(paidAmount - totalAmount) > 0.0001;
-
-        let paymentLinesHtml = '';
-        if (paymentsList.length > 0) {
-            paymentLinesHtml = paymentsList.map(p => {
-                const m = (p.method || '').toString().replace(/_/g, ' ').toUpperCase();
-                return '<div class="payment-row"><span>' + m + ':</span><span>' + CURRENCY + Number(p.amount || 0).toFixed(2) + '</span></div>';
-            }).join('');
+        const printUrl = `{{ url('sales') }}/${encodeURIComponent(saleId)}/print`;
+        const tab = window.open(printUrl, '_blank');
+        if (!tab) {
+            showToast('error', 'Pop-up blocked. Please allow pop-ups to print.');
+            return;
         }
-        
-        const printWindow = window.open('', '_blank', 'width=800,height=600');
-        
-        const taxRowHtml = VAT_ENABLED ? (
-'            <div class="totals-row">' +
-'                <span>VAT' + (VAT_RATE ? ' (' + VAT_RATE + '%)' : '') + ':</span>' +
-'                <span>' + CURRENCY + Number(saleData.tax || 0).toFixed(2) + '</span>' +
-'            </div>'
-        ) : '';
 
-        const phoneDigits = (DEV_PHONE || '').replace(/[^0-9]/g, '');
-        const poweredByHtml = DEV_WEB ? (
-            'Powered by <a href="https://' + DEV_WEB + '" target="_blank" style="color:inherit; text-decoration:none; font-weight:600;">' + DEV_WEB + '</a>'
-        ) : phoneDigits ? (
-            'Powered by <a href="https://wa.me/' + phoneDigits + '" target="_blank" style="color:inherit; text-decoration:none; font-weight:600;">' + (DEV_NAME || phoneDigits) + '</a>'
-        ) : (
-            'Powered by ' + (DEV_NAME || 'Developer')
-        );
-
-        const receiptHTML = '<!DOCTYPE html>' +
-'<html>' +
-'<head>' +
-'    <meta charset="UTF-8">' +
-'    <title>Receipt #' + (saleData.sale_no || saleData.id) + '</title>' +
-'    <style>' +
-'        * { margin: 0; padding: 0; box-sizing: border-box; }' +
-'        body { font-family: Arial, Helvetica, sans-serif; background: #fff; padding: 16px; color: #000; font-size: 12px; }' +
-'        .receipt-container { max-width: 420px; margin: 0 auto; background: #fff; padding: 16px; border: 1px solid #000; }' +
-'        .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 10px; margin-bottom: 12px; }' +
-'        .logo { font-size: 18px; font-weight: 700; }' +
-'        .shop-details { font-size: 11px; line-height: 1.4; margin-top: 4px; }' +
-'        .receipt-title { font-size: 14px; font-weight: 700; margin: 10px 0; text-align: center; }' +
-'        .receipt-info { font-size: 11px; margin-bottom: 10px; }' +
-'        .receipt-info div { display: flex; justify-content: space-between; margin-bottom: 4px; }' +
-'        table { width: 100%; border-collapse: collapse; margin: 10px 0; }' +
-'        th, td { padding: 6px 4px; font-size: 11px; border-bottom: 1px solid #000; }' +
-'        th { font-weight: 700; text-align: left; }' +
-'        .text-right { text-align: right; }' +
-'        .totals { margin-top: 10px; border-top: 1px solid #000; padding-top: 8px; }' +
-'        .totals-row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12px; }' +
-'        .totals-row.grand-total { font-weight: 700; font-size: 14px; border-top: 1px dashed #000; padding-top: 6px; margin-top: 6px; }' +
-'        .payment-info { margin-top: 10px; padding: 8px; border: 1px solid #000; }' +
-'        .payment-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 12px; }' +
-'        .footer { margin-top: 14px; padding-top: 10px; border-top: 1px dashed #000; text-align: center; font-size: 11px; }' +
-'        @media print { body { padding: 0; } }' +
-'    </style>' +
-'</head>' +
-'<body>' +
-'    <div class="receipt-container">' +
-'        <div class="header">' +
-'            <div class="logo">{{ \App\Models\Setting::get("shop_name", "Vehicle POS System") }}</div>' +
-'            <div class="shop-details">' +
-'                {{ \App\Models\Setting::get("shop_address", "") }}<br>' +
-'                Tel: {{ \App\Models\Setting::get("shop_phone", "") }}<br>' +
-'                Email: {{ \App\Models\Setting::get("shop_email", "") }}' +
-'            </div>' +
-'        </div>' +
-'        <div class="receipt-title">SALES RECEIPT</div>' +
-'        <div class="receipt-info">' +
-'            <div><span>Receipt #:</span><span>' + (saleData.sale_no || saleData.id) + '</span></div>' +
-'            <div><span>Date:</span><span>' + saleDateText + '</span></div>' +
-'            <div><span>Cashier:</span><span>' + cashierName + '</span></div>' +
-            customerRow +
-'        </div>' +
-'        <table>' +
-'            <thead>' +
-'                <tr>' +
-'                    <th>Item</th>' +
-'                    <th class="text-right">Qty</th>' +
-'                    <th class="text-right">Price</th>' +
-'                    <th class="text-right">Total</th>' +
-'                </tr>' +
-'            </thead>' +
-'            <tbody>' +
-                itemsHTML +
-'            </tbody>' +
-'        </table>' +
-'        <div class="totals">' +
-'            <div class="totals-row">' +
-'                <span>Subtotal:</span>' +
-'                <span>' + CURRENCY + Number(saleData.subtotal || 0).toFixed(2) + '</span>' +
-'            </div>' +
-'            <div class="totals-row">' +
-'                <span>Discount:</span>' +
-'                <span>' + CURRENCY + Number(saleData.discount || 0).toFixed(2) + '</span>' +
-'            </div>' +
-            taxRowHtml +
-'            <div class="totals-row grand-total">' +
-'                <span>TOTAL:</span>' +
-'                <span>' + CURRENCY + Number(saleData.total_amount || 0).toFixed(2) + '</span>' +
-'            </div>' +
-'        </div>' +
-'        <div class="payment-info">' +
-'            <div class="payment-row">' +
-'                <span>Payment Method:</span>' +
-'                <span>' + paymentMethodLabel + '</span>' +
-'            </div>' +
-                (paymentLinesHtml ? paymentLinesHtml : '') +
-                (showPaidRow ? (
-'            <div class="payment-row">' +
-'                <span>Paid:</span>' +
-'                <span>' + CURRENCY + paidAmount.toFixed(2) + '</span>' +
-'            </div>'
-                ) : '') +
-                (dueAmount > 0 ? (
-'            <div class="payment-row">' +
-'                <span>Due:</span>' +
-'                <span>' + CURRENCY + dueAmount.toFixed(2) + '</span>' +
-'            </div>'
-                ) : '') +
-                (hasCashPayment && changeAmount > 0 ? (
-'            <div class="payment-row">' +
-'                <span>Change:</span>' +
-'                <span>' + CURRENCY + changeAmount.toFixed(2) + '</span>' +
-'            </div>'
-                ) : '') +
-'        </div>' +
-'        <div class="footer">' +
-'            <div>Thank You For Your Purchase!</div>' +
-'            <div>Please visit us again</div>' +
-            '<div style="margin-top: 10px;">' + poweredByHtml + '</div>' +
-'        </div>' +
-'    </div>' +
-'    <script>' +
-'        setTimeout(function() { window.print(); window.close(); }, 500);' +
-'    <\/script>' +
-'</body>' +
-'</html>';
-        
-        printWindow.document.write(receiptHTML);
-        printWindow.document.close();
+        try { tab.focus(); } catch (_) {}
     }
 
     // Initialize: fetch current empty cart by clearing then rendering
@@ -2503,6 +2677,15 @@
     // Add product to cart function
     async function addProductToCart(productId, quantity = 1, unit = null) {
         try {
+            const cartBefore = window.__posCartSnapshot || {};
+            const beforeItems = cartBefore.items || {};
+            const exchangeCandidate = Object.values(beforeItems).some(it => {
+                if (!it) return false;
+                const sameProduct = String(it.id) === String(productId);
+                const isReturn = Number(it.qty || 0) < 0 || it.is_return === true;
+                return sameProduct && isReturn;
+            });
+
             const response = await fetch('{{ route('pos.cart.add') }}', {
                 method: 'POST',
                 credentials: 'same-origin',
@@ -2536,6 +2719,13 @@
                 window.renderCart(cart);
             } else {
                 location.reload();
+            }
+
+            if (exchangeCandidate) {
+                (window.showToast || showToast)?.('warning', 'This product is going to exchange. Do you need report?', {
+                    duration: 2000,
+                    actionText: 'Cancel'
+                });
             }
         } catch (error) {
             console.error('Error adding to cart:', error);

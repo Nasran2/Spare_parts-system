@@ -8,7 +8,7 @@
     
     <!-- Filters -->
     <div class="bg-white rounded-xl shadow-md p-6">
-        <form method="GET" action="{{ route('activity-log.index') }}" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <form method="GET" action="{{ route('activity-log.index') }}" class="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-2">Date From</label>
                 <input type="date" name="date_from" value="{{ request('date_from') }}" 
@@ -19,6 +19,12 @@
                 <input type="date" name="date_to" value="{{ request('date_to') }}" 
                        class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500">
             </div>
+            @include('partials.quick-date-filter', [
+                'fromName' => 'date_from',
+                'toName' => 'date_to',
+                'labelClass' => 'block text-sm font-medium text-gray-700 mb-2',
+                'selectClass' => 'w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500',
+            ])
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-2">User</label>
                 <select name="user_id" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500">
@@ -41,7 +47,7 @@
                     <option value="logout" {{ request('action') == 'logout' ? 'selected' : '' }}>Logout</option>
                 </select>
             </div>
-            <div class="md:col-span-4 flex gap-3">
+            <div class="md:col-span-5 flex gap-3">
                 <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
                     <i class="fas fa-filter mr-2"></i>Filter
                 </button>

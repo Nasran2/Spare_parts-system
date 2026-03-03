@@ -20,7 +20,7 @@
     <!-- Filters -->
     <form method="GET" class="bg-white rounded-xl shadow-md p-4 space-y-4">
         <input type="hidden" name="sale_type" value="quotation">
-        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-6 gap-4">
             <div>
                 <label class="text-xs font-semibold text-gray-600">Date From</label>
                 <input type="date" name="date_from" value="{{ $filters['date_from'] ?? '' }}" class="mt-1 w-full px-3 py-2 border rounded-lg">
@@ -29,6 +29,7 @@
                 <label class="text-xs font-semibold text-gray-600">Date To</label>
                 <input type="date" name="date_to" value="{{ $filters['date_to'] ?? '' }}" class="mt-1 w-full px-3 py-2 border rounded-lg">
             </div>
+            @include('partials.quick-date-filter', ['fromName' => 'date_from', 'toName' => 'date_to'])
             <div>
                 <label class="text-xs font-semibold text-gray-600">Customer</label>
                 <select name="customer_id" class="mt-1 w-full px-3 py-2 border rounded-lg">

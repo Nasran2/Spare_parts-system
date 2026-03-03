@@ -11,6 +11,7 @@ class SaleReturn extends Model
 
     protected $fillable = [
         'sale_id',
+        'exchange_sale_id',
         'user_id',
         'return_date',
         'subtotal',
@@ -27,6 +28,11 @@ class SaleReturn extends Model
     public function sale()
     {
         return $this->belongsTo(Sale::class);
+    }
+
+    public function exchangeSale()
+    {
+        return $this->belongsTo(Sale::class, 'exchange_sale_id');
     }
 
     public function user()

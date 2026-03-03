@@ -14,6 +14,12 @@
             <label class="text-sm font-medium text-gray-600">To</label>
             <input type="date" name="to" value="{{ request('to', $to) }}" class="mt-1 border rounded px-3 py-2 text-sm w-48" />
         </div>
+        @include('partials.quick-date-filter', [
+            'fromName' => 'from',
+            'toName' => 'to',
+            'labelClass' => 'text-sm font-medium text-gray-600',
+            'selectClass' => 'mt-1 border rounded px-3 py-2 text-sm w-48',
+        ])
         <div>
             <label class="text-sm font-medium text-gray-600">Category</label>
             <select name="category_id" class="mt-1 border rounded px-3 py-2 text-sm w-56">

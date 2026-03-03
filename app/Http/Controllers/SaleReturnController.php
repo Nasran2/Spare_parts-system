@@ -5,9 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\Sale;
 use App\Models\SaleReturn;
 use App\Models\SaleReturnItem;
+use App\Models\SaleItem;
 use App\Models\Product;
 use App\Models\Payment;
 use App\Models\ActivityLog;
+use App\Services\SaleRecalculationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -73,7 +75,7 @@ class SaleReturnController extends Controller
             'exchange_items.*.price' => 'required_with:exchange_items|numeric|min:0',
         ]);
 
-        $sale = Sale::with('items')->findOrFail($request->sale_id);
+    $sale = Sale::with(['items.product', 'payments'])->findOrFail($request->sale_id);
         $totalRefund = 0;
         $totalExchange = 0;
 
@@ -85,6 +87,7 @@ class SaleReturnController extends Controller
                 'sale_id' => $sale->id,
                 'user_id' => Auth::id(),
                 'return_date' => now(),
+                'subtotal' => 0,
                 'total_refund' => 0, // Will update later
                 'notes' => $request->notes,
             ]);
@@ -92,6 +95,9 @@ class SaleReturnController extends Controller
             foreach ($request->items as $itemData) {
                 if ($itemData['quantity'] > 0) {
                     $saleItem = $sale->items->find($itemData['id']);
+                    if (!$saleItem) {
+                        continue;
+                    }
                     
                     // Calculate already returned quantity for this item
                     $alreadyReturned = SaleReturnItem::where('sale_item_id', $saleItem->id)->sum('quantity');
@@ -123,7 +129,10 @@ class SaleReturnController extends Controller
                 throw new \Exception("No items selected for return.");
             }
 
-            $saleReturn->update(['total_refund' => $totalRefund]);
+            $saleReturn->update([
+                'subtotal' => round($totalRefund, 2),
+                'total_refund' => round($totalRefund, 2),
+            ]);
 
             // 2. Process Exchange Items (New Sale)
             $newSale = null;
@@ -138,10 +147,14 @@ class SaleReturnController extends Controller
                         'customer_id' => $sale->customer_id,
                         'user_id' => Auth::id(),
                         'sale_date' => now(),
+                        'subtotal' => $totalExchange,
+                        'tax' => 0,
+                        'discount' => 0,
                         'total_amount' => $totalExchange,
                         'paid_amount' => 0, // Will adjust based on net calculation
                         'due_amount' => $totalExchange,
-                        'status' => 'completed',
+                        'payment_status' => 'unpaid',
+                        'payment_method' => 'cash',
                         'notes' => 'Exchange for Return #' . $saleReturn->id,
                     ]);
 
@@ -179,15 +192,16 @@ class SaleReturnController extends Controller
                 
                 Payment::create([
                     'sale_id' => $newSale->id,
+                    'customer_id' => $newSale->customer_id,
                     'amount' => $totalRefund,
-                    'payment_date' => now(),
+                    'payment_date' => now()->toDateString(),
                     'payment_method' => 'return_adjustment', // Internal method
                     'notes' => 'Credit from Return #' . $saleReturn->id,
-                    'user_id' => Auth::id(),
                 ]);
 
                 $newSale->paid_amount += $totalRefund;
                 $newSale->due_amount -= $totalRefund;
+                $newSale->payment_status = $newSale->due_amount > 0 ? 'partial' : 'paid';
                 $newSale->save();
 
                 // The remaining due on newSale is ($totalExchange - $totalRefund) which is $netAmount.
@@ -201,15 +215,16 @@ class SaleReturnController extends Controller
                 
                 Payment::create([
                     'sale_id' => $newSale->id,
+                    'customer_id' => $newSale->customer_id,
                     'amount' => $netAmount,
-                    'payment_date' => now(),
+                    'payment_date' => now()->toDateString(),
                     'payment_method' => 'cash',
                     'notes' => 'Cash payment for exchange difference',
-                    'user_id' => Auth::id(),
                 ]);
                 
                 $newSale->paid_amount += $netAmount;
                 $newSale->due_amount -= $netAmount;
+                $newSale->payment_status = $newSale->due_amount > 0 ? 'partial' : 'paid';
                 $newSale->save();
 
             } elseif ($netAmount < 0) {
@@ -221,15 +236,16 @@ class SaleReturnController extends Controller
                 if ($newSale) {
                     Payment::create([
                         'sale_id' => $newSale->id,
+                        'customer_id' => $newSale->customer_id,
                         'amount' => $totalExchange,
-                        'payment_date' => now(),
+                        'payment_date' => now()->toDateString(),
                         'payment_method' => 'return_adjustment',
                         'notes' => 'Credit from Return #' . $saleReturn->id,
-                        'user_id' => Auth::id(),
                     ]);
                     
                     $newSale->paid_amount = $totalExchange;
                     $newSale->due_amount = 0;
+                    $newSale->payment_status = 'paid';
                     $newSale->save();
                 }
 
@@ -240,39 +256,47 @@ class SaleReturnController extends Controller
                     // Let's record on Original Sale to keep track of money out.
                     Payment::create([
                         'sale_id' => $sale->id,
+                        'customer_id' => $sale->customer_id,
                         'amount' => -$refundAmount,
-                        'payment_date' => now(),
+                        'payment_date' => now()->toDateString(),
                         'payment_method' => 'cash',
                         'notes' => 'Cash Refund for Return #' . $saleReturn->id . ' (Net after exchange)',
-                        'user_id' => Auth::id(),
                     ]);
-                    
-                    $sale->paid_amount -= $refundAmount;
-                    $sale->save();
 
                 } elseif ($request->refund_method === 'account') {
-                    // Deduct from Customer Due (Credit)
-                    // We reduce the due_amount on the original sale or customer balance.
-                    $sale->due_amount -= $refundAmount;
-                    $sale->save();
+                    // Account / Store credit: record as a negative payment for correct net accounting.
+                    Payment::create([
+                        'sale_id' => $sale->id,
+                        'customer_id' => $sale->customer_id,
+                        'amount' => -$refundAmount,
+                        'payment_date' => now()->toDateString(),
+                        'payment_method' => 'account_credit',
+                        'notes' => 'Account Credit for Return #' . $saleReturn->id . ' (Net after exchange)',
+                    ]);
                 }
             } else {
                 // Net is 0. Perfect exchange.
                 if ($newSale) {
                     Payment::create([
                         'sale_id' => $newSale->id,
+                        'customer_id' => $newSale->customer_id,
                         'amount' => $totalExchange,
-                        'payment_date' => now(),
+                        'payment_date' => now()->toDateString(),
                         'payment_method' => 'return_adjustment',
                         'notes' => 'Credit from Return #' . $saleReturn->id,
-                        'user_id' => Auth::id(),
                     ]);
                     
                     $newSale->paid_amount = $totalExchange;
                     $newSale->due_amount = 0;
+                    $newSale->payment_status = 'paid';
                     $newSale->save();
                 }
             }
+
+            // Always recalculate the original sale totals after returns so every report/dashboard reflects it.
+            $sale->refresh();
+            $sale->load(['items', 'payments']);
+            SaleRecalculationService::recalculateSaleFinancials($sale);
 
             ActivityLog::log('return', "Created return for Sale #{$sale->id} with Exchange", $saleReturn);
 
@@ -289,10 +313,47 @@ class SaleReturnController extends Controller
     public function print($id)
     {
         $return = SaleReturn::with(['sale.customer', 'items.product', 'user'])->findOrFail($id);
-        $shopName = \App\Models\Setting::get('shop_name', config('app.name'));
-        $shopAddress = \App\Models\Setting::get('shop_address', 'Address Line 1, City');
-        $shopPhone = \App\Models\Setting::get('shop_phone', '0123456789');
-        
-        return view('sale_returns.print', compact('return', 'shopName', 'shopAddress', 'shopPhone'));
+
+        $invoicePaperSize = \App\Models\Setting::get('invoice_paper_size', 'a4');
+        $paperSize = strtolower((string) ($invoicePaperSize ?? 'a4'));
+        $invoiceShowLogo = (bool) \App\Models\Setting::get('invoice_show_logo', true);
+        $invoiceFooterText = (string) \App\Models\Setting::get('invoice_footer_text', 'Thank you for your business!');
+        $invoiceTerms = (string) \App\Models\Setting::get('invoice_terms', '');
+
+        $shop = [
+            'name' => \App\Models\Setting::get('shop_name') ?? \App\Models\Setting::get('business_name') ?? config('app.name'),
+            'address' => \App\Models\Setting::get('shop_address') ?? \App\Models\Setting::get('business_address') ?? '',
+            'phone' => \App\Models\Setting::get('shop_phone') ?? \App\Models\Setting::get('business_phone') ?? '',
+            'email' => \App\Models\Setting::get('shop_email') ?? \App\Models\Setting::get('business_email') ?? '',
+            'logo' => \App\Models\Setting::get('shop_logo') ?? null,
+        ];
+        $logoValue = $shop['logo'] ?? null;
+        $logoSrc = null;
+        if (!empty($logoValue)) {
+            if (preg_match('#^https?://#i', (string) $logoValue) || str_starts_with((string) $logoValue, '/')) {
+                $logoSrc = (string) $logoValue;
+            } else {
+                if (is_file(public_path((string) $logoValue))) {
+                    $logoSrc = asset((string) $logoValue);
+                } elseif (is_file(public_path('storage/' . (string) $logoValue))) {
+                    $logoSrc = asset('storage/' . (string) $logoValue);
+                } else {
+                    $logoSrc = asset((string) $logoValue);
+                }
+            }
+        }
+        $currency = config('app.currency', 'Rs ');
+
+        return view('sale_returns.print', compact(
+            'return',
+            'shop',
+            'paperSize',
+            'logoSrc',
+            'currency',
+            'invoicePaperSize',
+            'invoiceShowLogo',
+            'invoiceFooterText',
+            'invoiceTerms'
+        ));
     }
 }

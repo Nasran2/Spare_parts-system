@@ -32,35 +32,50 @@
         <div class="header">
             <div class="title">Stock Report</div>
         </div>
+        <div class="summary">
+            <strong>Total Products:</strong> {{ $summary['total_products'] ?? 0 }} —
+            <strong>Low Stock:</strong> {{ $summary['low_stock'] ?? 0 }} —
+            <strong>Total Units In Stock:</strong> {{ $summary['total_stock'] ?? 0 }}
+            <br>
+            <strong>Total Cost Price:</strong> {{ number_format($summary['total_cost_value'] ?? 0, 2) }} —
+            <strong>Total Selling Price:</strong> {{ number_format($summary['total_selling_value'] ?? 0, 2) }} —
+            <strong>After Sale Profit (Selling - Cost):</strong> {{ number_format($summary['expected_profit'] ?? 0, 2) }}
+        </div>
+
         <table>
             <thead>
                 <tr>
                     <th>Product</th>
                     <th>Category</th>
-                    <th>Purchased Qty</th>
-                    <th>Sold Qty</th>
-                    <th>Current Stock</th>
+                    <th>Brand</th>
+                    <th style="text-align:right;">Cost Price</th>
+                    <th style="text-align:right;">Selling Price</th>
+                    <th style="text-align:right;">Purchased Qty</th>
+                    <th style="text-align:right;">Sold Qty</th>
+                    <th style="text-align:right;">Current Stock</th>
                     <th>Status</th>
                 </tr>
             </thead>
             <tbody>
-                @foreach($items as $row)
-                <tr>
-                    <td>{{ $row['name'] }}</td>
-                    <td>{{ $row['categories'] }}</td>
-                    <td>{{ $row['purchased'] }}</td>
-                    <td>{{ $row['sold'] }}</td>
-                    <td>{{ $row['current_stock'] }}</td>
-                    <td class="{{ $row['low_stock'] ? 'status-low' : 'status-ok' }}">{{ $row['low_stock'] ? 'Low' : 'OK' }}</td>
-                </tr>
-                @endforeach
+                @forelse($items as $row)
+                    <tr>
+                        <td>{{ $row['name'] }}</td>
+                        <td>{{ $row['categories'] ?: '-' }}</td>
+                        <td>{{ $row['brand'] ?? '-' }}</td>
+                        <td style="text-align:right;">{{ number_format((float) ($row['cost_price'] ?? 0), 2) }}</td>
+                        <td style="text-align:right;">{{ number_format((float) ($row['selling_price'] ?? 0), 2) }}</td>
+                        <td style="text-align:right;">{{ $row['purchased'] }}</td>
+                        <td style="text-align:right;">{{ $row['sold'] }}</td>
+                        <td style="text-align:right;">{{ $row['current_stock'] }}</td>
+                        <td class="{{ !empty($row['low_stock']) ? 'status-low' : 'status-ok' }}">{{ !empty($row['low_stock']) ? 'Low' : 'OK' }}</td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="9" style="text-align:center; color:#777;">No product data.</td>
+                    </tr>
+                @endforelse
             </tbody>
         </table>
-        <div class="summary">
-            <strong>Total Products:</strong> {{ $summary['total_products'] }} —
-            <strong>Low Stock:</strong> {{ $summary['low_stock'] }} —
-            <strong>Total Units In Stock:</strong> {{ $summary['total_stock'] }}
-        </div>
     </div>
 </body>
 </html>

@@ -36,8 +36,10 @@
                 $start = $qs['start'] ?: $today;
                 $isToday = ($start === $today && $end === $today);
                 $isYesterday = ($start === $yesterday && $end === $yesterday);
-                $isLastWeek = (\Carbon\Carbon::parse($end)->diffInDays(\Carbon\Carbon::parse($start)) === 6);
-                $isLastMonth = (\Carbon\Carbon::parse($start)->isSameDay(\Carbon\Carbon::parse($end)->startOfMonth()));
+                $endC = \Carbon\Carbon::parse($end);
+                $startC = \Carbon\Carbon::parse($start);
+                $isThisWeek = ($endC->isSameDay(\Carbon\Carbon::today()) && $startC->isSameDay($endC->copy()->startOfWeek()));
+                $isThisMonth = ($endC->isSameDay(\Carbon\Carbon::today()) && $startC->isSameDay($endC->copy()->startOfMonth()));
             @endphp
             <div class="flex flex-wrap gap-2">
                 <button type="button" data-range="today" class="px-4 py-2 {{ $isToday ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700' }} rounded-lg text-sm hover:bg-blue-700 transition">
@@ -46,11 +48,11 @@
                 <button type="button" data-range="yesterday" class="px-4 py-2 {{ $isYesterday ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700' }} rounded-lg text-sm hover:bg-blue-700 transition">
                     <i class="fas fa-history mr-1"></i> Yesterday
                 </button>
-                <button type="button" data-range="last_week" class="px-4 py-2 {{ $isLastWeek ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700' }} rounded-lg text-sm hover:bg-blue-700 transition">
-                    <i class="fas fa-calendar-week mr-1"></i> Last Week
+                <button type="button" data-range="this_week" class="px-4 py-2 {{ $isThisWeek ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700' }} rounded-lg text-sm hover:bg-blue-700 transition">
+                    <i class="fas fa-calendar-week mr-1"></i> This Week
                 </button>
-                <button type="button" data-range="last_month" class="px-4 py-2 {{ $isLastMonth ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700' }} rounded-lg text-sm hover:bg-blue-700 transition">
-                    <i class="fas fa-calendar-alt mr-1"></i> Last Month
+                <button type="button" data-range="this_month" class="px-4 py-2 {{ $isThisMonth ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700' }} rounded-lg text-sm hover:bg-blue-700 transition">
+                    <i class="fas fa-calendar-alt mr-1"></i> This Month
                 </button>
                 <div class="flex items-center gap-2">
                     <input type="date" id="custom_start" class="px-3 py-2 border rounded text-sm" />
@@ -371,8 +373,8 @@
         }
         const todayBtn = document.querySelector('[data-range="today"]');
         const yestBtn = document.querySelector('[data-range="yesterday"]');
-        const weekBtn = document.querySelector('[data-range="last_week"]');
-        const monthBtn = document.querySelector('[data-range="last_month"]');
+        const weekBtn = document.querySelector('[data-range="this_week"]');
+        const monthBtn = document.querySelector('[data-range="this_month"]');
         const customBtn = document.querySelector('[data-range="custom"]');
         const cs = document.getElementById('custom_start');
         const ce = document.getElementById('custom_end');
@@ -392,15 +394,17 @@
         });
         if(weekBtn) weekBtn.addEventListener('click', ()=>{
             const end = new Date();
-            const start = new Date();
-            start.setDate(end.getDate()-6);
-            setActive('last_week');
+            const start = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+            const day = start.getDay(); // 0=Sun,1=Mon...
+            const diff = (day + 6) % 7; // since Monday
+            start.setDate(start.getDate() - diff);
+            setActive('this_week');
             goWithRange(formatDate(start), formatDate(end));
         });
         if(monthBtn) monthBtn.addEventListener('click', ()=>{
             const end = new Date();
             const start = new Date(end.getFullYear(), end.getMonth(), 1);
-            setActive('last_month');
+            setActive('this_month');
             goWithRange(formatDate(start), formatDate(end));
         });
         if(customBtn) customBtn.addEventListener('click', ()=>{
@@ -423,11 +427,13 @@
             else if(sd===yd && ed===yd){ setActive('yesterday'); }
             else {
                 // Check span length
-                const sD = new Date(sd);
                 const eD = new Date(ed);
-                const diffDays = Math.round((eD - sD)/(1000*60*60*24));
-                if(diffDays===6){ setActive('last_week'); }
-                else if(new Date(sd).getDate()===1){ setActive('last_month'); }
+                const startWeek = new Date(eD.getFullYear(), eD.getMonth(), eD.getDate());
+                const day = startWeek.getDay();
+                const diff = (day + 6) % 7;
+                startWeek.setDate(startWeek.getDate() - diff);
+                if(sd===formatDate(startWeek) && ed===today){ setActive('this_week'); }
+                else if(new Date(sd).getDate()===1 && ed===today){ setActive('this_month'); }
                 else { setActive('custom'); }
             }
         } else {

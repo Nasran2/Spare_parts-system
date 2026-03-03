@@ -66,7 +66,9 @@
                             @enderror
                             @if(!empty($settings['shop_logo']))
                                 <div class="mt-2">
-                                    <img src="{{ asset('storage/'.$settings['shop_logo']) }}" alt="Logo" class="h-16 object-contain">
+                                    @php($logoPath = $settings['shop_logo'])
+                                    @php($logoUrl = is_file(public_path($logoPath)) ? asset($logoPath) : asset('storage/'.$logoPath))
+                                    <img src="{{ $logoUrl }}" alt="Logo" class="h-16 object-contain">
                                 </div>
                             @endif
                         </div>
