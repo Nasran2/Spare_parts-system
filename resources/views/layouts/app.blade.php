@@ -186,6 +186,44 @@
     @php
         $sidebarName = \App\Models\Setting::get('shop_name', config('app.name', 'Vehicle POS'));
         $sidebarTagline = \App\Models\Setting::get('shop_tagline', 'Auto Parts System');
+
+        $navUser = auth()->user();
+        $canDashboard = $navUser?->hasPermission('dashboard.view');
+        $canUsersMenu = $navUser?->hasPermission('users.view') || $navUser?->hasPermission('roles.view');
+        $canSuppliers = $navUser?->hasPermission('suppliers.view');
+        $canProductsMenu = $navUser?->hasPermission('products.view')
+            || $navUser?->hasPermission('products.create')
+            || $navUser?->hasPermission('products.edit')
+            || $navUser?->hasPermission('products.delete')
+            || $navUser?->hasPermission('products.update-price')
+            || $navUser?->hasPermission('categories.view')
+            || $navUser?->hasPermission('brands.view')
+            || $navUser?->hasPermission('units.view')
+            || $navUser?->hasPermission('barcode.print')
+            || $navUser?->hasPermission('barcode.settings');
+        $canPurchaseMenu = $navUser?->hasPermission('purchases.view')
+            || $navUser?->hasPermission('purchases.create')
+            || $navUser?->hasPermission('purchases.edit');
+        $canSalesMenu = $navUser?->hasPermission('sales.view')
+            || $navUser?->hasPermission('sales.create')
+            || $navUser?->hasPermission('sales.edit')
+            || $navUser?->hasPermission('quotations.view')
+            || $navUser?->hasPermission('pos.access');
+        $canCustomers = $navUser?->hasPermission('customers.view');
+        $canExpensesMenu = $navUser?->hasPermission('expenses.view')
+            || $navUser?->hasPermission('expenses.create')
+            || $navUser?->hasPermission('expenses.edit');
+        $canReportsMenu = $navUser?->hasPermission('reports.sales')
+            || $navUser?->hasPermission('reports.purchase')
+            || $navUser?->hasPermission('reports.profit-loss')
+            || $navUser?->hasPermission('reports.stock')
+            || $navUser?->hasPermission('reports.expense')
+            || $navUser?->hasPermission('reports.trending');
+        $canNotificationsMenu = $navUser?->hasPermission('notifications.view')
+            || $navUser?->hasPermission('notifications.configure');
+        $canSettings = $navUser?->hasPermission('settings.view');
+        $canActivityLog = $navUser?->hasPermission('activity-log.view');
+        $canPos = $navUser?->hasPermission('pos.access');
     @endphp
 
     <!-- Sidebar -->
@@ -209,12 +247,15 @@
         <!-- Navigation Menu -->
         <nav class="p-4 space-y-2">
             <!-- Dashboard -->
+            @if($canDashboard)
             <a href="{{ route('dashboard') }}" class="nav-item flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('dashboard') ? 'active' : '' }}">
                 <i class="fas fa-home w-5"></i>
                 <span>Dashboard</span>
             </a>
+            @endif
 
             <!-- User Management -->
+            @if($canUsersMenu)
             <div class="nav-group">
                 <button onclick="toggleDropdown('user-menu')" class="nav-item flex items-center justify-between w-full px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('users.*') || request()->routeIs('roles.*') ? 'active' : '' }}">
                     <div class="flex items-center space-x-3">
@@ -224,24 +265,32 @@
                     <i class="fas fa-chevron-down transition-transform {{ request()->routeIs('users.*') || request()->routeIs('roles.*') ? 'rotate-180' : '' }}" id="user-menu-icon"></i>
                 </button>
                 <div id="user-menu" class="dropdown-menu ml-4 mt-1 space-y-1 {{ request()->routeIs('users.*') || request()->routeIs('roles.*') ? 'open' : '' }}">
+                    @if($navUser?->hasPermission('users.view'))
                     <a href="{{ route('users.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('users.*') ? 'active' : '' }}">
                         <i class="fas fa-user-plus w-4"></i>
                         <span>Create User</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('roles.view'))
                     <a href="{{ route('roles.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('roles.*') ? 'active' : '' }}">
                         <i class="fas fa-user-shield w-4"></i>
                         <span>User Roles</span>
                     </a>
+                    @endif
                 </div>
             </div>
+            @endif
 
             <!-- Supplier Management -->
+            @if($canSuppliers)
             <a href="{{ route('suppliers.index') }}" class="nav-item flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('suppliers.*') ? 'active' : '' }}">
                 <i class="fas fa-truck w-5"></i>
                 <span>Suppliers</span>
             </a>
+            @endif
 
             <!-- Product Management -->
+            @if($canProductsMenu)
             <div class="nav-group">
                 <button onclick="toggleDropdown('product-menu')" class="nav-item flex items-center justify-between w-full px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('products.*') || request()->routeIs('products.import*') || request()->routeIs('categories.*') || request()->routeIs('brands.*') || request()->routeIs('units.*') ? 'active' : '' }}">
                     <div class="flex items-center space-x-3">
@@ -251,42 +300,60 @@
                     <i class="fas fa-chevron-down transition-transform {{ request()->routeIs('products.*') || request()->routeIs('products.import*') || request()->routeIs('categories.*') || request()->routeIs('brands.*') || request()->routeIs('units.*') ? 'rotate-180' : '' }}" id="product-menu-icon"></i>
                 </button>
                 <div id="product-menu" class="dropdown-menu ml-4 mt-1 space-y-1 {{ request()->routeIs('products.*') || request()->routeIs('products.import*') || request()->routeIs('categories.*') || request()->routeIs('brands.*') || request()->routeIs('units.*') ? 'open' : '' }}">
+                    @if($navUser?->hasPermission('products.view'))
                     <a href="{{ route('products.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('products.*') ? 'active' : '' }}">
                         <i class="fas fa-list w-4"></i>
                         <span>Product List</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('products.create'))
                     <a href="{{ route('products.create') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600">
                         <i class="fas fa-plus-circle w-4"></i>
                         <span>Add Product</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('products.create'))
                     <a href="{{ route('products.import') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('products.import*') ? 'active' : '' }}">
                         <i class="fas fa-file-import w-4"></i>
                         <span>Import Products</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('barcode.print'))
                     <a href="{{ route('products.barcode.print') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('products.barcode.*') ? 'active' : '' }}">
                         <i class="fas fa-barcode w-4"></i>
                         <span>Barcode Print</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('categories.view'))
                     <a href="{{ route('categories.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('categories.*') ? 'active' : '' }}">
                         <i class="fas fa-tags w-4"></i>
                         <span>Categories</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('brands.view'))
                     <a href="{{ route('brands.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('brands.*') ? 'active' : '' }}">
                         <i class="fas fa-copyright w-4"></i>
                         <span>Brands</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('units.view'))
                     <a href="{{ route('units.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('units.*') ? 'active' : '' }}">
                         <i class="fas fa-balance-scale w-4"></i>
                         <span>Units</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('products.edit'))
                     <a href="{{ route('products.write-off.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('products.write-off.*') ? 'active' : '' }}">
                         <i class="fas fa-trash-alt w-4"></i>
                         <span>Write-off / Damage</span>
                     </a>
+                    @endif
                 </div>
             </div>
+            @endif
 
             <!-- Purchase -->
+            @if($canPurchaseMenu)
             <div class="nav-group">
                 <button onclick="toggleDropdown('purchase-menu')" class="nav-item flex items-center justify-between w-full px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('purchases.*') ? 'active' : '' }}">
                     <div class="flex items-center space-x-3">
@@ -296,22 +363,30 @@
                     <i class="fas fa-chevron-down transition-transform {{ request()->routeIs('purchases.*') ? 'rotate-180' : '' }}" id="purchase-menu-icon"></i>
                 </button>
                 <div id="purchase-menu" class="dropdown-menu ml-4 mt-1 space-y-1 {{ request()->routeIs('purchases.*') ? 'open' : '' }}">
+                    @if($navUser?->hasPermission('purchases.view'))
                     <a href="{{ route('purchases.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('purchases.index') || request()->routeIs('purchases.show') || request()->routeIs('purchases.edit') ? 'active' : '' }}">
                         <i class="fas fa-list-alt w-4"></i>
                         <span>Purchase List</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('purchases.create'))
                     <a href="{{ route('purchases.create') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('purchases.create') ? 'active' : '' }}">
                         <i class="fas fa-cart-plus w-4"></i>
                         <span>Add Purchase</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('purchases.edit'))
                     <a href="{{ route('purchase-returns.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('purchase-returns.*') ? 'active' : '' }}">
                         <i class="fas fa-undo w-4"></i>
                         <span>Purchase Returns</span>
                     </a>
+                    @endif
                 </div>
             </div>
+            @endif
 
             <!-- Sales -->
+            @if($canSalesMenu)
             <div class="nav-group">
                 <button onclick="toggleDropdown('sale-menu')" class="nav-item flex items-center justify-between w-full px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('pos.*') || request()->routeIs('sales.*') || request()->routeIs('quotations.*') || request()->routeIs('sale-returns.*') ? 'active' : '' }}">
                     <div class="flex items-center space-x-3">
@@ -321,32 +396,44 @@
                     <i class="fas fa-chevron-down transition-transform {{ request()->routeIs('pos.*') || request()->routeIs('sales.*') || request()->routeIs('quotations.*') || request()->routeIs('sale-returns.*') ? 'rotate-180' : '' }}" id="sale-menu-icon"></i>
                 </button>
                 <div id="sale-menu" class="dropdown-menu ml-4 mt-1 space-y-1 {{ request()->routeIs('pos.*') || request()->routeIs('sales.*') || request()->routeIs('quotations.*') || request()->routeIs('sale-returns.*') ? 'open' : '' }}">
+                    @if($canPos)
                     <a href="{{ route('pos.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('pos.*') ? 'active' : '' }}">
                         <i class="fas fa-desktop w-4"></i>
                         <span>POS</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('sales.view'))
                     <a href="{{ route('sales.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('sales.*') ? 'active' : '' }}">
                         <i class="fas fa-list-alt w-4"></i>
                         <span>Sales List</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('quotations.view'))
                     <a href="{{ route('quotations.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('quotations.*') ? 'active' : '' }}">
                         <i class="fas fa-file-invoice w-4"></i>
                         <span>Quotations</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('sales.edit'))
                     <a href="{{ route('sale-returns.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('sale-returns.*') ? 'active' : '' }}">
                         <i class="fas fa-undo w-4"></i>
                         <span>Sale Returns</span>
                     </a>
+                    @endif
                 </div>
             </div>
+            @endif
 
             <!-- Customers -->
+            @if($canCustomers)
             <a href="{{ route('customers.index') }}" class="nav-item flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('customers.*') ? 'active' : '' }}">
                 <i class="fas fa-user-tie w-5"></i>
                 <span>Customers</span>
             </a>
+            @endif
 
             <!-- Expenses -->
+            @if($canExpensesMenu)
             <div class="nav-group">
                 <button onclick="toggleDropdown('expense-menu')" class="nav-item flex items-center justify-between w-full px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('expenses.*') || request()->routeIs('expense-categories.*') ? 'active' : '' }}">
                     <div class="flex items-center space-x-3">
@@ -356,22 +443,30 @@
                     <i class="fas fa-chevron-down transition-transform {{ request()->routeIs('expenses.*') || request()->routeIs('expense-categories.*') ? 'rotate-180' : '' }}" id="expense-menu-icon"></i>
                 </button>
                 <div id="expense-menu" class="dropdown-menu ml-4 mt-1 space-y-1 {{ request()->routeIs('expenses.*') || request()->routeIs('expense-categories.*') ? 'open' : '' }}">
+                    @if($navUser?->hasPermission('expenses.view'))
                     <a href="{{ route('expenses.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('expenses.index') || request()->routeIs('expenses.show') || request()->routeIs('expenses.edit') ? 'active' : '' }}">
                         <i class="fas fa-list-ul w-4"></i>
                         <span>All Expenses</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('expenses.create'))
                     <a href="{{ route('expenses.create') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('expenses.create') ? 'active' : '' }}">
                         <i class="fas fa-plus-circle w-4"></i>
                         <span>Add Expense</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('expenses.view'))
                     <a href="{{ route('expense-categories.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('expense-categories.*') ? 'active' : '' }}">
                         <i class="fas fa-folder-open w-4"></i>
                         <span>Categories</span>
                     </a>
+                    @endif
                 </div>
             </div>
+            @endif
 
             <!-- Reports -->
+            @if($canReportsMenu)
             <div class="nav-group">
                 <button onclick="toggleDropdown('report-menu')" class="nav-item flex items-center justify-between w-full px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('reports.*') ? 'active' : '' }}">
                     <div class="flex items-center space-x-3">
@@ -381,26 +476,37 @@
                     <i class="fas fa-chevron-down transition-transform {{ request()->routeIs('reports.*') ? 'rotate-180' : '' }}" id="report-menu-icon"></i>
                 </button>
                 <div id="report-menu" class="dropdown-menu ml-4 mt-1 space-y-1 {{ request()->routeIs('reports.*') ? 'open' : '' }}">
+                    @if($navUser?->hasPermission('reports.sales'))
                     <a href="{{ route('reports.sales') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.sales') ? 'active' : '' }}">
                         <i class="fas fa-chart-line w-4"></i>
                         <span>Sales Report</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('reports.purchase'))
                     <a href="{{ route('reports.purchase') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.purchase') ? 'active' : '' }}">
                         <i class="fas fa-shopping-bag w-4"></i>
                         <span>Purchase Report</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('reports.profit-loss'))
                     <a href="{{ route('reports.profit-loss') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.profit-loss') ? 'active' : '' }}">
                         <i class="fas fa-coins w-4"></i>
                         <span>Profit & Loss</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('reports.stock'))
                     <a href="{{ route('reports.stock') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.stock') ? 'active' : '' }}">
                         <i class="fas fa-warehouse w-4"></i>
                         <span>Stock Report</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('reports.expense'))
                     <a href="{{ route('reports.expense') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.expense') ? 'active' : '' }}">
                         <i class="fas fa-money-bill-wave w-4"></i>
                         <span>Expense Report</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('reports.sales'))
                     <a href="{{ route('reports.vat') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.vat') ? 'active' : '' }}">
                         <i class="fas fa-receipt w-4"></i>
                         <span>VAT Report</span>
@@ -425,10 +531,13 @@
                         <i class="fas fa-user-clock w-4"></i>
                         <span>Customer Due Report</span>
                     </a>
+                    @endif
                 </div>
             </div>
+            @endif
 
             <!-- Notifications -->
+            @if($canNotificationsMenu)
             <div class="nav-group">
                 <button onclick="toggleSubmenu('notifications-menu')" class="nav-item w-full flex items-center justify-between px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('notifications.*') ? 'active' : '' }}">
                     <div class="flex items-center space-x-3">
@@ -438,6 +547,7 @@
                     <i class="fas fa-chevron-down text-xs transition-transform {{ request()->routeIs('notifications.*') ? 'rotate-180' : '' }}" id="notifications-menu-icon"></i>
                 </button>
                 <div id="notifications-menu" class="submenu {{ request()->routeIs('notifications.*') ? '' : 'hidden' }} ml-8 mt-1 space-y-1">
+                    @if($navUser?->hasPermission('notifications.view'))
                     <a href="{{ route('notifications.index') }}" class="flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 {{ request()->routeIs('notifications.index') ? 'active' : '' }}">
                         <i class="fas fa-bell w-4"></i>
                         <span>Notifications</span>
@@ -446,6 +556,8 @@
                         <i class="fas fa-history w-4"></i>
                         <span>Message History</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('notifications.configure'))
                     <a href="{{ route('notifications.send') }}" class="flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 {{ request()->routeIs('notifications.send') ? 'active' : '' }}">
                         <i class="fas fa-paper-plane w-4"></i>
                         <span>Send Message</span>
@@ -454,20 +566,26 @@
                         <i class="fas fa-cog w-4"></i>
                         <span>Notification Settings</span>
                     </a>
+                    @endif
                 </div>
             </div>
+            @endif
 
             <!-- Settings -->
+            @if($canSettings)
             <a href="{{ route('settings.index') }}" class="nav-item flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('settings.*') ? 'active' : '' }}">
                 <i class="fas fa-cog w-5"></i>
                 <span>Settings</span>
             </a>
+            @endif
 
             <!-- Activity Log -->
+            @if($canActivityLog)
             <a href="{{ route('activity-log.index') }}" class="nav-item flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('activity-log.*') ? 'active' : '' }}">
                 <i class="fas fa-history w-5"></i>
                 <span>Activity Log</span>
             </a>
+            @endif
         </nav>
 
         <!-- User Profile Section -->
@@ -569,10 +687,12 @@
                     </div>
 
                     <!-- Quick POS Access -->
+                    @if($canPos)
                     <a href="{{ route('pos.index') }}" class="hidden md:flex items-center space-x-2 px-4 py-2 bg-gradient-blue text-white rounded-lg hover:opacity-90 transition">
                         <i class="fas fa-cash-register"></i>
                         <span>Open POS</span>
                     </a>
+                    @endif
                 </div>
             </div>
         </header>
@@ -625,7 +745,7 @@
     </div>
 
     <!-- Floating POS Button -->
-    @if(!request()->routeIs('pos.index'))
+    @if(!request()->routeIs('pos.index') && $canPos)
     <a href="{{ route('pos.index') }}" class="floating-pos-btn" title="Open POS">
         <i class="fas fa-cash-register"></i>
     </a>

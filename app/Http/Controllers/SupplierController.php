@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Supplier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use App\Support\SecretPos;
 
 class SupplierController extends Controller
 {
@@ -79,7 +80,17 @@ class SupplierController extends Controller
     public function show(string $id)
     {
         $supplier = Supplier::findOrFail($id);
-        return view('suppliers.show', compact('supplier'));
+
+        $purchasesQuery = $supplier->purchases()->with('payments')->orderByDesc('purchase_date');
+        $purchasesQuery = SecretPos::excludeHiddenPurchaseRanges($purchasesQuery, 'total_amount');
+        $purchases = $purchasesQuery->get();
+
+        $purchaseTotals = [
+            'total_purchases' => (float) $purchases->sum('total_amount'),
+            'total_due' => (float) $purchases->sum('due_amount'),
+        ];
+
+        return view('suppliers.show', compact('supplier', 'purchases', 'purchaseTotals'));
     }
 
     /**

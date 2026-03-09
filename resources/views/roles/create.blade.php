@@ -84,6 +84,7 @@
                         <input
                             type="checkbox"
                             name="is_active"
+                            value="1"
                             class="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                             {{ old('is_active', true) ? 'checked' : '' }}
                         >
@@ -104,7 +105,7 @@
                 @php
                     $permissionGroups = [
                         'Dashboard' => ['dashboard.view'],
-                        'Products' => ['products.view', 'products.create', 'products.edit', 'products.delete'],
+                        'Products' => ['products.view', 'products.create', 'products.edit', 'products.delete', 'products.update-price'],
                         'Categories' => ['categories.view', 'categories.create', 'categories.edit', 'categories.delete'],
                         'Brands' => ['brands.view', 'brands.create', 'brands.edit', 'brands.delete'],
                         'Units' => ['units.view', 'units.create', 'units.edit', 'units.delete'],
@@ -112,15 +113,16 @@
                         'Customers' => ['customers.view', 'customers.create', 'customers.edit', 'customers.delete'],
                         'Purchases' => ['purchases.view', 'purchases.create', 'purchases.edit', 'purchases.delete'],
                         'Sales' => ['sales.view', 'sales.create', 'sales.edit', 'sales.delete'],
-                        'POS' => ['pos.view', 'pos.create'],
+                        'Quotations' => ['quotations.view', 'quotations.create', 'quotations.edit', 'quotations.delete'],
+                        'POS' => ['pos.access'],
                         'Expenses' => ['expenses.view', 'expenses.create', 'expenses.edit', 'expenses.delete'],
                         'Users' => ['users.view', 'users.create', 'users.edit', 'users.delete'],
                         'Roles' => ['roles.view', 'roles.create', 'roles.edit', 'roles.delete'],
                         'Settings' => ['settings.view', 'settings.edit'],
-                        'Reports' => ['reports.view', 'reports.sales', 'reports.purchases', 'reports.profit', 'reports.stock', 'reports.expenses'],
+                        'Reports' => ['reports.sales', 'reports.purchase', 'reports.profit-loss', 'reports.stock', 'reports.expense', 'reports.trending'],
                         'Barcodes' => ['barcode.print', 'barcode.settings'],
                         'Activity Log' => ['activity-log.view'],
-                        'Notifications' => ['notifications.view'],
+                        'Notifications' => ['notifications.view', 'notifications.configure'],
                     ];
                 @endphp
 

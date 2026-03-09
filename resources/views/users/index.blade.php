@@ -12,12 +12,14 @@
             <h3 class="text-lg font-semibold text-gray-800">User Management</h3>
             <p class="text-sm text-gray-600">Manage system users and their permissions</p>
         </div>
-        <a 
-            href="{{ route('users.create') }}" 
-            class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition shadow-lg"
-        >
-            <i class="fas fa-user-plus mr-2"></i>Add New User
-        </a>
+        @if(auth()->user()?->hasPermission('users.create'))
+            <a 
+                href="{{ route('users.create') }}" 
+                class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition shadow-lg"
+            >
+                <i class="fas fa-user-plus mr-2"></i>Add New User
+            </a>
+        @endif
     </div>
 
     <!-- Users Table -->
@@ -68,25 +70,27 @@
                         </td>
                         <td class="px-6 py-4 text-center">
                             <div class="flex items-center justify-center space-x-2">
-                                <a 
-                                    href="{{ route('users.edit', $user) }}"
-                                    class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                                    title="Edit"
-                                >
-                                    <i class="fas fa-edit"></i>
-                                </a>
-                                @if($user->id !== auth()->id())
-                                <form action="{{ route('users.destroy', $user) }}" method="POST" class="inline" onsubmit="return confirm('Are you sure you want to delete this user?');">
-                                    @csrf
-                                    @method('DELETE')
-                                    <button 
-                                        type="submit"
-                                        class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
-                                        title="Delete"
+                                @if(auth()->user()?->hasPermission('users.edit'))
+                                    <a 
+                                        href="{{ route('users.edit', $user) }}"
+                                        class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                                        title="Edit"
                                     >
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </form>
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                @endif
+                                @if(auth()->user()?->hasPermission('users.delete') && $user->id !== auth()->id())
+                                    <form action="{{ route('users.destroy', $user) }}" method="POST" class="inline" onsubmit="return confirm('Are you sure you want to delete this user?');">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button 
+                                            type="submit"
+                                            class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                                            title="Delete"
+                                        >
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
                                 @endif
                             </div>
                         </td>
@@ -98,12 +102,14 @@
                                 <i class="fas fa-users text-6xl text-gray-300 mb-4"></i>
                                 <p class="text-gray-500 text-lg mb-2">No users found</p>
                                 <p class="text-gray-400 text-sm mb-4">Start by adding your first user</p>
-                                <a 
-                                    href="{{ route('users.create') }}"
-                                    class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-                                >
-                                    <i class="fas fa-plus mr-2"></i>Add User
-                                </a>
+                                @if(auth()->user()?->hasPermission('users.create'))
+                                    <a 
+                                        href="{{ route('users.create') }}"
+                                        class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                                    >
+                                        <i class="fas fa-plus mr-2"></i>Add User
+                                    </a>
+                                @endif
                             </div>
                         </td>
                     </tr>

@@ -46,11 +46,11 @@
                         </div>
                         <div class="bg-green-50 p-4 rounded-lg border border-green-100">
                             <p class="text-xs uppercase text-green-600 font-semibold">Total Purchases</p>
-                            <p class="text-xl font-bold text-gray-800 mt-1">{{ number_format($supplier->purchases()->sum('total_amount'), 2) }}</p>
+                            <p class="text-xl font-bold text-gray-800 mt-1">{{ number_format($purchaseTotals['total_purchases'] ?? 0, 2) }}</p>
                         </div>
                         <div class="bg-red-50 p-4 rounded-lg border border-red-100">
                             <p class="text-xs uppercase text-red-600 font-semibold">Total Due</p>
-                            <p class="text-xl font-bold text-gray-800 mt-1">{{ number_format($supplier->purchases()->sum('due_amount'), 2) }}</p>
+                            <p class="text-xl font-bold text-gray-800 mt-1">{{ number_format($purchaseTotals['total_due'] ?? 0, 2) }}</p>
                         </div>
                     </div>
                     <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
@@ -75,7 +75,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach($supplier->purchases as $purchase)
+                            @foreach($purchases as $purchase)
                             <tr>
                                 <td class="px-4 py-2 border-b">{{ optional($purchase->purchase_date)->format('M d, Y') }}</td>
                                 <td class="px-4 py-2 border-b">{{ $purchase->purchase_no }}</td>

@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use App\Models\Setting;
+use App\Support\SecretPos;
 
 class ReportController extends Controller
 {
@@ -133,6 +134,8 @@ class ReportController extends Controller
             })
             ->orderBy('purchase_date', 'desc');
 
+        $query = SecretPos::excludeHiddenPurchaseRanges($query, 'total_amount');
+
         $purchases = $query->get();
 
         $summary = [
@@ -150,14 +153,15 @@ class ReportController extends Controller
     {
         [$from, $to] = $this->dateRange($request);
         $categoryId = $request->input('category_id');
-        $purchases = Purchase::with(['supplier'])
+        $query = Purchase::with(['supplier'])
             ->when($from, fn($q) => $q->whereDate('purchase_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('purchase_date', '<=', $to))
             ->when($categoryId, function ($q) use ($categoryId) {
                 $q->whereHas('items.product', fn($pq) => $pq->where('category_id', $categoryId));
             })
-            ->orderBy('purchase_date', 'desc')
-            ->get();
+            ->orderBy('purchase_date', 'desc');
+        $query = SecretPos::excludeHiddenPurchaseRanges($query, 'total_amount');
+        $purchases = $query->get();
         $summary = [
             'total_purchases' => $purchases->sum('total_amount'),
             'total_paid' => $purchases->sum('paid_amount'),
@@ -172,14 +176,15 @@ class ReportController extends Controller
     {
         [$from, $to] = $this->dateRange($request);
         $categoryId = $request->input('category_id');
-        $purchases = Purchase::with(['supplier'])
+        $query = Purchase::with(['supplier'])
             ->when($from, fn($q) => $q->whereDate('purchase_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('purchase_date', '<=', $to))
             ->when($categoryId, function ($q) use ($categoryId) {
                 $q->whereHas('items.product', fn($pq) => $pq->where('category_id', $categoryId));
             })
-            ->orderBy('purchase_date', 'desc')
-            ->get();
+            ->orderBy('purchase_date', 'desc');
+        $query = SecretPos::excludeHiddenPurchaseRanges($query, 'total_amount');
+        $purchases = $query->get();
         $rows = [['Date','PO #','Supplier','Total','Paid','Due','Status']];
         foreach ($purchases as $p) {
             $rows[] = [
@@ -676,6 +681,10 @@ class ReportController extends Controller
             ->where(function ($q) {
                 $q->whereNotNull('purchase_id')->orWhereNotNull('supplier_id');
             })
+            ->where(function ($q) {
+                $q->whereNull('purchase_id')
+                ->orWhereHas('purchase', fn ($pq) => SecretPos::excludeHiddenPurchaseRanges($pq, 'total_amount'));
+            })
             ->when($from, fn($q) => $q->whereDate('payment_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('payment_date', '<=', $to))
             ->orderBy('payment_date', 'desc');
@@ -874,6 +883,10 @@ class ReportController extends Controller
         [$from, $to] = $this->dateRange($request);
         $payments = Payment::with(['supplier','purchase'])
             ->where(function ($q) { $q->whereNotNull('purchase_id')->orWhereNotNull('supplier_id'); })
+            ->where(function ($q) {
+                $q->whereNull('purchase_id')
+                ->orWhereHas('purchase', fn ($pq) => SecretPos::excludeHiddenPurchaseRanges($pq, 'total_amount'));
+            })
             ->when($from, fn($q) => $q->whereDate('payment_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('payment_date', '<=', $to))
             ->orderBy('payment_date','desc')->get();
@@ -891,6 +904,10 @@ class ReportController extends Controller
         [$from, $to] = $this->dateRange($request);
         $payments = Payment::with(['supplier','purchase'])
             ->where(function ($q) { $q->whereNotNull('purchase_id')->orWhereNotNull('supplier_id'); })
+            ->where(function ($q) {
+                $q->whereNull('purchase_id')
+                ->orWhereHas('purchase', fn ($pq) => SecretPos::excludeHiddenPurchaseRanges($pq, 'total_amount'));
+            })
             ->when($from, fn($q) => $q->whereDate('payment_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('payment_date', '<=', $to))
             ->orderBy('payment_date','desc')->get();

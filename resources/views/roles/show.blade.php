@@ -134,9 +134,11 @@
                             <p class="text-sm text-blue-800 font-medium mb-1">User Assignment</p>
                             <p class="text-sm text-blue-700">
                                 This role is currently assigned to {{ $role->users_count }} user(s). 
-                                <a href="{{ route('users.index') }}?role={{ $role->id }}" class="underline hover:text-blue-900">
-                                    View users →
-                                </a>
+                                @if(auth()->user()?->hasPermission('users.view'))
+                                    <a href="{{ route('users.index') }}?role={{ $role->id }}" class="underline hover:text-blue-900">
+                                        View users →
+                                    </a>
+                                @endif
                             </p>
                         </div>
                     </div>
@@ -146,24 +148,26 @@
 
             <!-- Action Buttons -->
             <div class="flex flex-col md:flex-row gap-3 pt-6 border-t">
-                <a
-                    href="{{ route('roles.edit', $role->id) }}"
-                    class="flex-1 md:flex-none px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition shadow-lg font-semibold text-center"
-                >
-                    <i class="fas fa-edit mr-2"></i>Edit Role
-                </a>
-                
-                @if($role->users_count === 0)
-                <form action="{{ route('roles.destroy', $role->id) }}" method="POST" class="flex-1 md:flex-none" onsubmit="return confirm('Are you sure you want to delete this role? This action cannot be undone.')">
-                    @csrf
-                    @method('DELETE')
-                    <button
-                        type="submit"
-                        class="w-full px-8 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold"
+                @if(auth()->user()?->hasPermission('roles.edit'))
+                    <a
+                        href="{{ route('roles.edit', $role->id) }}"
+                        class="flex-1 md:flex-none px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition shadow-lg font-semibold text-center"
                     >
-                        <i class="fas fa-trash mr-2"></i>Delete Role
-                    </button>
-                </form>
+                        <i class="fas fa-edit mr-2"></i>Edit Role
+                    </a>
+                @endif
+                
+                @if(auth()->user()?->hasPermission('roles.delete') && $role->users_count === 0)
+                    <form action="{{ route('roles.destroy', $role->id) }}" method="POST" class="flex-1 md:flex-none" onsubmit="return confirm('Are you sure you want to delete this role? This action cannot be undone.')">
+                        @csrf
+                        @method('DELETE')
+                        <button
+                            type="submit"
+                            class="w-full px-8 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold"
+                        >
+                            <i class="fas fa-trash mr-2"></i>Delete Role
+                        </button>
+                    </form>
                 @endif
 
                 <a

@@ -4,12 +4,16 @@ use Illuminate\Http\Request;
 use App\Models\Payment;
 use App\Models\Purchase;
 use App\Models\Supplier;
+use App\Support\SecretPos;
 
 class PaymentController extends Controller
 {
     public function create(Request $request)
     {
         $purchase = Purchase::findOrFail($request->purchase_id);
+        if (SecretPos::isPurchaseHidden((float) $purchase->total_amount)) {
+            abort(404);
+        }
         $supplier = $purchase->supplier;
         return view('payments.create', compact('purchase', 'supplier'));
     }
@@ -23,6 +27,9 @@ class PaymentController extends Controller
             'payment_date' => 'required|date',
         ]);
         $purchase = Purchase::findOrFail($request->purchase_id);
+        if (SecretPos::isPurchaseHidden((float) $purchase->total_amount)) {
+            abort(404);
+        }
         $payment = Payment::create([
             'purchase_id' => $purchase->id,
             'supplier_id' => $purchase->supplier_id,

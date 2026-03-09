@@ -12,12 +12,14 @@
             <h3 class="text-lg font-semibold text-gray-800">Role Management</h3>
             <p class="text-sm text-gray-600">Manage user roles and permissions</p>
         </div>
-        <a 
-            href="{{ route('roles.create') }}" 
-            class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition shadow-lg"
-        >
-            <i class="fas fa-plus mr-2"></i>Add New Role
-        </a>
+        @if(auth()->user()?->hasPermission('roles.create'))
+            <a 
+                href="{{ route('roles.create') }}" 
+                class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition shadow-lg"
+            >
+                <i class="fas fa-plus mr-2"></i>Add New Role
+            </a>
+        @endif
     </div>
 
     <!-- Roles Grid -->
@@ -91,25 +93,27 @@
                         >
                             <i class="fas fa-eye"></i>
                         </a>
-                        <a 
-                            href="{{ route('roles.edit', $role->id) }}"
-                            class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                            title="Edit"
-                        >
-                            <i class="fas fa-edit"></i>
-                        </a>
-                        @if($role->users_count === 0)
-                        <form action="{{ route('roles.destroy', $role->id) }}" method="POST" class="inline" onsubmit="return confirm('Are you sure you want to delete this role?')">
-                            @csrf
-                            @method('DELETE')
-                            <button 
-                                type="submit"
-                                class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
-                                title="Delete"
+                        @if(auth()->user()?->hasPermission('roles.edit'))
+                            <a 
+                                href="{{ route('roles.edit', $role->id) }}"
+                                class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                                title="Edit"
                             >
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </form>
+                                <i class="fas fa-edit"></i>
+                            </a>
+                        @endif
+                        @if(auth()->user()?->hasPermission('roles.delete') && $role->users_count === 0)
+                            <form action="{{ route('roles.destroy', $role->id) }}" method="POST" class="inline" onsubmit="return confirm('Are you sure you want to delete this role?')">
+                                @csrf
+                                @method('DELETE')
+                                <button 
+                                    type="submit"
+                                    class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                                    title="Delete"
+                                >
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
                         @endif
                     </div>
                 </div>
@@ -121,12 +125,14 @@
                 <i class="fas fa-user-shield text-6xl text-gray-300 mb-4"></i>
                 <p class="text-gray-500 text-lg mb-2">No roles found</p>
                 <p class="text-gray-400 text-sm mb-4">Create your first user role</p>
-                <a 
-                    href="{{ route('roles.create') }}"
-                    class="inline-block px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-                >
-                    <i class="fas fa-plus mr-2"></i>Add Role
-                </a>
+                @if(auth()->user()?->hasPermission('roles.create'))
+                    <a 
+                        href="{{ route('roles.create') }}"
+                        class="inline-block px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                    >
+                        <i class="fas fa-plus mr-2"></i>Add Role
+                    </a>
+                @endif
             </div>
         </div>
         @endforelse

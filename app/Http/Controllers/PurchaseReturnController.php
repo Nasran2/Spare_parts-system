@@ -10,12 +10,16 @@ use App\Models\ActivityLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use App\Support\SecretPos;
 
 class PurchaseReturnController extends Controller
 {
     public function index()
     {
-        $returns = PurchaseReturn::with(['purchase.supplier', 'user'])->latest()->paginate(10);
+        $returns = PurchaseReturn::with(['purchase.supplier', 'user'])
+            ->whereHas('purchase', fn ($q) => SecretPos::excludeHiddenPurchaseRanges($q, 'total_amount'))
+            ->latest()
+            ->paginate(10);
         return view('purchase_returns.index', compact('returns'));
     }
 
@@ -27,6 +31,7 @@ class PurchaseReturnController extends Controller
 
         if ($request->filled('purchase_id') || $request->filled('supplier_id') || $request->filled('date')) {
             $query = Purchase::with(['items.product', 'supplier']);
+            $query = SecretPos::excludeHiddenPurchaseRanges($query, 'total_amount');
 
             if ($request->filled('purchase_id')) {
                 $term = $request->purchase_id;
@@ -69,6 +74,9 @@ class PurchaseReturnController extends Controller
         ]);
 
         $purchase = Purchase::with('items')->findOrFail($request->purchase_id);
+        if (SecretPos::isPurchaseHidden((float) $purchase->total_amount)) {
+            abort(404);
+        }
         $totalRefund = 0;
 
         DB::beginTransaction();

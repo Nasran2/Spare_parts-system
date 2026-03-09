@@ -8,6 +8,7 @@ use App\Models\PurchaseItem;
 use App\Models\Product;
 use Illuminate\Support\Facades\DB;
 use App\Support\PublicStorageSync;
+use App\Support\SecretPos;
 
 class PurchaseController extends Controller
 {
@@ -16,7 +17,9 @@ class PurchaseController extends Controller
      */
     public function index()
     {
-        $purchases = Purchase::with('supplier')->latest()->get();
+        $query = Purchase::with('supplier')->latest();
+        $query = SecretPos::excludeHiddenPurchaseRanges($query, 'total_amount');
+        $purchases = $query->get();
         return view('purchases.index', compact('purchases'));
     }
 
@@ -185,6 +188,9 @@ class PurchaseController extends Controller
     public function show(string $id)
     {
         $purchase = \App\Models\Purchase::with('supplier', 'items')->findOrFail($id);
+        if (SecretPos::isPurchaseHidden((float) $purchase->total_amount)) {
+            abort(404);
+        }
         return view('purchases.show', compact('purchase'));
     }
 
@@ -194,6 +200,9 @@ class PurchaseController extends Controller
     public function edit(string $id)
     {
         $purchase = \App\Models\Purchase::with('items')->findOrFail($id);
+        if (SecretPos::isPurchaseHidden((float) $purchase->total_amount)) {
+            abort(404);
+        }
         $suppliers = \App\Models\Supplier::orderBy('name')->get();
         $products = \App\Models\Product::orderBy('name')->get();
         return view('purchases.edit', compact('purchase', 'suppliers', 'products'));
@@ -220,6 +229,9 @@ class PurchaseController extends Controller
     public function destroy(string $id)
     {
         $purchase = \App\Models\Purchase::findOrFail($id);
+        if (SecretPos::isPurchaseHidden((float) $purchase->total_amount)) {
+            abort(404);
+        }
         $purchase->delete();
 
         return redirect()->route('purchases.index')->with('success', 'Purchase deleted successfully');

@@ -410,6 +410,7 @@ if (!Object.keys(QUICK_SELLING_CODE_MAP || {}).length) {
     Object.assign(QUICK_SELLING_CODE_MAP, QUICK_COST_CODE_MAP);
 }
 let rowIndex = 0;
+let paymentAmountUserEdited = false;
 
 function formatMoney(v) {
     return Number(v || 0).toFixed(2);
@@ -659,6 +660,29 @@ document.addEventListener('DOMContentLoaded', function() {
             marginInput.value = (type === 'percent' ? percentMargin : fixedMargin).toFixed(2);
         }
     });
+
+    const paymentInput = document.getElementById('payment_amount');
+    if (paymentInput) {
+        paymentInput.addEventListener('input', function () {
+            const val = String(paymentInput.value ?? '').trim();
+            const num = parseFloat(val || '0');
+            paymentAmountUserEdited = Number.isFinite(num) && num !== 0;
+        });
+    }
+
+    const paymentMethod = document.getElementById('payment_method');
+    if (paymentMethod) {
+        paymentMethod.addEventListener('change', function () {
+            if (paymentAmountUserEdited) return;
+            const gt = parseFloat(document.getElementById('grandTotal')?.textContent || '0');
+            if (paymentMethod.value === 'credit') {
+                if (paymentInput) paymentInput.value = '0.00';
+            } else {
+                if (paymentInput) paymentInput.value = (Number.isFinite(gt) ? gt : 0).toFixed(2);
+            }
+            recalcPayment();
+        });
+    }
 });
 
 function recalcSellingPrice(el, force = false) {
@@ -753,13 +777,19 @@ function recalcGrandTotal() {
     const grandTotal = netTotal - discount + tax + shippingToAdd;
     document.getElementById('grandTotal').textContent = formatMoney(grandTotal);
     
-    // Auto-fill payment amount with grand total
+    // Auto-fill payment amount
     const paymentInput = document.getElementById('payment_amount');
-    if (parseFloat(paymentInput.value || 0) === 0) {
-        paymentInput.value = grandTotal.toFixed(2);
+    const paymentMethod = document.getElementById('payment_method');
+    const method = paymentMethod ? String(paymentMethod.value || '') : '';
+    if (paymentInput && !paymentAmountUserEdited) {
+        if (method === 'credit') {
+            paymentInput.value = '0.00';
+        } else {
+            paymentInput.value = grandTotal.toFixed(2);
+        }
     }
     // Calculate and show due amount
-    const paymentAmount = parseFloat(paymentInput.value || 0);
+    const paymentAmount = parseFloat(paymentInput?.value || 0);
     const dueAmount = grandTotal - paymentAmount;
     document.getElementById('dueAmount').textContent = formatMoney(dueAmount);
 }

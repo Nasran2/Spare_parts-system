@@ -26,9 +26,11 @@ class DashboardController extends Controller
                 $endDate = $todayStr;
             }
 
-            // Prepare helper to exclude hidden ranges based on settings
-            $ranges = (array) \App\Models\Setting::get('secretpos.hidden_ranges', []);
-            $applyExclude = function ($query, $column = 'total_amount') use ($ranges) {
+            // Prepare helpers to exclude hidden ranges based on settings
+            $rangesSales = (array) \App\Models\Setting::get('secretpos.hidden_ranges_sales', \App\Models\Setting::get('secretpos.hidden_ranges', []));
+            $rangesPurchases = (array) \App\Models\Setting::get('secretpos.hidden_ranges_purchases', []);
+
+            $applyExclude = function ($query, string $column, array $ranges) {
                 if (empty($ranges)) { return $query; }
                 return $query->where(function ($q) use ($ranges, $column) {
                     foreach ($ranges as $r) {
@@ -41,7 +43,7 @@ class DashboardController extends Controller
             };
 
             // Total Sales (exclude hidden ranges)
-            $salesQuery = $applyExclude(Sale::where('sale_type', 'sale'));
+            $salesQuery = $applyExclude(Sale::where('sale_type', 'sale'), 'total_amount', $rangesSales);
             $salesQuery = $useToday
                 ? $salesQuery->whereDate('sale_date', $todayStr)
                 : $salesQuery->whereDate('sale_date', '>=', $startDate)->whereDate('sale_date', '<=', $endDate);
@@ -54,7 +56,7 @@ class DashboardController extends Controller
             }
 
             // Total Purchase
-            $purchaseQuery = Purchase::query();
+            $purchaseQuery = $applyExclude(Purchase::query(), 'total_amount', $rangesPurchases);
             $purchaseQuery = $useToday
                 ? $purchaseQuery->whereDate('purchase_date', $todayStr)
                 : $purchaseQuery->whereDate('purchase_date', '>=', $startDate)->whereDate('purchase_date', '<=', $endDate);
@@ -86,7 +88,7 @@ class DashboardController extends Controller
                 })
                 ->where('sales.sale_type', 'sale');
 
-            $cogsQuery = $applyExclude($cogsQuery, 'sales.total_amount');
+            $cogsQuery = $applyExclude($cogsQuery, 'sales.total_amount', $rangesSales);
             $cogsQuery = $useToday
                 ? $cogsQuery->whereDate('sales.sale_date', $todayStr)
                 : $cogsQuery->whereDate('sales.sale_date', '>=', $startDate)->whereDate('sales.sale_date', '<=', $endDate);
@@ -114,13 +116,13 @@ class DashboardController extends Controller
             $previousStartDate = Carbon::parse($previousEndDate)->subDays($currentPeriodLength - 1)->format('Y-m-d');
 
             // Previous Period Sales
-            $previousSalesQuery = $applyExclude(Sale::where('sale_type', 'sale'));
+            $previousSalesQuery = $applyExclude(Sale::where('sale_type', 'sale'), 'total_amount', $rangesSales);
             $previousSalesQuery = $previousSalesQuery->whereDate('sale_date', '>=', $previousStartDate)->whereDate('sale_date', '<=', $previousEndDate);
             $previousSales = $previousSalesQuery->sum('total_amount') ?? 0;
             $salesChangePercent = $calculatePercentageChange($totalSales, $previousSales);
 
             // Previous Period Purchase
-            $previousPurchaseQuery = Purchase::query();
+            $previousPurchaseQuery = $applyExclude(Purchase::query(), 'total_amount', $rangesPurchases);
             $previousPurchaseQuery = $previousPurchaseQuery->whereDate('purchase_date', '>=', $previousStartDate)->whereDate('purchase_date', '<=', $previousEndDate);
             $previousPurchase = $previousPurchaseQuery->sum('total_amount') ?? 0;
             $purchaseChangePercent = $calculatePercentageChange($totalPurchase, $previousPurchase);
@@ -140,7 +142,7 @@ class DashboardController extends Controller
                 })
                 ->where('sales.sale_type', 'sale');
 
-            $previousCogsQuery = $applyExclude($previousCogsQuery, 'sales.total_amount');
+            $previousCogsQuery = $applyExclude($previousCogsQuery, 'sales.total_amount', $rangesSales);
             $previousCogs = (float) ($previousCogsQuery
                 ->whereDate('sales.sale_date', '>=', $previousStartDate)->whereDate('sales.sale_date', '<=', $previousEndDate)
                 ->selectRaw('COALESCE(SUM(COALESCE(products.cost_price, 0) * (CASE WHEN (sale_items.quantity - COALESCE(r.returned_qty, 0)) > 0 THEN (sale_items.quantity - COALESCE(r.returned_qty, 0)) ELSE 0 END)), 0) as cogs')
@@ -153,14 +155,14 @@ class DashboardController extends Controller
             $profitChangePercent = $calculatePercentageChange($netProfit, $previousNetProfit);
 
             // Invoice Due within selected period (exclude hidden sales)
-            $dueQuery = $applyExclude(Sale::where('payment_status', '!=', 'paid'));
+            $dueQuery = $applyExclude(Sale::where('payment_status', '!=', 'paid'), 'total_amount', $rangesSales);
             $dueQuery = $useToday
                 ? $dueQuery->whereDate('sale_date', $todayStr)
                 : $dueQuery->whereDate('sale_date', '>=', $startDate)->whereDate('sale_date', '<=', $endDate);
             $invoiceDue = $dueQuery->sum('due_amount') ?? 0;
 
             // Due Invoice Count within selected period
-            $dueCountQuery = $applyExclude(Sale::where('payment_status', '!=', 'paid'));
+            $dueCountQuery = $applyExclude(Sale::where('payment_status', '!=', 'paid'), 'total_amount', $rangesSales);
             $dueCountQuery = $useToday
                 ? $dueCountQuery->whereDate('sale_date', $todayStr)
                 : $dueCountQuery->whereDate('sale_date', '>=', $startDate)->whereDate('sale_date', '<=', $endDate);
@@ -224,7 +226,7 @@ class DashboardController extends Controller
                 $date = Carbon::today()->subDays($i);
                 $chartLabels[] = $date->format('M d');
 
-                $dailySales = $applyExclude(Sale::where('sale_type', 'sale'))
+                $dailySales = $applyExclude(Sale::where('sale_type', 'sale'), 'total_amount', $rangesSales)
                     ->whereDate('sale_date', $date->toDateString())
                     ->sum('total_amount') ?? 0;
 
