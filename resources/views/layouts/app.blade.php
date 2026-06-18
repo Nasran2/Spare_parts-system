@@ -125,11 +125,11 @@
         .dropdown-menu {
             max-height: 0;
             overflow: hidden;
-            transition: max-height 0.3s ease-out;
+            transition: max-height 0.4s ease-in-out;
         }
         
         .dropdown-menu.open {
-            max-height: 500px;
+            max-height: 1500px;
         }
         
         .stat-card {
@@ -208,22 +208,51 @@
             || $navUser?->hasPermission('sales.create')
             || $navUser?->hasPermission('sales.edit')
             || $navUser?->hasPermission('quotations.view')
-            || $navUser?->hasPermission('pos.access');
+            || $navUser?->hasPermission('pos.access')
+            || $navUser?->hasPermission('cheque_payments.view');
         $canCustomers = $navUser?->hasPermission('customers.view');
         $canExpensesMenu = $navUser?->hasPermission('expenses.view')
             || $navUser?->hasPermission('expenses.create')
             || $navUser?->hasPermission('expenses.edit');
+        $canAccountingMenu = $navUser?->hasPermission('accounting.view')
+            || $navUser?->hasPermission('accounting.accounts')
+            || $navUser?->hasPermission('accounting.transactions')
+            || $navUser?->hasPermission('accounting.cash-book')
+            || $navUser?->hasPermission('accounting.bank-book')
+            || $navUser?->hasPermission('accounting.banks')
+            || $navUser?->hasPermission('accounting.petty-cash')
+            || $navUser?->hasPermission('accounting.ledger')
+            || $navUser?->hasPermission('accounting.t-accounts')
+            || $navUser?->hasPermission('accounting.trial-balance')
+            || $navUser?->hasPermission('accounting.balance-sheet')
+            || $navUser?->hasPermission('accounting.owner-equity.view')
+            || $navUser?->hasPermission('cheque_payments.view');
+        $canStoresMenu = $navUser?->hasPermission('stores.view')
+            || $navUser?->hasPermission('stores.stores')
+            || $navUser?->hasPermission('stores.allocations')
+            || $navUser?->hasPermission('stores.transfers')
+            || $navUser?->hasPermission('stores.transfer-report')
+            || $navUser?->hasPermission('stores.report');
         $canReportsMenu = $navUser?->hasPermission('reports.sales')
             || $navUser?->hasPermission('reports.purchase')
             || $navUser?->hasPermission('reports.profit-loss')
             || $navUser?->hasPermission('reports.stock')
             || $navUser?->hasPermission('reports.expense')
-            || $navUser?->hasPermission('reports.trending');
+            || $navUser?->hasPermission('reports.trending')
+            || $navUser?->hasPermission('reports.vat')
+            || $navUser?->hasPermission('reports.receive')
+            || $navUser?->hasPermission('reports.debit')
+            || $navUser?->hasPermission('reports.rate-conversion')
+            || $navUser?->hasPermission('reports.due-bills')
+            || $navUser?->hasPermission('reports.customer-due')
+            || $navUser?->hasPermission('reports.never-sold')
+            || $navUser?->hasPermission('reports.unsold-recently');
         $canNotificationsMenu = $navUser?->hasPermission('notifications.view')
             || $navUser?->hasPermission('notifications.configure');
         $canSettings = $navUser?->hasPermission('settings.view');
         $canActivityLog = $navUser?->hasPermission('activity-log.view');
         $canPos = $navUser?->hasPermission('pos.access');
+        $isSuperAdmin = $navUser?->isSuperAdmin();
     @endphp
 
     <!-- Sidebar -->
@@ -252,6 +281,40 @@
                 <i class="fas fa-home w-5"></i>
                 <span>Dashboard</span>
             </a>
+            @endif
+
+            @if($isSuperAdmin)
+            <div class="nav-group">
+                <button onclick="toggleDropdown('secret-dashboard-menu')" class="nav-item flex items-center justify-between w-full px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('fun.dashboard*') ? 'active' : '' }}">
+                    <div class="flex items-center space-x-3">
+                        <i class="fas fa-user-secret w-5"></i>
+                        <span>Secret Dashboard</span>
+                    </div>
+                    <i class="fas fa-chevron-down transition-transform {{ request()->routeIs('fun.dashboard*') ? 'rotate-180' : '' }}" id="secret-dashboard-menu-icon"></i>
+                </button>
+                <div id="secret-dashboard-menu" class="dropdown-menu ml-4 mt-1 space-y-1 {{ request()->routeIs('fun.dashboard*') ? 'open' : '' }}">
+                    <a href="{{ route('fun.dashboard') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('fun.dashboard') ? 'active' : '' }}">
+                        <i class="fas fa-gauge-high w-4"></i>
+                        <span>Overview</span>
+                    </a>
+                    <a href="{{ route('fun.dashboard.section', 'dashboard') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->is('fun/dashboard/dashboard') ? 'active' : '' }}">
+                        <i class="fas fa-chart-pie w-4"></i>
+                        <span>Dashboard Controls</span>
+                    </a>
+                    <a href="{{ route('fun.dashboard.section', 'inventory') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->is('fun/dashboard/inventory') ? 'active' : '' }}">
+                        <i class="fas fa-boxes-stacked w-4"></i>
+                        <span>Product & Stock</span>
+                    </a>
+                    <a href="{{ route('fun.dashboard.section', 'records') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->is('fun/dashboard/records') ? 'active' : '' }}">
+                        <i class="fas fa-eye-slash w-4"></i>
+                        <span>Hide Records</span>
+                    </a>
+                    <a href="{{ route('fun.dashboard.section', 'privacy') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->is('fun/dashboard/privacy') ? 'active' : '' }}">
+                        <i class="fas fa-keyboard w-4"></i>
+                        <span>Privacy Mode</span>
+                    </a>
+                </div>
+            </div>
             @endif
 
             <!-- User Management -->
@@ -388,14 +451,14 @@
             <!-- Sales -->
             @if($canSalesMenu)
             <div class="nav-group">
-                <button onclick="toggleDropdown('sale-menu')" class="nav-item flex items-center justify-between w-full px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('pos.*') || request()->routeIs('sales.*') || request()->routeIs('quotations.*') || request()->routeIs('sale-returns.*') ? 'active' : '' }}">
+                <button onclick="toggleDropdown('sale-menu')" class="nav-item flex items-center justify-between w-full px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('pos.*') || request()->routeIs('sales.*') || request()->routeIs('quotations.*') || request()->routeIs('sale-returns.*') || request()->routeIs('cheque-payments.*') ? 'active' : '' }}">
                     <div class="flex items-center space-x-3">
                         <i class="fas fa-cash-register w-5"></i>
                         <span>Sales</span>
                     </div>
-                    <i class="fas fa-chevron-down transition-transform {{ request()->routeIs('pos.*') || request()->routeIs('sales.*') || request()->routeIs('quotations.*') || request()->routeIs('sale-returns.*') ? 'rotate-180' : '' }}" id="sale-menu-icon"></i>
+                    <i class="fas fa-chevron-down transition-transform {{ request()->routeIs('pos.*') || request()->routeIs('sales.*') || request()->routeIs('quotations.*') || request()->routeIs('sale-returns.*') || request()->routeIs('cheque-payments.*') ? 'rotate-180' : '' }}" id="sale-menu-icon"></i>
                 </button>
-                <div id="sale-menu" class="dropdown-menu ml-4 mt-1 space-y-1 {{ request()->routeIs('pos.*') || request()->routeIs('sales.*') || request()->routeIs('quotations.*') || request()->routeIs('sale-returns.*') ? 'open' : '' }}">
+                <div id="sale-menu" class="dropdown-menu ml-4 mt-1 space-y-1 {{ request()->routeIs('pos.*') || request()->routeIs('sales.*') || request()->routeIs('quotations.*') || request()->routeIs('sale-returns.*') || request()->routeIs('cheque-payments.*') ? 'open' : '' }}">
                     @if($canPos)
                     <a href="{{ route('pos.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('pos.*') ? 'active' : '' }}">
                         <i class="fas fa-desktop w-4"></i>
@@ -406,6 +469,12 @@
                     <a href="{{ route('sales.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('sales.*') ? 'active' : '' }}">
                         <i class="fas fa-list-alt w-4"></i>
                         <span>Sales List</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('cheque_payments.view'))
+                    <a href="{{ route('cheque-payments.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('cheque-payments.*') ? 'active' : '' }}">
+                        <i class="fas fa-money-check-alt w-4"></i>
+                        <span>Cheque Details</span>
                     </a>
                     @endif
                     @if($navUser?->hasPermission('quotations.view'))
@@ -430,6 +499,150 @@
                 <i class="fas fa-user-tie w-5"></i>
                 <span>Customers</span>
             </a>
+            @endif
+
+            <!-- Accounting -->
+            @if($canAccountingMenu)
+            <div class="nav-group">
+                <button onclick="toggleDropdown('accounting-menu')" class="nav-item flex items-center justify-between w-full px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('accounting.*') || request()->routeIs('cheque-payments.*') ? 'active' : '' }}">
+                    <div class="flex items-center space-x-3">
+                        <i class="fas fa-book-open w-5"></i>
+                        <span>Accounting</span>
+                    </div>
+                    <i class="fas fa-chevron-down transition-transform {{ request()->routeIs('accounting.*') || request()->routeIs('cheque-payments.*') ? 'rotate-180' : '' }}" id="accounting-menu-icon"></i>
+                </button>
+                <div id="accounting-menu" class="dropdown-menu ml-4 mt-1 space-y-1 {{ request()->routeIs('accounting.*') || request()->routeIs('cheque-payments.*') ? 'open' : '' }}">
+                    @if($navUser?->hasPermission('accounting.view'))
+                    <a href="{{ route('accounting.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('accounting.index') ? 'active' : '' }}">
+                        <i class="fas fa-gauge-high w-4"></i>
+                        <span>Overview</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('accounting.accounts'))
+                    <a href="{{ route('accounting.accounts') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('accounting.accounts') ? 'active' : '' }}">
+                        <i class="fas fa-list w-4"></i>
+                        <span>Chart Accounting</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('accounting.transactions'))
+                    <a href="{{ route('accounting.transactions') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('accounting.transactions') ? 'active' : '' }}">
+                        <i class="fas fa-money-bill-transfer w-4"></i>
+                        <span>Transactions</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('accounting.cash-book'))
+                    <a href="{{ route('accounting.cash-book') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('accounting.cash-book') ? 'active' : '' }}">
+                        <i class="fas fa-cash-register w-4"></i>
+                        <span>Cash Book</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('accounting.bank-book'))
+                    <a href="{{ route('accounting.bank-book') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('accounting.bank-book') ? 'active' : '' }}">
+                        <i class="fas fa-building-columns w-4"></i>
+                        <span>Bank Book</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('accounting.banks'))
+                    <a href="{{ route('accounting.banks') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('accounting.banks') ? 'active' : '' }}">
+                        <i class="fas fa-building-columns w-4"></i>
+                        <span>Bank Reconcile</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('accounting.petty-cash'))
+                    <a href="{{ route('accounting.petty-cash') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('accounting.petty-cash') ? 'active' : '' }}">
+                        <i class="fas fa-wallet w-4"></i>
+                        <span>Petty Cash</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('accounting.ledger'))
+                    <a href="{{ route('accounting.ledger') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('accounting.ledger') ? 'active' : '' }}">
+                        <i class="fas fa-book w-4"></i>
+                        <span>Ledger</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('accounting.t-accounts'))
+                    <a href="{{ route('accounting.t-accounts') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('accounting.t-accounts') ? 'active' : '' }}">
+                        <i class="fas fa-table-columns w-4"></i>
+                        <span>T Accounts</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('accounting.trial-balance'))
+                    <a href="{{ route('accounting.trial-balance') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('accounting.trial-balance') ? 'active' : '' }}">
+                        <i class="fas fa-scale-balanced w-4"></i>
+                        <span>Trial Balance</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('accounting.balance-sheet'))
+                    <a href="{{ route('accounting.balance-sheet') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('accounting.balance-sheet') ? 'active' : '' }}">
+                        <i class="fas fa-file-invoice-dollar w-4"></i>
+                        <span>Balance Sheet</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('accounting.owner-equity.view'))
+                    <a href="{{ route('accounting.owner-equity') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('accounting.owner-equity') ? 'active' : '' }}">
+                        <i class="fas fa-user-tie w-4"></i>
+                        <span>Owner Capital / Drawings</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('cheque_payments.view'))
+                    <a href="{{ route('cheque-payments.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('cheque-payments.*') ? 'active' : '' }}">
+                        <i class="fas fa-money-check-alt w-4"></i>
+                        <span>Cheque Management</span>
+                    </a>
+                    @endif
+                </div>
+            </div>
+            @endif
+
+            <!-- Store Stock -->
+            @if($canStoresMenu)
+            <div class="nav-group">
+                <button onclick="toggleDropdown('store-stock-menu')" class="nav-item flex items-center justify-between w-full px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('stores.*') ? 'active' : '' }}">
+                    <div class="flex items-center space-x-3">
+                        <i class="fas fa-store w-5"></i>
+                        <span>Store Stock</span>
+                    </div>
+                    <i class="fas fa-chevron-down transition-transform {{ request()->routeIs('stores.*') ? 'rotate-180' : '' }}" id="store-stock-menu-icon"></i>
+                </button>
+                <div id="store-stock-menu" class="dropdown-menu ml-4 mt-1 space-y-1 {{ request()->routeIs('stores.*') ? 'open' : '' }}">
+                    @if($navUser?->hasPermission('stores.view'))
+                    <a href="{{ route('stores.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('stores.index') ? 'active' : '' }}">
+                        <i class="fas fa-gauge-high w-4"></i>
+                        <span>Overview</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('stores.stores'))
+                    <a href="{{ route('stores.stores') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('stores.stores') ? 'active' : '' }}">
+                        <i class="fas fa-shop w-4"></i>
+                        <span>Stores</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('stores.allocations'))
+                    <a href="{{ route('stores.allocations') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('stores.allocations') ? 'active' : '' }}">
+                        <i class="fas fa-boxes-stacked w-4"></i>
+                        <span>Allocations</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('stores.transfers'))
+                    <a href="{{ route('stores.transfers') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('stores.transfers') ? 'active' : '' }}">
+                        <i class="fas fa-right-left w-4"></i>
+                        <span>Transfers</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('stores.transfer-report'))
+                    <a href="{{ route('stores.transfer-report') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('stores.transfer-report') ? 'active' : '' }}">
+                        <i class="fas fa-clock-rotate-left w-4"></i>
+                        <span>Transfer History</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('stores.report'))
+                    <a href="{{ route('stores.report') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('stores.report') ? 'active' : '' }}">
+                        <i class="fas fa-chart-column w-4"></i>
+                        <span>Shipment Report</span>
+                    </a>
+                    @endif
+                </div>
+            </div>
             @endif
 
             <!-- Expenses -->
@@ -506,30 +719,52 @@
                         <span>Expense Report</span>
                     </a>
                     @endif
-                    @if($navUser?->hasPermission('reports.sales'))
+                    @if($navUser?->hasPermission('reports.vat'))
                     <a href="{{ route('reports.vat') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.vat') ? 'active' : '' }}">
                         <i class="fas fa-receipt w-4"></i>
                         <span>VAT Report</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('reports.rate-conversion'))
                     <a href="{{ route('reports.rates') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.rates') ? 'active' : '' }}">
                         <i class="fas fa-exchange-alt w-4"></i>
                         <span>Rate Conversion</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('reports.receive'))
                     <a href="{{ route('reports.receive') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.receive') ? 'active' : '' }}">
                         <i class="fas fa-arrow-down w-4"></i>
                         <span>Receive Report</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('reports.debit'))
                     <a href="{{ route('reports.debit') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.debit') ? 'active' : '' }}">
                         <i class="fas fa-arrow-up w-4"></i>
                         <span>Debit Report</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('reports.due-bills'))
                     <a href="{{ route('reports.due-bills') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.due-bills') ? 'active' : '' }}">
                         <i class="fas fa-file-invoice-dollar w-4"></i>
                         <span>Due Bills Report</span>
                     </a>
+                    @endif
+                    @if($navUser?->hasPermission('reports.customer-due'))
                     <a href="{{ route('reports.customer-due') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.customer-due') ? 'active' : '' }}">
                         <i class="fas fa-user-clock w-4"></i>
                         <span>Customer Due Report</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('reports.never-sold'))
+                    <a href="{{ route('reports.never-sold') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.never-sold') ? 'active' : '' }}">
+                        <i class="fas fa-ban w-4"></i>
+                        <span>Never Sold Products</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('reports.unsold-recently'))
+                    <a href="{{ route('reports.unsold-recently') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.unsold-recently') ? 'active' : '' }}">
+                        <i class="fas fa-calendar-times w-4"></i>
+                        <span>Unsold Products (Time)</span>
                     </a>
                     @endif
                 </div>
@@ -843,6 +1078,127 @@
     </script>
 
     @yield('extra-modals')
+
+    @if(request()->routeIs('pos.index') && isset($privacySettings) && $privacySettings->is_enabled && ($privacySettings->apply_to_pos ?? false) && \App\Services\PrivacyModeService::canToggle(auth()->user()))
+    <!-- Keyboard listener and toggle logic for Privacy Mode -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+            const shortcutSetting = (isMacPlatform()
+                ? @json($privacySettings->shortcut_key_mac ?? 'Cmd+X')
+                : @json($privacySettings->shortcut_key ?? 'Alt+S')) || '';
+            const shortcut = parseShortcut(shortcutSetting);
+
+            if (!shortcut.key) {
+                return;
+            }
+            
+            document.addEventListener('keydown', function(e) {
+                const matchesShortcut =
+                    e.ctrlKey === shortcut.ctrl &&
+                    e.metaKey === shortcut.meta &&
+                    e.shiftKey === shortcut.shift &&
+                    e.altKey === shortcut.alt &&
+                    normalizeKey(e.key) === shortcut.key;
+
+                if (!matchesShortcut) {
+                    return;
+                }
+
+                const activeEl = document.activeElement;
+                const isEditing = activeEl && (
+                    activeEl.tagName === 'INPUT' ||
+                    activeEl.tagName === 'TEXTAREA' ||
+                    activeEl.tagName === 'SELECT' ||
+                    activeEl.isContentEditable
+                );
+
+                if (isEditing && !(shortcut.ctrl || shortcut.meta || shortcut.alt)) {
+                    return;
+                }
+
+                e.preventDefault();
+                togglePrivacyMode();
+            });
+
+            function isMacPlatform() {
+                const platform = navigator.platform || '';
+                const userAgent = navigator.userAgent || '';
+                return platform.toUpperCase().includes('MAC') || userAgent.toUpperCase().includes('MAC');
+            }
+
+            function parseShortcut(value) {
+                const modifiers = ['ctrl', 'control', 'shift', 'alt', 'option', 'meta', 'cmd', 'command', 'win'];
+                const parts = String(value)
+                    .toLowerCase()
+                    .replace(/⌘/g, 'cmd')
+                    .replace(/⌥/g, 'alt')
+                    .replace(/⇧/g, 'shift')
+                    .replace(/control/g, 'ctrl')
+                    .split('+')
+                    .map(part => part.trim())
+                    .filter(Boolean);
+
+                return {
+                    ctrl: parts.includes('ctrl'),
+                    shift: parts.includes('shift'),
+                    alt: parts.includes('alt') || parts.includes('option'),
+                    meta: parts.includes('meta') || parts.includes('cmd') || parts.includes('command') || parts.includes('win'),
+                    key: normalizeKey(parts.find(part => !modifiers.includes(part)) || '')
+                };
+            }
+
+            function normalizeKey(key) {
+                const normalized = String(key).toLowerCase().trim();
+                if (normalized === ' ') return 'space';
+                if (normalized === 'esc') return 'escape';
+                if (normalized === 'arrowup') return 'up';
+                if (normalized === 'arrowdown') return 'down';
+                if (normalized === 'arrowleft') return 'left';
+                if (normalized === 'arrowright') return 'right';
+                return normalized;
+            }
+
+            function togglePrivacyMode() {
+                fetch("{{ route('privacy-mode.toggle') }}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken
+                    },
+                    body: JSON.stringify({ page: window.location.pathname })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        showPrivacyModeToast(data.message || (data.active ? 'Activated.' : 'Deactivated.'), false);
+                        setTimeout(() => window.location.reload(), 1000);
+                    } else {
+                        showPrivacyModeToast(data.error || 'Unable to change mode.', true);
+                    }
+                })
+                .catch(err => {
+                    console.error('Error toggling privacy mode:', err);
+                    showPrivacyModeToast('Unable to change mode.', true);
+                });
+            }
+
+            function showPrivacyModeToast(message, isError) {
+                const existing = document.getElementById('privacy-mode-toggle-toast');
+                if (existing) existing.remove();
+
+                const toast = document.createElement('div');
+                toast.id = 'privacy-mode-toggle-toast';
+                toast.className = 'fixed top-4 right-4 z-[10000] px-4 py-2 rounded-lg shadow-lg text-sm font-semibold text-white ' + (isError ? 'bg-rose-600' : 'bg-emerald-600');
+                toast.textContent = message;
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 1000);
+            }
+        });
+    </script>
+    @endif
+
     @stack('scripts')
 </body>
 </html>

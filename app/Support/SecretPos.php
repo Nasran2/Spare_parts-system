@@ -3,16 +3,44 @@
 namespace App\Support;
 
 use App\Models\Setting;
+use App\Services\DashboardVisibilityService;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 
 class SecretPos
 {
+    private static function visibilityControls(): array
+    {
+        return DashboardVisibilityService::configForUser(Auth::user());
+    }
+
+    private static function formatPriceByControls(float $amount, array $controls): string
+    {
+        $priceVisiblePct = (float) ($controls['price_visible_percentage'] ?? 100);
+        $masked = DashboardVisibilityService::maskByPercentage(abs($amount), $priceVisiblePct);
+        $roundToWhole = $priceVisiblePct < 100;
+
+        if ($roundToWhole) {
+            $masked = round($masked);
+        }
+
+        if ($priceVisiblePct < 100 && abs($amount) > 0 && $masked <= 0) {
+            $masked = 1;
+        }
+
+        if ($amount < 0) {
+            $masked *= -1;
+        }
+
+        return number_format($masked, $roundToWhole ? 0 : 2);
+    }
+
     private static function normalizeRanges($ranges): array
     {
         $ranges = (array) $ranges;
         $normalized = [];
         foreach ($ranges as $r) {
-            if (!is_array($r)) {
+            if (! is_array($r)) {
                 continue;
             }
             $normalized[] = [
@@ -21,6 +49,7 @@ class SecretPos
                 'hide' => (bool) ($r['hide'] ?? false),
             ];
         }
+
         return $normalized;
     }
 
@@ -33,18 +62,32 @@ class SecretPos
         if ($ranges === null) {
             $ranges = $default;
         }
+
         return self::normalizeRanges($ranges);
     }
 
     public static function salesHiddenRanges(): array
     {
         // Backward compatible: older installs stored this at secretpos.hidden_ranges
-        return self::getRanges('secretpos.hidden_ranges_sales', 'secretpos.hidden_ranges', []);
+        $ranges = self::getRanges('secretpos.hidden_ranges_sales', 'secretpos.hidden_ranges', []);
+        $controlRanges = DashboardVisibilityService::rangesFromControls(
+            self::visibilityControls(),
+            'hidden_sales_price_ranges',
+            ['hidden_price_ranges']
+        );
+
+        return array_values(array_merge($ranges, $controlRanges));
     }
 
     public static function purchaseHiddenRanges(): array
     {
-        return self::getRanges('secretpos.hidden_ranges_purchases', null, []);
+        $ranges = self::getRanges('secretpos.hidden_ranges_purchases', null, []);
+        $controlRanges = DashboardVisibilityService::rangesFromControls(
+            self::visibilityControls(),
+            'hidden_purchase_price_ranges'
+        );
+
+        return array_values(array_merge($ranges, $controlRanges));
     }
 
     /**
@@ -56,13 +99,16 @@ class SecretPos
         $ranges = self::salesHiddenRanges();
         foreach ($ranges as $r) {
             $hide = (bool) ($r['hide'] ?? false);
-            if (!$hide) { continue; }
+            if (! $hide) {
+                continue;
+            }
             $min = (int) ($r['min'] ?? 0);
             $max = (int) ($r['max'] ?? PHP_INT_MAX);
             if ($amount >= $min && $amount <= $max) {
                 return true;
             }
         }
+
         return false;
     }
 
@@ -75,7 +121,7 @@ class SecretPos
     {
         $ranges = self::purchaseHiddenRanges();
         foreach ($ranges as $r) {
-            if (!(bool) ($r['hide'] ?? false)) {
+            if (! (bool) ($r['hide'] ?? false)) {
                 continue;
             }
             $min = (int) ($r['min'] ?? 0);
@@ -84,6 +130,7 @@ class SecretPos
                 return true;
             }
         }
+
         return false;
     }
 
@@ -92,7 +139,16 @@ class SecretPos
      */
     public static function mask(float $amount): string
     {
-        return self::isHidden($amount) ? '—' : number_format($amount, 2);
+        if (\App\Services\PrivacyModeService::isActiveForUser(Auth::user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
+            return \App\Services\PrivacyModeService::maskAmount($amount);
+        }
+
+        $controls = self::visibilityControls();
+        if (! empty($controls['hide_price_wise_data']) || self::isHidden($amount)) {
+            return '—';
+        }
+
+        return self::formatPriceByControls($amount, $controls);
     }
 
     /**
@@ -100,9 +156,14 @@ class SecretPos
      */
     public static function maskForSale(?float $saleTotal, float $amount): string
     {
+        if (\App\Services\PrivacyModeService::isActiveForUser(Auth::user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
+            return \App\Services\PrivacyModeService::maskAmount($amount);
+        }
+
         if ($saleTotal !== null && self::isHidden($saleTotal)) {
             return '—';
         }
+
         return self::mask($amount);
     }
 
@@ -111,6 +172,10 @@ class SecretPos
      */
     public static function currencyMask(float $amount, string $currency): string
     {
+        if (\App\Services\PrivacyModeService::isActiveForUser(Auth::user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
+            return \App\Services\PrivacyModeService::maskAmount($amount, $currency);
+        }
+
         return trim($currency).' '.self::mask($amount);
     }
 
@@ -119,6 +184,10 @@ class SecretPos
      */
     public static function currencyMaskForSale(?float $saleTotal, float $amount, string $currency): string
     {
+        if (\App\Services\PrivacyModeService::isActiveForUser(Auth::user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
+            return \App\Services\PrivacyModeService::maskAmount($amount, $currency);
+        }
+
         return trim($currency).' '.self::maskForSale($saleTotal, $amount);
     }
 
@@ -133,10 +202,13 @@ class SecretPos
         if (empty($ranges)) {
             return $query;
         }
+
         return $query->where(function ($q) use ($ranges, $column) {
             foreach ($ranges as $r) {
                 $hide = (bool) ($r['hide'] ?? false);
-                if (!$hide) { continue; }
+                if (! $hide) {
+                    continue;
+                }
                 $min = (int) ($r['min'] ?? 0);
                 $max = (int) ($r['max'] ?? PHP_INT_MAX);
                 $q->whereNotBetween($column, [$min, $max]);
@@ -155,9 +227,10 @@ class SecretPos
         if (empty($ranges)) {
             return $query;
         }
+
         return $query->where(function ($q) use ($ranges, $column) {
             foreach ($ranges as $r) {
-                if (!(bool) ($r['hide'] ?? false)) {
+                if (! (bool) ($r['hide'] ?? false)) {
                     continue;
                 }
                 $min = (int) ($r['min'] ?? 0);

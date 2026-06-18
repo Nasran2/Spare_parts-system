@@ -8,8 +8,7 @@
     <form action="{{ route('purchases.store') }}" method="POST" enctype="multipart/form-data" onsubmit="return submitPurchase(event)">
         @csrf
 
-        <!-- Header Section -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
             <!-- Supplier -->
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-2">Supplier: <span class="text-red-500">*</span></label>
@@ -48,7 +47,35 @@
                     <option value="ordered">Ordered</option>
                 </select>
             </div>
+
+            <!-- Store -->
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <label class="block text-sm font-semibold text-gray-700">
+                        <i class="fas fa-store text-green-600 mr-1"></i>Store(s): <span class="text-red-500">*</span>
+                    </label>
+                    <button type="button" onclick="openStoreModal()" class="px-2 py-0.5 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 font-semibold flex items-center gap-1">
+                        <i class="fas fa-plus text-[10px]"></i> Add
+                    </button>
+                </div>
+                <input type="text" id="store_search" placeholder="Search stores..." class="w-full border border-gray-300 rounded px-2.5 py-1 text-xs mb-2 focus:ring-1 focus:ring-green-500">
+                <div id="selected_store_chips" class="flex flex-wrap gap-2 mb-2"></div>
+                <div class="store-checkboxes-list hidden"></div>
+                <div class="store-search-results hidden space-y-1.5 max-h-32 overflow-y-auto border border-gray-300 rounded p-2 bg-white">
+                    @forelse($stores as $store)
+                    <button type="button" class="store-option flex w-full items-center justify-between cursor-pointer hover:bg-green-50 p-2 rounded text-left transition" data-store-id="{{ $store->id }}" data-store-name="{{ $store->name }}" data-is-default="{{ $store->is_default ? '1' : '0' }}">
+                        <span class="text-sm text-gray-700 font-medium">{{ $store->name }}{{ $store->is_default ? ' ⭐' : '' }}</span>
+                        <span class="store-option-status text-xs font-semibold text-green-600"></span>
+                    </button>
+                    <input type="checkbox" name="store_ids[]" value="{{ $store->id }}" class="store-checkbox" style="display: none;" data-name="{{ $store->name }}" data-is-default="{{ $store->is_default ? '1' : '0' }}" {{ (is_array(old('store_ids')) && in_array($store->id, old('store_ids'))) || (!old('store_ids') && $defaultStore && $store->id == $defaultStore->id) ? 'checked' : '' }}>
+                    @empty
+                    <p class="text-sm text-gray-500">No stores found</p>
+                    @endforelse
+                    <p id="no_store_matches" class="hidden text-sm text-gray-500">No matching stores</p>
+                </div>
+            </div>
         </div>
+
 
         <!-- Second Row -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -294,7 +321,7 @@
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Selling Price <span class="text-red-500">*</span></label>
                     <input type="number" step="0.01" name="selling_price" required class="w-full border rounded px-3 py-2" />
                 </div>
-                @if((bool) \App\Models\Setting::get('barcode_enable_selling_secret_code', false))
+                @if(($canUseSellingSecretCode ?? false) && (bool) \App\Models\Setting::get('barcode_enable_selling_secret_code', false))
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Secret Selling Code</label>
                     <input type="text" id="quick_secret_selling_code" class="w-full border rounded px-3 py-2" placeholder="Type secret code to fill selling price" />
@@ -333,6 +360,43 @@
                     <i class="fas fa-plus mr-2"></i>Create Product
                 </button>
                 <button type="button" onclick="closeProductModal()" class="px-6 py-2 bg-gray-200 rounded hover:bg-gray-300">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Store Modal -->
+<div id="storeModal" class="fixed inset-0 hidden items-center justify-center z-50">
+    <div class="absolute inset-0 bg-black opacity-50" onclick="closeStoreModal()"></div>
+    <div class="bg-white rounded-lg shadow-lg w-full max-w-md relative z-10 p-6 max-h-screen overflow-y-auto">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold">Add New Store</h3>
+            <button onclick="closeStoreModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+        </div>
+        <form id="quickStoreForm">
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Store Name <span class="text-red-500">*</span></label>
+                    <input type="text" name="name" required class="w-full border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" placeholder="e.g. Warehouse A" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Store Code <span class="text-red-500">*</span></label>
+                    <input type="text" name="code" required class="w-full border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" placeholder="e.g. WH-A" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Phone</label>
+                    <input type="text" name="phone" class="w-full border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" placeholder="Optional" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Address</label>
+                    <input type="text" name="address" class="w-full border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" placeholder="Optional" />
+                </div>
+            </div>
+            <div class="mt-6 flex items-center gap-2">
+                <button type="submit" class="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-semibold text-sm">
+                    <i class="fas fa-plus mr-2"></i>Create Store
+                </button>
+                <button type="button" onclick="closeStoreModal()" class="px-6 py-2 bg-gray-200 rounded hover:bg-gray-300 text-sm">Cancel</button>
             </div>
         </form>
     </div>
@@ -390,8 +454,9 @@
 @push('scripts')
 <script>
 const PRODUCTS = @json($productsData);
+const CAN_USE_SELLING_SECRET_CODE = @json($canUseSellingSecretCode ?? false);
 const QUICK_COST_CODE_MAP = @json((array) \App\Models\Setting::get('barcode_cost_code_map'));
-const QUICK_SELLING_CODE_MAP = @json((array) \App\Models\Setting::get('barcode_selling_code_map'));
+const QUICK_SELLING_CODE_MAP = @json(($canUseSellingSecretCode ?? false) ? (array) \App\Models\Setting::get('barcode_selling_code_map') : []);
 if (!Object.keys(QUICK_COST_CODE_MAP || {}).length) {
     Object.assign(QUICK_COST_CODE_MAP, {
         '0': 'E',
@@ -406,7 +471,7 @@ if (!Object.keys(QUICK_COST_CODE_MAP || {}).length) {
         '9': 'L'
     });
 }
-if (!Object.keys(QUICK_SELLING_CODE_MAP || {}).length) {
+if (CAN_USE_SELLING_SECRET_CODE && !Object.keys(QUICK_SELLING_CODE_MAP || {}).length) {
     Object.assign(QUICK_SELLING_CODE_MAP, QUICK_COST_CODE_MAP);
 }
 let rowIndex = 0;
@@ -416,10 +481,221 @@ function formatMoney(v) {
     return Number(v || 0).toFixed(2);
 }
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 function loadSupplierAddress() {
     const sel = document.getElementById('supplier_id');
     const opt = sel.selectedOptions[0];
     document.getElementById('supplier_address').value = opt ? (opt.dataset.address || '') : '';
+}
+
+function getSelectedStores() {
+    const checked = [];
+    document.querySelectorAll('.store-checkbox:checked').forEach(cb => {
+        checked.push({
+            id: cb.value,
+            name: cb.getAttribute('data-name'),
+            isDefault: cb.getAttribute('data-is-default') === '1'
+        });
+    });
+    return checked;
+}
+
+function updateSelectedStoreChips() {
+    const chipsContainer = document.getElementById('selected_store_chips');
+    if (!chipsContainer) return;
+
+    const stores = getSelectedStores();
+    chipsContainer.innerHTML = '';
+
+    stores.forEach(store => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'inline-flex items-center gap-2 rounded-full border border-yellow-200 bg-yellow-50 px-3 py-1 text-xs font-semibold text-amber-900 hover:bg-yellow-100';
+        button.setAttribute('title', `Remove ${store.name}`);
+        button.innerHTML = `
+            <span>${escapeHtml(store.name)}${store.isDefault ? ' ⭐' : ''}</span>
+            <i class="fas fa-times text-[10px] text-amber-700"></i>
+        `;
+        button.addEventListener('click', () => setStoreChecked(store.id, false));
+        chipsContainer.appendChild(button);
+    });
+
+    document.querySelectorAll('.store-option').forEach(option => {
+        const checkbox = Array.from(document.querySelectorAll('.store-checkbox'))
+            .find(cb => cb.value === String(option.dataset.storeId));
+        const checked = Boolean(checkbox?.checked);
+        option.classList.toggle('hidden', checked);
+        option.classList.toggle('bg-green-50', checked);
+        option.classList.toggle('ring-1', checked);
+        option.classList.toggle('ring-green-200', checked);
+
+        const status = option.querySelector('.store-option-status');
+        if (status) status.textContent = checked ? 'Added' : '';
+    });
+}
+
+function setStoreChecked(storeId, checked = true) {
+    const checkbox = Array.from(document.querySelectorAll('.store-checkbox'))
+        .find(cb => cb.value === String(storeId));
+    if (!checkbox) return;
+
+    checkbox.checked = checked;
+    if (checked) {
+        const storeSearch = document.getElementById('store_search');
+        if (storeSearch) storeSearch.value = '';
+    }
+    handleStoreCheckboxChange();
+    filterStoresList();
+    if (checked) hideStoreResults();
+}
+
+function handleStoreCheckboxChange() {
+    updateSelectedStoreChips();
+    updateAllRowsStoreQuantities();
+}
+
+function showStoreResults() {
+    const results = document.querySelector('.store-search-results');
+    if (!results) return;
+
+    results.classList.remove('hidden');
+    filterStoresList();
+}
+
+function hideStoreResults() {
+    const results = document.querySelector('.store-search-results');
+    if (!results) return;
+
+    results.classList.add('hidden');
+}
+
+function buildStoreQuantitiesContainer(tr, selectedStores) {
+    const container = tr.querySelector('.store-qtys-container');
+    if (!container) return;
+
+    // Read current quantity inputs mapped by store id
+    const currentVals = {};
+    container.querySelectorAll('.store-qty-input').forEach(input => {
+        const sid = input.getAttribute('data-store-id');
+        currentVals[sid] = parseFloat(input.value || 0);
+    });
+
+    container.innerHTML = '';
+
+    if (selectedStores.length === 0) {
+        container.innerHTML = '<span class="text-xs text-red-500 font-medium">Please select a store</span>';
+        const qtyInput = tr.querySelector('.qty-input');
+        qtyInput.value = 0;
+        const totalDisplay = tr.querySelector('.row-total-qty-display');
+        if (totalDisplay) totalDisplay.textContent = 'Total: 0';
+        return;
+    }
+
+    selectedStores.forEach((store, idx) => {
+        // Determine default value
+        let val = 0;
+        if (store.id in currentVals) {
+            val = currentVals[store.id];
+        } else {
+            // If it's a new store being added:
+            // If this is the only store, or if we have no values in currentVals yet and this is default store, set to 1
+            const hasExisting = Object.keys(currentVals).length > 0;
+            if (!hasExisting) {
+                if (store.isDefault) {
+                    val = 1;
+                } else if (idx === 0 && !selectedStores.some(s => s.isDefault)) {
+                    val = 1;
+                }
+            }
+        }
+
+        const div = document.createElement('div');
+        div.className = 'flex items-center justify-between gap-2 text-xs mb-1';
+        div.innerHTML = `
+            <span class="text-gray-700 font-medium truncate max-w-[120px]" title="${store.name}">${store.name}:</span>
+            <input type="number" min="0" step="0.01" class="store-qty-input border border-gray-300 rounded px-1 py-0.5 text-right w-16 focus:ring-1 focus:ring-green-500 text-xs" data-store-id="${store.id}" value="${val}" oninput="onStoreQtyInput(this)" />
+        `;
+        container.appendChild(div);
+    });
+
+    // Sum up quantities
+    let total = 0;
+    container.querySelectorAll('.store-qty-input').forEach(input => {
+        total += parseFloat(input.value || 0);
+    });
+
+    const qtyInput = tr.querySelector('.qty-input');
+    qtyInput.value = total;
+    const totalDisplay = tr.querySelector('.row-total-qty-display');
+    if (totalDisplay) {
+        totalDisplay.textContent = `Total: ${total}`;
+    }
+}
+
+function updateAllRowsStoreQuantities() {
+    const stores = getSelectedStores();
+    document.querySelectorAll('#itemsBody tr').forEach(tr => {
+        buildStoreQuantitiesContainer(tr, stores);
+        recalcRow(tr.querySelector('.qty-input'));
+    });
+    applyShippingToAll();
+}
+
+function onStoreQtyInput(el) {
+    const tr = el.closest('tr');
+    if (!tr) return;
+
+    let total = 0;
+    tr.querySelectorAll('.store-qty-input').forEach(input => {
+        total += parseFloat(input.value || 0);
+    });
+
+    const qtyInput = tr.querySelector('.qty-input');
+    qtyInput.value = total;
+
+    const totalDisplay = tr.querySelector('.row-total-qty-display');
+    if (totalDisplay) {
+        totalDisplay.textContent = `Total: ${total}`;
+    }
+
+    recalcRow(qtyInput);
+    applyShippingToAll();
+}
+
+function incrementRowQuantity(tr) {
+    const storeInputs = tr.querySelectorAll('.store-qty-input');
+    if (storeInputs.length > 0) {
+        const defaultCheckbox = document.querySelector('.store-checkbox[data-is-default="1"]');
+        const defaultStoreId = defaultCheckbox ? defaultCheckbox.value : null;
+        
+        let targetInput = null;
+        if (defaultStoreId) {
+            targetInput = Array.from(storeInputs).find(input => input.getAttribute('data-store-id') == defaultStoreId);
+        }
+        
+        if (!targetInput) {
+            targetInput = storeInputs[0];
+        }
+        
+        if (targetInput) {
+            const currentVal = parseFloat(targetInput.value || 0);
+            targetInput.value = currentVal + 1;
+            onStoreQtyInput(targetInput);
+            return;
+        }
+    }
+    
+    const qtyInput = tr.querySelector('.qty-input');
+    qtyInput.value = parseFloat(qtyInput.value || 0) + 1;
+    recalcRow(qtyInput);
 }
 
 function addItemRow(productData = null) {
@@ -446,7 +722,9 @@ function addItemRow(productData = null) {
             </select>
         </td>
         <td class="border px-2 py-2">
-            <input type="number" class="qty-input w-full text-right border-0 focus:ring-0 text-sm" value="1" min="1" oninput="recalcRow(this); applyShippingToAll();" />
+            <div class="store-qtys-container space-y-1.5 p-1"></div>
+            <input type="hidden" class="qty-input" value="0" />
+            <div class="text-xs text-gray-500 font-semibold mt-1 text-right row-total-qty-display">Total: 0</div>
         </td>
         <td class="border px-2 py-2">
             <input type="number" step="0.01" class="cost-before-discount-input w-full text-right border-0 focus:ring-0 text-sm" value="${selectedProduct.cost_price || 0}" data-original-cost="${selectedProduct.cost_price || 0}" oninput="recalcRow(this)" />
@@ -480,13 +758,13 @@ function addItemRow(productData = null) {
     `;
     body.appendChild(tr);
     
-    // If product was passed, select it in the dropdown
     if (selectedId) {
         const select = tr.querySelector('.product-select');
         select.value = selectedId;
         select.dataset.productId = selectedId;
     }
     
+    buildStoreQuantitiesContainer(tr, getSelectedStores());
     recalcRow(tr.querySelector('.qty-input'));
     applyShippingToAll();
 }
@@ -512,7 +790,7 @@ function recalcRow(el) {
     const tr = el.closest('tr');
     const costBeforeDiscount = parseFloat(tr.querySelector('.cost-before-discount-input').value || 0);
     const discountPercent = parseFloat(tr.querySelector('.discount-percent-input').value || 0);
-    const qty = parseInt(tr.querySelector('.qty-input').value || 0);
+    const qty = parseFloat(tr.querySelector('.qty-input').value || 0);
     
     // Calculate cost after discount (but before shipping)
     const discountAmount = costBeforeDiscount * (discountPercent / 100);
@@ -555,7 +833,7 @@ function applyShippingToAll() {
             costInput.dataset.userEdited = ''; // Reset user-edited flag
             
             // Recalculate line total
-            const qty = parseInt(tr.querySelector('.qty-input').value || 0);
+            const qty = parseFloat(tr.querySelector('.qty-input').value || 0);
             const total = costAfterDiscount * qty;
             tr.querySelector('.row-total').textContent = formatMoney(total);
             
@@ -586,7 +864,7 @@ function applyShippingToAll() {
             costInput.style.backgroundColor = '';
             costInput.title = '';
             
-            const qty = parseInt(tr.querySelector('.qty-input').value || 0);
+            const qty = parseFloat(tr.querySelector('.qty-input').value || 0);
             const total = costAfterDiscount * qty;
             tr.querySelector('.row-total').textContent = formatMoney(total);
             
@@ -599,7 +877,7 @@ function applyShippingToAll() {
     // Calculate total quantity
     let totalQty = 0;
     document.querySelectorAll('#itemsBody tr').forEach(tr => {
-        totalQty += parseInt(tr.querySelector('.qty-input').value || 0);
+        totalQty += parseFloat(tr.querySelector('.qty-input').value || 0);
     });
     
     if (totalQty === 0) return;
@@ -625,7 +903,7 @@ function applyShippingToAll() {
         }
         
         // Recalculate line total
-        const qty = parseInt(tr.querySelector('.qty-input').value || 0);
+        const qty = parseFloat(tr.querySelector('.qty-input').value || 0);
         const total = parseFloat(costInput.value) * qty;
         tr.querySelector('.row-total').textContent = formatMoney(total);
         
@@ -683,6 +961,28 @@ document.addEventListener('DOMContentLoaded', function() {
             recalcPayment();
         });
     }
+
+    bindStoreSearchEvents();
+
+    document.addEventListener('click', function(e) {
+        const storeSearch = document.getElementById('store_search');
+        const storeResults = document.querySelector('.store-search-results');
+        const storeChips = document.getElementById('selected_store_chips');
+
+        if (
+            storeSearch?.contains(e.target) ||
+            storeResults?.contains(e.target) ||
+            storeChips?.contains(e.target)
+        ) {
+            return;
+        }
+
+        hideStoreResults();
+    });
+
+    filterStoresList();
+    hideStoreResults();
+    updateSelectedStoreChips();
 });
 
 function recalcSellingPrice(el, force = false) {
@@ -724,7 +1024,7 @@ function recalcGrandTotal() {
     const rows = document.querySelectorAll('#itemsBody tr');
     rows.forEach(tr => {
         const cost = parseFloat(tr.querySelector('.cost-input').value || 0);
-        const qty = parseInt(tr.querySelector('.qty-input').value || 0);
+        const qty = parseFloat(tr.querySelector('.qty-input').value || 0);
         netTotal += cost * qty;
         itemCount += qty;
         totalQty += qty;
@@ -822,12 +1122,24 @@ function submitPurchase(e) {
         const cost = tr.querySelector('.cost-input').value;
         const sell = tr.querySelector('.sell-input').value;
         
-        ['product_id','quantity','unit_cost','selling_price'].forEach((field, idx) => {
-            const val = [pid, qty, cost, sell][idx];
+        ['product_id','quantity','unit_cost','selling_price','add_to_price_stock'].forEach((field, idx) => {
+            const val = [pid, qty, cost, sell, 1][idx];
             const input = document.createElement('input');
             input.type = 'hidden';
             input.name = `items[${i}][${field}]`;
             input.value = val;
+            container.appendChild(input);
+        });
+
+        // Append store_stock fields
+        const storeQtyInputs = tr.querySelectorAll('.store-qty-input');
+        storeQtyInputs.forEach(sqInput => {
+            const storeId = sqInput.getAttribute('data-store-id');
+            const storeQty = sqInput.value || 0;
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = `items[${i}][store_stock][${storeId}]`;
+            input.value = storeQty;
             container.appendChild(input);
         });
     });
@@ -1052,9 +1364,7 @@ document.getElementById('quickProductForm').addEventListener('submit', async fun
         
         if (existingRow) {
             // Increase quantity of existing row
-            const qtyInput = existingRow.querySelector('.qty-input');
-            qtyInput.value = parseInt(qtyInput.value || 0) + 1;
-            recalcRow(qtyInput);
+            incrementRowQuantity(existingRow);
         } else {
             // Add a new row with this product selected
             addItemRow(p);
@@ -1065,6 +1375,141 @@ document.getElementById('quickProductForm').addEventListener('submit', async fun
     } catch (err) {
         console.error(err);
         alert('Error creating product');
+    }
+});
+
+// Store Modal & Filtering
+function openStoreModal() {
+    document.getElementById('storeModal').classList.remove('hidden');
+    document.getElementById('storeModal').classList.add('flex');
+}
+function closeStoreModal() {
+    document.getElementById('storeModal').classList.add('hidden');
+}
+
+function filterStoresList() {
+    const results = document.querySelector('.store-search-results');
+    if (results) results.classList.remove('hidden');
+
+    const term = document.getElementById('store_search').value.toLowerCase().trim();
+    const options = document.querySelectorAll('.store-option');
+    let visibleCount = 0;
+
+    options.forEach(option => {
+        const name = option.getAttribute('data-store-name').toLowerCase();
+        const checkbox = Array.from(document.querySelectorAll('.store-checkbox'))
+            .find(cb => cb.value === String(option.dataset.storeId));
+
+        if (!checkbox?.checked && name.includes(term)) {
+            option.classList.remove('hidden');
+            visibleCount++;
+        } else {
+            option.classList.add('hidden');
+        }
+    });
+
+    const noMatches = document.getElementById('no_store_matches');
+    if (noMatches) {
+        noMatches.classList.toggle('hidden', options.length === 0 || visibleCount > 0);
+    }
+}
+
+function selectFirstVisibleStore(event) {
+    if (event.key !== 'Enter') return;
+
+    const firstVisible = Array.from(document.querySelectorAll('.store-option'))
+        .find(option => !option.classList.contains('hidden'));
+
+    if (!firstVisible) return;
+
+    event.preventDefault();
+    setStoreChecked(firstVisible.dataset.storeId, true);
+}
+
+function bindStoreSearchEvents() {
+    const storeSearch = document.getElementById('store_search');
+    const storeResults = document.querySelector('.store-search-results');
+
+    if (storeSearch && !storeSearch.dataset.boundStoreSearch) {
+        storeSearch.addEventListener('focus', showStoreResults);
+        storeSearch.addEventListener('click', function(e) {
+            e.stopPropagation();
+            showStoreResults();
+        });
+        storeSearch.addEventListener('input', filterStoresList);
+        storeSearch.addEventListener('keydown', selectFirstVisibleStore);
+        storeSearch.dataset.boundStoreSearch = '1';
+    }
+
+    if (storeResults && !storeResults.dataset.boundStoreResults) {
+        storeResults.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const option = e.target.closest('.store-option');
+            if (!option) return;
+
+            setStoreChecked(option.dataset.storeId, true);
+        });
+        storeResults.dataset.boundStoreResults = '1';
+    }
+}
+
+bindStoreSearchEvents();
+
+document.getElementById('quickStoreForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    const data = new FormData(e.target);
+    
+    try {
+        const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        const res = await fetch("{{ route('stores.store') }}", {
+            method: 'POST',
+            headers: { 'X-CSRF-TOKEN': token, 'Accept': 'application/json' },
+            body: data
+        });
+        const json = await res.json();
+        if (!json.success) {
+            alert(json.message || 'Failed to create store');
+            return;
+        }
+        const store = json.store;
+        
+        // Append this store to the checkboxes list
+        const resultContainer = document.querySelector('.store-search-results');
+        const hiddenContainer = document.querySelector('.store-checkboxes-list');
+        const option = document.createElement('button');
+        option.type = 'button';
+        option.className = 'store-option flex w-full items-center justify-between cursor-pointer hover:bg-green-50 p-2 rounded text-left transition';
+        option.setAttribute('data-store-id', store.id);
+        option.setAttribute('data-store-name', store.name);
+        option.setAttribute('data-is-default', '0');
+        option.innerHTML = `
+            <span class="text-sm text-gray-700 font-medium">${escapeHtml(store.name)}</span>
+            <span class="store-option-status text-xs font-semibold text-green-600"></span>
+        `;
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.name = 'store_ids[]';
+        checkbox.value = store.id;
+        checkbox.className = 'store-checkbox';
+        checkbox.style.display = 'none';
+        checkbox.setAttribute('data-name', store.name);
+        checkbox.setAttribute('data-is-default', '0');
+        checkbox.checked = true;
+
+        const noMatches = document.getElementById('no_store_matches');
+        resultContainer.insertBefore(option, noMatches || null);
+        hiddenContainer.appendChild(checkbox);
+
+        document.getElementById('store_search').value = '';
+        filterStoresList();
+        handleStoreCheckboxChange();
+        
+        closeStoreModal();
+        e.target.reset();
+    } catch (err) {
+        console.error(err);
+        alert('Error creating store');
     }
 });
 
@@ -1133,9 +1578,7 @@ function addOrIncrementProduct(found) {
     });
 
     if (existingRow) {
-        const qtyInput = existingRow.querySelector('.qty-input');
-        qtyInput.value = parseInt(qtyInput.value || 0) + 1;
-        recalcRow(qtyInput);
+        incrementRowQuantity(existingRow);
     } else {
         addItemRow(found);
     }

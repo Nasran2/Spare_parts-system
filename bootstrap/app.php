@@ -18,6 +18,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // Route middleware aliases
         $middleware->alias([
             'permission' => \App\Http\Middleware\RequirePermission::class,
+            'superadmin' => \App\Http\Middleware\EnsureSuperAdmin::class,
+            'privacy_mode' => \App\Http\Middleware\CheckPrivacyMode::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

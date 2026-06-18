@@ -18,6 +18,41 @@
 <body>
     <div class="container">
         @php
+            $controls = \App\Services\DashboardVisibilityService::configForUser(auth()->user());
+            $priceVisiblePct = (float) ($controls['price_visible_percentage'] ?? 100);
+            $profitVisiblePct = (float) ($controls['profit_visible_percentage'] ?? 100);
+            $applyPct = function ($value, $pct) {
+                $pct = max(0, min(100, (float) $pct));
+                return (float) $value * ($pct / 100);
+            };
+            $maskMoney = function ($value, $forceHide = false) use ($controls, $priceVisiblePct, $applyPct) {
+        if (\App\Services\PrivacyModeService::isActiveForUser(auth()->user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
+            return \App\Services\PrivacyModeService::maskAmount((float) $value);
+        }
+                if ($forceHide || !empty($controls['hide_price_wise_data'])) {
+                    return '—';
+                }
+
+                $masked = $applyPct((float) $value, $priceVisiblePct);
+
+                $roundToWhole = $priceVisiblePct < 100;
+
+
+                return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
+            };
+            $maskProfitMoney = function ($value, $forceHide = false) use ($controls, $profitVisiblePct, $applyPct) {
+        if (\App\Services\PrivacyModeService::isActiveForUser(auth()->user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
+            return \App\Services\PrivacyModeService::maskAmount((float) $value);
+        }
+                if ($forceHide || !empty($controls['hide_profit_loss'])) {
+                    return '—';
+                }
+
+                $masked = $applyPct((float) $value, $profitVisiblePct);
+                $roundToWhole = $profitVisiblePct < 100;
+
+                return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
+            };
             $businessName = \App\Models\Setting::get('shop_name') ?? \App\Models\Setting::get('business_name') ?? config('app.name', 'Vehicle POS');
             $businessAddress = \App\Models\Setting::get('shop_address') ?? \App\Models\Setting::get('business_address') ?? '';
             $businessPhone = \App\Models\Setting::get('shop_phone') ?? \App\Models\Setting::get('business_phone') ?? '';
@@ -35,23 +70,23 @@
             <tbody>
                 <tr>
                     <th>Sales Revenue</th>
-                    <td class="right">{{ number_format($summary['salesRevenue'], 2) }}</td>
+                    <td class="right">{{ $maskMoney($summary['salesRevenue'], !empty($controls['hide_total_sales'])) }}</td>
                 </tr>
                 <tr>
                     <th>COGS</th>
-                    <td class="right">{{ number_format($summary['cogs'], 2) }}</td>
+                    <td class="right">{{ $maskMoney($summary['cogs'], !empty($controls['hide_actual_purchase_price']) || !empty($controls['hide_actual_stock_price'])) }}</td>
                 </tr>
                 <tr>
                     <th>Gross Profit</th>
-                    <td class="right">{{ number_format($summary['grossProfit'], 2) }}</td>
+                    <td class="right">{{ $maskProfitMoney($summary['grossProfit'], !empty($controls['hide_profit_loss'])) }}</td>
                 </tr>
                 <tr>
                     <th>Expenses</th>
-                    <td class="right">{{ number_format($summary['expenseTotal'], 2) }}</td>
+                    <td class="right">{{ $maskMoney($summary['expenseTotal']) }}</td>
                 </tr>
                 <tr>
                     <th>Net Profit</th>
-                    <td class="right">{{ number_format($summary['netProfit'], 2) }}</td>
+                    <td class="right">{{ $maskProfitMoney($summary['netProfit'], !empty($controls['hide_profit_loss'])) }}</td>
                 </tr>
             </tbody>
         </table>

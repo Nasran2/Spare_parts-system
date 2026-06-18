@@ -64,12 +64,13 @@ class Product extends Model
     {
         $factors = $this->unit_factors ?? [];
         if (isset($factors[$unitCode])) {
-            return (float)$factors[$unitCode];
+            return (float) $factors[$unitCode];
         }
         // base unit defaults to 1
         if ($unitCode === ($this->base_unit ?? '')) {
             return 1.0;
         }
+
         return 1.0;
     }
 
@@ -87,7 +88,10 @@ class Product extends Model
     public function basePriceFromUnit(float $unitPrice, string $unitCode): float
     {
         $factor = $this->unitFactor($unitCode);
-        if ($factor <= 0) return $unitPrice;
+        if ($factor <= 0) {
+            return $unitPrice;
+        }
+
         return round($unitPrice / $factor, 2);
     }
 
@@ -101,9 +105,34 @@ class Product extends Model
         return $this->hasMany(PurchaseItem::class);
     }
 
+    public function prices()
+    {
+        return $this->hasMany(ProductPrice::class);
+    }
+
+    public function activePrices()
+    {
+        return $this->hasMany(ProductPrice::class)->where('status', 'active');
+    }
+
+    public function defaultPrice()
+    {
+        return $this->hasOne(ProductPrice::class)->where('status', 'active')->where('is_default', true);
+    }
+
     public function saleItems()
     {
         return $this->hasMany(SaleItem::class);
+    }
+
+    public function storeStocks()
+    {
+        return $this->hasMany(StoreStock::class);
+    }
+
+    public function excludedStores()
+    {
+        return $this->belongsToMany(Store::class, 'product_store_exclusions');
     }
 
     public function isLowStock()

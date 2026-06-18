@@ -4,15 +4,18 @@
 @section('page-title', 'Add Payment')
 
 @section('content')
+@php
+    $controls = is_array($controls ?? null) ? $controls : [];
+@endphp
 <div class="max-w-xl mx-auto bg-white rounded-xl shadow-lg p-6 mt-8">
     <h2 class="text-xl font-bold mb-4">Add Payment for Purchase</h2>
     <div class="mb-4 p-4 bg-blue-50 rounded">
-        <div><strong>Supplier:</strong> {{ $supplier->name }}</div>
-        <div><strong>Purchase No:</strong> {{ $purchase->purchase_no }}</div>
+        <div><strong>Supplier:</strong> {{ !empty($controls['hide_supplier_names']) ? 'Hidden Supplier' : $supplier->name }}</div>
+        <div><strong>Purchase No:</strong> {{ !empty($controls['hide_invoice_details']) ? 'HIDDEN' : $purchase->purchase_no }}</div>
         <div><strong>Purchase Date:</strong> {{ optional($purchase->purchase_date)->format('M d, Y') }}</div>
-        <div><strong>Total Amount:</strong> ${{ number_format($purchase->total_amount, 2) }}</div>
-        <div><strong>Paid:</strong> ${{ number_format($purchase->paid_amount, 2) }}</div>
-        <div><strong>Due:</strong> ${{ number_format($purchase->due_amount, 2) }}</div>
+        <div><strong>Total Amount:</strong> {{ !empty($controls['hide_total_purchase']) || !empty($controls['hide_price_wise_data']) ? '—' : ('$' . number_format($purchase->total_amount, 2)) }}</div>
+        <div><strong>Paid:</strong> {{ !empty($controls['hide_supplier_payments']) || !empty($controls['hide_price_wise_data']) ? '—' : ('$' . number_format($purchase->paid_amount, 2)) }}</div>
+        <div><strong>Due:</strong> {{ !empty($controls['hide_supplier_payments']) || !empty($controls['hide_price_wise_data']) ? '—' : ('$' . number_format($purchase->due_amount, 2)) }}</div>
     </div>
     <form method="POST" action="{{ route('payments.store') }}">
         @csrf

@@ -19,6 +19,27 @@
 <body>
     <div class="container">
         @php
+            $controls = \App\Services\DashboardVisibilityService::configForUser(auth()->user());
+            $priceVisiblePct = (float) ($controls['price_visible_percentage'] ?? 100);
+            $applyPct = function ($value, $pct) {
+                $pct = max(0, min(100, (float) $pct));
+                return (float) $value * ($pct / 100);
+            };
+            $maskMoney = function ($value, $forceHide = false) use ($controls, $priceVisiblePct, $applyPct) {
+        if (\App\Services\PrivacyModeService::isActiveForUser(auth()->user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
+            return \App\Services\PrivacyModeService::maskAmount((float) $value);
+        }
+                if ($forceHide || !empty($controls['hide_price_wise_data'])) {
+                    return '—';
+                }
+
+                $masked = $applyPct((float) $value, $priceVisiblePct);
+
+                $roundToWhole = $priceVisiblePct < 100;
+
+
+                return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
+            };
             $businessName = \App\Models\Setting::get('shop_name') ?? \App\Models\Setting::get('business_name') ?? config('app.name', 'Vehicle POS');
             $businessAddress = \App\Models\Setting::get('shop_address') ?? \App\Models\Setting::get('business_address') ?? '';
             $businessPhone = \App\Models\Setting::get('shop_phone') ?? \App\Models\Setting::get('business_phone') ?? '';
@@ -33,11 +54,11 @@
         <div class="chip">Period: {{ $from ?? 'All' }} - {{ $to ?? 'All' }}</div>
     </div>
     <div class="summary">
-        <div class="card"><div class="label">Total Received</div><div class="value">{{ number_format($summary['total_received'] ?? 0, 2) }}</div></div>
+        <div class="card"><div class="label">Total Received</div><div class="value">{{ $maskMoney(($summary['total_received'] ?? 0), !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</div></div>
         <div class="card"><div class="label">Transactions</div><div class="value">{{ $summary['count'] ?? 0 }}</div></div>
         <div class="card"><div class="label">By Method</div><div class="value">
             @foreach(($summary['by_method'] ?? []) as $m => $amt)
-                {{ $m ?? 'Unknown' }}: {{ number_format($amt, 2) }}<br>
+                {{ $m ?? 'Unknown' }}: {{ $maskMoney($amt, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}<br>
             @endforeach
         </div></div>
     </div>
@@ -58,7 +79,7 @@
                     <td>{{ $p->customer?->name ?? '-' }}</td>
                     <td>{{ $p->sale?->invoice_no ?? '-' }}</td>
                     <td>{{ $p->payment_method ?? '-' }}</td>
-                    <td>{{ number_format($p->amount, 2) }}</td>
+                    <td>{{ $maskMoney($p->amount, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
                 </tr>
             @endforeach
         </tbody>

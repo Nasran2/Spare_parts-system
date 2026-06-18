@@ -4,6 +4,21 @@
 @section('page-title', 'Customer Management')
 
 @section('content')
+@php
+    $controls = is_array($controls ?? null) ? $controls : [];
+    $customerVisiblePct = (float) ($controls['customer_visible_percentage'] ?? 100);
+    $applyPct = function ($value, $pct) {
+        $pct = max(0, min(100, (float) $pct));
+        return (float) $value * ($pct / 100);
+    };
+    $maskMoney = function ($value, $forceHide = false) use ($controls, $customerVisiblePct, $applyPct) {
+        if ($forceHide || !empty($controls['hide_price_wise_data'])) {
+            return '—';
+        }
+
+        return number_format($applyPct((float) $value, $customerVisiblePct), (int) (\App\Models\Setting::get('decimal_places', 2)));
+    };
+@endphp
 <div class="space-y-6">
     
     <!-- Success/Error Messages -->
@@ -74,9 +89,9 @@
                             @php($decimals = (int) (\App\Models\Setting::get('decimal_places', 2)))
                             <span class="font-bold text-red-600">
                                 @if($position === 'before')
-                                    {{ $currency }} {{ number_format($customer->due_amount ?? 0, $decimals) }}
+                                    {{ $currency }} {{ $maskMoney(($customer->due_amount ?? 0), !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}
                                 @else
-                                    {{ number_format($customer->due_amount ?? 0, $decimals) }} {{ $currency }}
+                                    {{ $maskMoney(($customer->due_amount ?? 0), !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }} {{ $currency }}
                                 @endif
                             </span>
                         </td>

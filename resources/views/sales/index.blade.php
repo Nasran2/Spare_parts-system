@@ -4,8 +4,11 @@
 @section('page-title', 'Sales Management')
 
 @section('content')
+@php
+    $isSalesPrivacy = ($privacyModeActive ?? false) && ($privacySettings->apply_to_sales_list ?? false);
+    $formatRealMoney = fn ($amount) => trim($currency) . ' ' . number_format((float) $amount, 2);
+@endphp
 <div class="space-y-6">
-    
     <!-- Header Actions -->
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
@@ -42,7 +45,7 @@
                 <label class="text-xs font-semibold text-gray-600">Payment Status</label>
                 <select name="payment_status" class="mt-1 w-full px-3 py-2 border rounded-lg">
                     <option value="">All</option>
-                    @foreach(['paid','partial','unpaid'] as $st)
+                    @foreach(['paid','hold','partial','unpaid'] as $st)
                         <option value="{{ $st }}" @selected(($filters['payment_status'] ?? '') === $st)>{{ ucfirst($st) }}</option>
                     @endforeach
                 </select>
@@ -74,16 +77,31 @@
                         <th class="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
                         <th class="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase">Amount</th>
                         <th class="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase">Pay Status</th>
-                        <th class="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase">Method</th>
+                        <th class="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase min-w-[150px]">Method</th>
                         <th class="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase">Status</th>
                         <th class="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase">Actions</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-200">
                     @forelse($sales as $sale)
-                    <tr data-sales-row class="hover:bg-gray-50 transition" data-search-text="{{ strtolower($sale->sale_no . ' ' . ($sale->customer->name ?? '') . ' ' . ($sale->payment_status ?? '') . ' ' . ($sale->payment_method ?? '')) }}">
+                    @php
+                        $privacyInvoiceLabel = $isSalesPrivacy
+                            ? \App\Services\PrivacyModeService::displayInvoiceNumber($sale)
+                            : (string) $sale->sale_no;
+                        $searchText = $isSalesPrivacy
+                            ? strtolower($privacyInvoiceLabel . ' ' . ($sale->customer->name ?? '') . ' ' . ($sale->payment_status ?? '') . ' ' . ($sale->payment_method ?? '') . ' ' . $sale->total_amount . ' ' . $sale->paid_amount . ' ' . $sale->due_amount)
+                            : strtolower($sale->sale_no . ' ' . ($sale->customer->name ?? '') . ' ' . ($sale->payment_status ?? '') . ' ' . ($sale->payment_method ?? ''));
+                        $heldChequeAmount = (float) ($sale->held_cheque_amount ?? 0);
+                        $hasChequeHold = $heldChequeAmount > 0;
+                        $primaryCheque = $sale->chequePayments?->sortByDesc('created_at')->first();
+                        $displayPayStatus = $hasChequeHold ? 'Hold' : ucfirst((string) ($sale->payment_status ?? 'unpaid'));
+                        $displayPayStatusClass = $hasChequeHold
+                            ? 'bg-indigo-100 text-indigo-700'
+                            : (($sale->payment_status === 'paid') ? 'bg-green-100 text-green-700' : (($sale->payment_status === 'partial') ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'));
+                    @endphp
+                    <tr data-sales-row class="hover:bg-gray-50 transition" data-search-text="{{ $searchText }}">
                         <td class="px-6 py-4">
-                            <span class="font-mono font-semibold text-blue-600">{{ $sale->sale_no }}</span>
+                            <span class="font-mono font-semibold text-blue-600">{{ $privacyInvoiceLabel }}</span>
                         </td>
                         <td class="px-6 py-4">
                             <span class="text-gray-800">{{ $sale->customer->name ?? 'Walk-in Customer' }}</span>
@@ -102,34 +120,45 @@
                                 @if($exchangeCredit > 0)
                                     <div class="font-semibold text-gray-800">
                                         @if($refundDue > 0)
-                                            Refund: {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $refundDue, $currency) }}
+                                            Refund: {{ $isSalesPrivacy ? $formatRealMoney($refundDue) : \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $refundDue, $currency) }}
                                         @else
-                                            Net: {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, max(0, $netPayable), $currency) }}
+                                            Net: {{ $isSalesPrivacy ? $formatRealMoney(max(0, $netPayable)) : \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, max(0, $netPayable), $currency) }}
                                         @endif
                                     </div>
                                     <div class="mt-0.5 text-[11px] text-gray-500">
-                                        Total {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, (float) $sale->total_amount, $currency) }}
-                                        • Return {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, -1 * $exchangeCredit, $currency) }}
+                                        Total {{ $isSalesPrivacy ? $formatRealMoney($sale->total_amount) : \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, (float) $sale->total_amount, $currency) }}
+                                        • Return {{ $isSalesPrivacy ? $formatRealMoney(-1 * $exchangeCredit) : \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, -1 * $exchangeCredit, $currency) }}
                                     </div>
                                 @else
-                                    <div class="font-semibold text-gray-800">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->total_amount, $currency) }}</div>
+                                    <div class="font-semibold text-gray-800">{{ $isSalesPrivacy ? $formatRealMoney($sale->total_amount) : \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->total_amount, $currency) }}</div>
                                 @endif
                                 <div class="mt-0.5 text-xs">
-                                    <span class="text-green-700">Paid: {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->paid_amount, $currency) }}</span>
-                                    <span class="ml-2 {{ ($sale->due_amount ?? 0) > 0 ? 'text-red-700 font-semibold' : 'text-gray-500' }}">Balance: {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->due_amount, $currency) }}</span>
+                                    <span class="text-green-700">Paid: {{ $isSalesPrivacy ? $formatRealMoney($sale->paid_amount) : \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->paid_amount, $currency) }}</span>
+                                    @if($heldChequeAmount > 0)
+                                        <span class="ml-2 inline-block whitespace-nowrap text-indigo-700 font-semibold">Held: {{ $isSalesPrivacy ? $formatRealMoney($heldChequeAmount) : \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $heldChequeAmount, $currency) }}</span>
+                                    @endif
+                                    <span class="ml-2 inline-block whitespace-nowrap {{ ($sale->due_amount ?? 0) > 0 ? 'text-red-700 font-semibold' : 'text-gray-500' }}">Balance: {{ $isSalesPrivacy ? $formatRealMoney($sale->due_amount) : \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->due_amount, $currency) }}</span>
                                 </div>
                             </div>
                         </td>
                         <td class="px-6 py-4 text-center">
-                            <span class="px-3 py-1 rounded-full text-xs font-semibold
-                                {{ ($sale->payment_status === 'paid') ? 'bg-green-100 text-green-700' : (($sale->payment_status === 'partial') ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700') }}">
-                                {{ ucfirst((string) ($sale->payment_status ?? 'unpaid')) }}
+                            <span class="px-3 py-1 rounded-full text-xs font-semibold {{ $displayPayStatusClass }}">
+                                {{ $displayPayStatus }}
                             </span>
                         </td>
-                        <td class="px-6 py-4 text-center">
-                            <span class="px-2 py-1 text-xs font-semibold rounded {{ match ((string) ($sale->payment_method ?? 'cash')) { 'cash' => 'bg-gray-200 text-gray-800', 'card' => 'bg-blue-100 text-blue-700', 'bank_transfer' => 'bg-purple-100 text-purple-700', 'mobile_payment' => 'bg-teal-100 text-teal-700', default => 'bg-gray-100 text-gray-600', } }}">
-                                {{ str_replace('_', ' ', ucfirst((string) ($sale->payment_method ?? 'cash'))) }}
+                        <td class="px-6 py-4 text-center min-w-[150px]">
+                            <span class="inline-flex items-center justify-center whitespace-nowrap px-3 py-1 text-xs font-semibold rounded-full {{ match ((string) ($sale->payment_method ?? 'cash')) { 'cash' => 'bg-gray-200 text-gray-800', 'card' => 'bg-blue-100 text-blue-700', 'bank_transfer' => 'bg-purple-100 text-purple-700', 'mobile_payment' => 'bg-teal-100 text-teal-700', 'cheque' => 'bg-indigo-100 text-indigo-700', default => 'bg-gray-100 text-gray-600', } }}">
+                                @if(((string) ($sale->payment_method ?? 'cash')) === 'cheque')
+                                    <i class="fas fa-money-check-alt mr-1.5 text-[10px]"></i>
+                                @endif
+                                {{ ((string) ($sale->payment_method ?? 'cash')) === 'cheque' ? 'Cheque Payment' : str_replace('_', ' ', ucfirst((string) ($sale->payment_method ?? 'cash'))) }}
                             </span>
+                            @if($primaryCheque)
+                                <div class="mt-2 mx-auto max-w-[145px] rounded-md bg-gray-50 px-2 py-1 text-[11px] leading-4 text-gray-500">
+                                    <div class="truncate">No: {{ $primaryCheque->cheque_number }}</div>
+                                    <div class="whitespace-nowrap">{{ $primaryCheque->cheque_date?->format('Y-m-d') }} · {{ ucfirst($primaryCheque->status) }}</div>
+                                </div>
+                            @endif
                         </td>
                         <td class="px-6 py-4 text-center">
                             <span title="{{ ucfirst((string) ($sale->sale_type ?? 'sale')) }}" class="inline-flex h-3 w-3 rounded-full align-middle {{ (($sale->sale_type ?? 'sale') === 'sale') ? 'bg-blue-500' : 'bg-amber-500' }}"></span>
@@ -147,8 +176,8 @@
                                 <a href="{{ route('sales.print', $sale->id) }}" target="_blank" class="p-2 text-green-600 hover:bg-green-50 rounded-lg transition" title="Print">
                                     <i class="fas fa-print"></i>
                                 </a>
-                                @if($sale->payment_status !== 'paid')
-                                <button onclick="openPaymentModal({{ $sale->id }}, '{{ $sale->sale_no }}', {{ $sale->due_amount }}, '{{ $sale->customer ? $sale->customer->name : 'Walk-in Customer' }}', {{ \App\Support\SecretPos::isHidden($sale->total_amount) ? 'true' : 'false' }})" 
+                                @if($sale->payment_status !== 'paid' && (float) ($sale->due_amount ?? 0) > 0)
+                                <button onclick="openPaymentModal({{ $sale->id }}, '{{ $privacyInvoiceLabel }}', {{ $sale->due_amount }}, '{{ $sale->customer ? $sale->customer->name : 'Walk-in Customer' }}', {{ \App\Support\SecretPos::isHidden($sale->total_amount) ? 'true' : 'false' }})" 
                                         class="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition" 
                                         title="Add Payment">
                                     <i class="fas fa-money-bill-wave"></i>
@@ -168,7 +197,7 @@
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="7" class="px-6 py-12 text-center">
+                        <td colspan="8" class="px-6 py-12 text-center">
                             <i class="fas fa-receipt text-6xl text-gray-300 mb-4"></i>
                             <p class="text-gray-500 text-lg">No sales found</p>
                             <a href="{{ route('pos.index') }}" class="mt-4 inline-block px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">

@@ -144,6 +144,7 @@
                         </div>
                     </div>
 
+                    @if($canManageSecretCodes ?? false)
                     <div>
                         <h4 class="font-bold text-gray-700 mb-4">
                             <i class="fas fa-tags text-indigo-600 mr-2"></i>Selling Secret Code
@@ -173,7 +174,9 @@
                             @endfor
                         </div>
                     </div>
+                    @endif
 
+                    @if($canManageSecretCodes ?? false)
                     <div>
                         <h4 class="font-bold text-gray-700 mb-4">
                             <i class="fas fa-user-secret text-slate-600 mr-2"></i>Cost Secret Code (0-9)
@@ -204,6 +207,7 @@
                             @endfor
                         </div>
                     </div>
+                    @endif
 
                     <div class="border-t pt-6">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">

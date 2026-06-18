@@ -3,8 +3,8 @@
 namespace App\Services;
 
 use App\Models\Sale;
-use Illuminate\Support\Facades\DB;
 use App\Models\Setting;
+use Illuminate\Support\Facades\DB;
 
 class SaleRecalculationService
 {
@@ -61,20 +61,29 @@ class SaleRecalculationService
         $remainingSubtotal = round($remainingSubtotal, 2);
         $remainingLineDiscount = round($remainingLineDiscount, 2);
 
-        // Estimate any cart-level discount that was applied (not embedded into item unit prices).
-        // cartDiscount ≈ total_discount - line_discount
-        // Use the larger of stored discount and recovered line-discount to avoid the earlier
-        // scaling bug forcing discounts down.
         $storedDiscount = (float) ($sale->discount ?? 0);
+        $storedSubtotal = (float) ($sale->subtotal ?? 0);
+        $hasReturns = array_sum($returnedQtyBySaleItemId) > 0;
         $originalDiscount = max($storedDiscount, $originalLineDiscount);
-        $originalCartDiscount = max(0.0, round($originalDiscount - $originalLineDiscount, 2));
-
-        // Scale cart discount with remaining value (line discounts already handled by remainingLineDiscount).
-        $cartScale = $originalNetItemsTotal > 0 ? ($remainingNetItemsTotal / $originalNetItemsTotal) : 0.0;
-        $remainingCartDiscount = max(0.0, round($originalCartDiscount * $cartScale, 2));
 
         $netSubtotal = max(0.0, round($remainingSubtotal, 2));
-        $netDiscount = max(0.0, round($remainingLineDiscount + $remainingCartDiscount, 2));
+
+        if ($hasReturns && abs(round($storedSubtotal, 2) - $netSubtotal) <= 0.01) {
+            // The sale row is already stored as a net-after-returns invoice.
+            // Keep its discount stable; otherwise each list/print recalculation scales it down again.
+            $netDiscount = max(0.0, min(round($storedDiscount, 2), $netSubtotal));
+        } else {
+            // Estimate any cart-level discount that was applied (not embedded into item unit prices).
+            // cartDiscount ≈ total_discount - line_discount
+            // Use the larger of stored discount and recovered line-discount to avoid the earlier
+            // scaling bug forcing discounts down.
+            $originalCartDiscount = max(0.0, round($originalDiscount - $originalLineDiscount, 2));
+
+            // Scale cart discount with remaining value (line discounts already handled by remainingLineDiscount).
+            $cartScale = $originalNetItemsTotal > 0 ? ($remainingNetItemsTotal / $originalNetItemsTotal) : 0.0;
+            $remainingCartDiscount = max(0.0, round($originalCartDiscount * $cartScale, 2));
+            $netDiscount = max(0.0, round($remainingLineDiscount + $remainingCartDiscount, 2));
+        }
 
         // Preserve original effective tax rate (if any) on the tax base (subtotal - discount).
         $originalTaxBase = max(0.0, round($originalSubtotal - $originalDiscount, 2));
@@ -85,7 +94,7 @@ class SaleRecalculationService
 
         // Also respect VAT toggle if configured to be disabled.
         $vatEnabled = (bool) Setting::get('vat_enabled', false);
-        if (!$vatEnabled) {
+        if (! $vatEnabled) {
             $netTax = 0.0;
         }
 

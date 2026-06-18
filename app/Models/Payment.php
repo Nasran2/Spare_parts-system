@@ -18,12 +18,19 @@ class Payment extends Model
         'payment_method',
         'payment_date',
         'notes',
+        'reference_no',
+        'store_id',
     ];
 
     protected $casts = [
-        'payment_date' => 'date',
         'amount' => 'decimal:2',
+        'payment_date' => 'date',
     ];
+
+    public function store()
+    {
+        return $this->belongsTo(Store::class);
+    }
 
     public function purchase()
     {
@@ -43,5 +50,20 @@ class Payment extends Model
     public function customer()
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    protected static function booted()
+    {
+        static::addGlobalScope('hiddenStores', function (\Illuminate\Database\Eloquent\Builder $builder) {
+            if (auth()->hasUser()) {
+                $hiddenStoreIds = \App\Services\DashboardVisibilityService::hiddenStoreIdsForUser(auth()->user());
+                if (!empty($hiddenStoreIds)) {
+                    $builder->where(function ($q) use ($hiddenStoreIds) {
+                        $q->whereNotIn('payments.store_id', $hiddenStoreIds)
+                          ->orWhereNull('payments.store_id');
+                    });
+                }
+            }
+        });
     }
 }

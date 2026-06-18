@@ -153,6 +153,39 @@
                 @enderror
             </div>
 
+            <!-- Stores -->
+            <div class="md:col-span-2 hidden" id="store-selection-container">
+                <label for="stores" class="block text-sm font-semibold text-gray-700 mb-2">
+                    <i class="fas fa-store text-blue-600 mr-2"></i>Assigned Stores
+                </label>
+                <select 
+                    id="stores" 
+                    name="stores[]" 
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent @error('stores') border-red-500 @enderror" 
+                    multiple
+                >
+                    @foreach($stores as $store)
+                        <option value="{{ $store->id }}" {{ in_array($store->id, old('stores', $userStores ?? [])) ? 'selected' : '' }}>
+                            {{ $store->name }}
+                        </option>
+                    @endforeach
+                </select>
+                <p class="text-xs text-gray-500 mt-1">Hold Ctrl (Windows) or Command (Mac) to select multiple stores.</p>
+                @error('stores')
+                    <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                @enderror
+            </div>
+            
+            <div class="md:col-span-2 hidden" id="all-stores-notice">
+                <div class="bg-blue-50 text-blue-700 p-4 rounded-lg flex items-center">
+                    <i class="fas fa-info-circle mr-3 text-xl"></i>
+                    <div>
+                        <p class="font-semibold text-sm">All Stores Access</p>
+                        <p class="text-xs mt-1">This role automatically has access to all stores in the system.</p>
+                    </div>
+                </div>
+            </div>
+
             <!-- Is Active -->
             <div class="md:col-span-2">
                 <label class="flex items-center space-x-3">
@@ -190,4 +223,33 @@
     </form>
 
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const roleSelect = document.getElementById('role_id');
+        const storeContainer = document.getElementById('store-selection-container');
+        const allStoresNotice = document.getElementById('all-stores-notice');
+        
+        function updateStoreVisibility() {
+            const selectedOption = roleSelect.options[roleSelect.selectedIndex];
+            if (!selectedOption || !selectedOption.value) {
+                storeContainer.classList.add('hidden');
+                allStoresNotice.classList.add('hidden');
+                return;
+            }
+            
+            const roleName = selectedOption.text.toLowerCase();
+            if (roleName.includes('admin')) {
+                storeContainer.classList.add('hidden');
+                allStoresNotice.classList.remove('hidden');
+            } else {
+                storeContainer.classList.remove('hidden');
+                allStoresNotice.classList.add('hidden');
+            }
+        }
+        
+        roleSelect.addEventListener('change', updateStoreVisibility);
+        updateStoreVisibility();
+    });
+</script>
 @endsection

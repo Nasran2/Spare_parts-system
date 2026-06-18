@@ -8,6 +8,39 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body class="bg-gray-100">
+    @php
+        $controls = is_array($controls ?? null) ? $controls : [];
+        $priceVisiblePct = (float) ($controls['customer_visible_percentage'] ?? 100);
+        $applyPct = function ($value, $pct) {
+            $pct = max(0, min(100, (float) $pct));
+            return (float) $value * ($pct / 100);
+        };
+        $maskMoney = function ($value, $forceHide = false) use ($controls, $priceVisiblePct, $applyPct) {
+            if ($forceHide || !empty($controls['hide_price_wise_data'])) {
+                return '—';
+            }
+
+            $raw = (float) $value;
+            $masked = $applyPct(abs($raw), $priceVisiblePct);
+            $roundToWhole = $priceVisiblePct < 100;
+
+            if ($roundToWhole) {
+                $masked = round($masked);
+            }
+
+            if ($priceVisiblePct < 100 && abs($raw) > 0 && $masked <= 0) {
+                $masked = 1;
+            }
+
+            if ($raw < 0) {
+                $masked *= -1;
+            }
+
+            return number_format($masked, $roundToWhole ? 0 : 2);
+        };
+        $hidePayments = !empty($controls['hide_supplier_payments']);
+        $hideTotal = !empty($controls['hide_total_sales']);
+    @endphp
     <div class="max-w-6xl mx-auto p-6">
         <div class="bg-white rounded-lg shadow-lg p-8 mb-6">
             <div class="flex justify-between items-center mb-6">
@@ -28,15 +61,15 @@
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
                     <div class="text-sm text-blue-600 font-semibold">Total Invoice</div>
-                    <div class="text-2xl font-bold text-blue-800">{{ $currency }}{{ number_format($totalInvoice, 2) }}</div>
+                    <div class="text-2xl font-bold text-blue-800">{{ trim($currency) }} {{ $maskMoney($totalInvoice, $hideTotal) }}</div>
                 </div>
                 <div class="bg-green-50 p-4 rounded-lg border border-green-200">
                     <div class="text-sm text-green-600 font-semibold">Total Paid</div>
-                    <div class="text-2xl font-bold text-green-800">{{ $currency }}{{ number_format($totalPaid, 2) }}</div>
+                    <div class="text-2xl font-bold text-green-800">{{ trim($currency) }} {{ $maskMoney($totalPaid, $hidePayments) }}</div>
                 </div>
                 <div class="bg-red-50 p-4 rounded-lg border border-red-200">
                     <div class="text-sm text-red-600 font-semibold">Total Due</div>
-                    <div class="text-2xl font-bold text-red-800">{{ $currency }}{{ number_format($totalDue, 2) }}</div>
+                    <div class="text-2xl font-bold text-red-800">{{ trim($currency) }} {{ $maskMoney($totalDue, $hidePayments) }}</div>
                 </div>
             </div>
 
@@ -61,16 +94,16 @@
                                 {{ \Carbon\Carbon::parse($sale->sale_date)->format('d M Y') }}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                #{{ str_pad($sale->id, 6, '0', STR_PAD_LEFT) }}
+                                {{ $sale->privacy_display_invoice_no ?? ('INV-' . str_pad($loop->iteration, 2, '0', STR_PAD_LEFT)) }}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                                {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->total_amount, $currency) }}
+                                {{ trim($currency) }} {{ $maskMoney($sale->total_amount, $hideTotal) }}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-green-600">
-                                {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->paid_amount, $currency) }}
+                                {{ trim($currency) }} {{ $maskMoney($sale->paid_amount, $hidePayments) }}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600">
-                                {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->due_amount, $currency) }}
+                                {{ trim($currency) }} {{ $maskMoney($sale->due_amount, $hidePayments) }}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-center">
                                 @if($sale->payment_status == 'paid')

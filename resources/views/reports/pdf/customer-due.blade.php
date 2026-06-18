@@ -19,6 +19,27 @@
 <body>
     <div class="container">
         @php
+            $controls = \App\Services\DashboardVisibilityService::configForUser(auth()->user());
+            $priceVisiblePct = (float) ($controls['customer_visible_percentage'] ?? 100);
+            $applyPct = function ($value, $pct) {
+                $pct = max(0, min(100, (float) $pct));
+                return (float) $value * ($pct / 100);
+            };
+            $maskMoney = function ($value, $forceHide = false) use ($controls, $priceVisiblePct, $applyPct) {
+        if (\App\Services\PrivacyModeService::isActiveForUser(auth()->user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
+            return \App\Services\PrivacyModeService::maskAmount((float) $value);
+        }
+                if ($forceHide || !empty($controls['hide_price_wise_data'])) {
+                    return '—';
+                }
+
+                $masked = $applyPct((float) $value, $priceVisiblePct);
+
+                $roundToWhole = $priceVisiblePct < 100;
+
+
+                return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
+            };
             $businessName = \App\Models\Setting::get('shop_name') ?? \App\Models\Setting::get('business_name') ?? config('app.name', 'Vehicle POS');
             $businessAddress = \App\Models\Setting::get('shop_address') ?? \App\Models\Setting::get('business_address') ?? '';
             $businessPhone = \App\Models\Setting::get('shop_phone') ?? \App\Models\Setting::get('business_phone') ?? '';
@@ -48,14 +69,14 @@
                     <td>{{ $row['name'] }}</td>
                     <td>{{ $row['phone'] ?? '-' }}</td>
                     <td>{{ $row['invoices'] }}</td>
-                    <td class="right">{{ number_format($row['due'], 2) }}</td>
+                    <td class="right">{{ $maskMoney($row['due'], !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
                 </tr>
                 @endforeach
             </tbody>
         </table>
 
         <div class="summary">
-            <strong>Total Due:</strong> {{ number_format($summary['total_due'], 2) }} —
+            <strong>Total Due:</strong> {{ $maskMoney(($summary['total_due'] ?? 0), !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }} —
             <strong>Customers:</strong> {{ $summary['customers'] }}
         </div>
     </div>

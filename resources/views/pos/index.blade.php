@@ -1,15 +1,19 @@
 @extends('layouts.app')
 
-@section('title', 'POS System')
-@section('page-title', 'Point of Sale')
+@section('title', ($isQuotationMode ?? false) ? 'Create Quotation' : 'POS System')
+@section('page-title', ($isQuotationMode ?? false) ? 'Quotation Builder' : 'Point of Sale')
 
 @section('content')
 
 @php
+    $isQuotationMode = $isQuotationMode ?? (($posMode ?? 'sale') === 'quotation');
     $posLayout = $posLayout ?? \App\Models\Setting::get('pos_layout', 'default');
     $allUnits = $allUnits ?? \App\Models\Unit::where('is_active', true)
         ->orderBy('name')
         ->get(['id', 'name', 'short_name']);
+    $customerList = ($customers ?? collect())->map(function ($c) {
+        return ['id' => $c->id, 'name' => $c->name, 'phone' => $c->phone, 'email' => $c->email];
+    })->values();
 @endphp
 
 @if($posLayout === 'modern')
@@ -79,7 +83,9 @@
                     <div class="flex items-center gap-2">
                         <div class="text-sm text-slate-500">Location:</div>
                         <select id="pos-location" class="h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:ring-2 focus:ring-indigo-500">
-                            <option>Default Shop</option>
+                            @foreach($stores as $store)
+                                <option value="{{ $store->id }}" {{ $store->is_default ? 'selected' : '' }}>{{ $store->name }}</option>
+                            @endforeach
                         </select>
                     </div>
 
@@ -96,193 +102,173 @@
                         <a href="{{ route('dashboard') }}" class="h-10 w-10 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 flex items-center justify-center" title="Home">
                             <i class="fas fa-home"></i>
                         </a>
+                        @unless($isQuotationMode)
                         <button id="btn-modern-holds" type="button" class="h-10 w-10 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-rose-600 flex items-center justify-center" title="Suspend / Holds">
                             <i class="fas fa-pause"></i>
                         </button>
+                        @endunless
                         <button id="btn-modern-print" type="button" class="h-10 w-10 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center justify-center" title="Print">
                             <i class="fas fa-print"></i>
                         </button>
+                        @unless($isQuotationMode)
                         <button id="btn-modern-return" type="button" class="h-10 w-10 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-amber-600 flex items-center justify-center" title="Return">
                             <i class="fas fa-undo"></i>
                         </button>
+                        @endunless
                         <button id="btn-modern-customers" type="button" class="h-10 w-10 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center justify-center" title="Customer">
                             <i class="fas fa-user"></i>
                         </button>
                     </div>
 
+                    @unless($isQuotationMode)
                     <a href="{{ route('expenses.create') }}" class="h-10 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-semibold flex items-center gap-2">
                         <i class="fas fa-plus"></i>
                         <span>Add Expense</span>
                     </a>
+                    @endunless
                 </div>
             </div>
 
-            <div class="mt-3 flex flex-col lg:flex-row lg:items-center gap-3">
-                <div class="flex items-center gap-2 w-full lg:w-[420px]">
-                    <select id="customer-select" class="flex-1 h-11 px-4 border border-slate-200 bg-slate-50 rounded-2xl focus:ring-2 focus:ring-indigo-500">
-                        <option value="">Walk-in Customer</option>
-                        @isset($customers)
-                            @foreach($customers as $c)
-                                <option value="{{ $c->id }}">{{ $c->name }}</option>
-                            @endforeach
-                        @endisset
-                    </select>
-                    <button id="btn-new-customer" type="button" class="h-11 w-11 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700" title="Add New Customer">
-                        <i class="fas fa-plus"></i>
-                    </button>
-                </div>
 
-                <div class="flex-1"></div>
-
-                <div class="w-full lg:w-[720px]">
-                    <div class="flex items-stretch border-2 border-indigo-500 rounded-2xl overflow-hidden bg-white shadow-sm">
-                        <div class="relative flex-1">
-                            <input
-                                id="product-search"
-                                type="text"
-                                placeholder="Enter Product name / SKU / Scan bar code"
-                                class="w-full h-11 pl-12 pr-4 border-0 focus:ring-0"
-                            >
-                            <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                        </div>
-                        <button type="button" class="w-12 bg-indigo-600 text-white hover:bg-indigo-700" title="Search">
-                            <i class="fas fa-search"></i>
-                        </button>
-                    </div>
-                </div>
-            </div>
         </div>
 
-        <!-- Content -->
-        <div class="flex-1 overflow-hidden grid grid-cols-1 grid-rows-2 lg:grid-rows-1 lg:grid-cols-12 bg-slate-100">
-            <!-- Cart (left) -->
-            <div id="pos-cart-panel" class="lg:col-span-9 bg-white lg:border-r border-slate-200 flex flex-col overflow-hidden">
-                <div class="px-3 md:px-4 py-2 border-b border-slate-200 flex items-center text-xs font-semibold text-slate-500 bg-white">
-                    <div class="w-[55%]">PRODUCT</div>
-                    <div class="w-[25%] text-center">QUANTITY</div>
-                    <div class="w-[20%] text-right">SUBTOTAL</div>
+        <!-- POS Content: Products LEFT + Cart RIGHT -->
+        <div class="flex-1 overflow-hidden flex bg-slate-100" style="min-height:0">
+
+            <!-- Products Panel (Left/Main) -->
+            <div id="pos-products-panel" class="flex-1 flex flex-col overflow-hidden border-r border-slate-200 min-w-0">
+                <!-- Search + Category bar -->
+                <div class="bg-white border-b border-slate-200 px-3 py-2 space-y-2">
+                    <div class="flex items-stretch border-2 border-indigo-500 rounded-xl overflow-hidden">
+                        <div class="relative flex-1">
+                            <input id="product-search" type="text" placeholder="Enter Product name / SKU / Scan bar code" class="w-full h-10 pl-10 pr-3 border-0 focus:ring-0 text-sm">
+                            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                        </div>
+                        <button type="button" class="w-10 bg-indigo-600 text-white hover:bg-indigo-700 flex items-center justify-center"><i class="fas fa-search text-xs"></i></button>
+                    </div>
+                    <div class="flex gap-2 overflow-x-auto pb-0.5">
+                        <div id="pos-category-tabs" class="flex gap-2 overflow-x-auto"></div>
+                    </div>
                 </div>
-                <div class="flex-1 overflow-y-auto">
+                <!-- Product Grid -->
+                <div class="flex-1 overflow-y-auto p-3">
+                    <div id="product-grid" style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px"></div>
+                    <div id="product-pagination" class="mt-3 flex items-center justify-center gap-2 flex-wrap pb-2"></div>
+                </div>
+            </div>
+
+            <!-- Cart Panel (Right, fixed width) -->
+            <div id="pos-cart-panel" class="w-full lg:w-[440px] lg:shrink-0 bg-white flex flex-col overflow-hidden">
+
+                <!-- Customer selector -->
+                <div class="px-3 py-2 border-b border-slate-200 bg-slate-50 flex items-center gap-2">
+                    <div class="pos-customer-picker relative flex-1" data-customers='@json($customerList)'>
+                        <input type="text" class="pos-customer-search w-full h-9 px-3 pr-8 border border-slate-200 bg-white rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" placeholder="Search customer name / phone / email" autocomplete="off" value="Walk-in Customer">
+                        <input id="customer-select" type="hidden" class="pos-customer-id" value="">
+                        <i class="fas fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
+                        <div class="pos-customer-results hidden absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg"></div>
+                    </div>
+                    <button id="btn-new-customer" type="button" class="h-9 w-9 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center justify-center shrink-0" title="Add Customer"><i class="fas fa-plus text-xs"></i></button>
+                </div>
+
+                <!-- Cart column headers -->
+                <div class="px-3 py-1.5 border-b border-slate-100 flex items-center text-[11px] font-bold text-slate-400 uppercase tracking-wide">
+                    <div class="flex-1">Product</div>
+                    <div class="w-24 text-center">Qty</div>
+                    <div class="w-20 text-right">Subtotal</div>
+                </div>
+
+                <!-- Cart items (scrollable) -->
+                <div class="flex-1 overflow-y-auto min-h-0">
                     <div id="cart-items" class="divide-y divide-slate-100"></div>
                 </div>
 
-                <div class="border-t border-slate-200 bg-slate-50 px-3 md:px-4 py-3">
-                    <div class="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
-                        <div class="text-slate-600">Items: <span id="items-count" class="font-semibold">0</span></div>
-                        <div class="text-slate-600">Subtotal: <span id="subtotal" class="font-semibold">{{ $currency }} 0.00</span></div>
-                        <div class="text-slate-600 js-cart-discount-row hidden">Discount: <span id="discount-amount" class="font-semibold text-red-600">{{ $currency }} 0.00</span></div>
-                        <div class="text-slate-600">Tax: <span id="tax-amount" class="font-semibold">{{ $currency }} 0.00</span></div>
-                        <div class="text-slate-600">Total: <span id="total" class="font-bold text-indigo-700">{{ $currency }} 0.00</span></div>
+                <!-- Totals -->
+                <div class="border-t border-slate-200 bg-slate-50 px-3 py-2 text-sm space-y-1">
+                    <div class="flex justify-between text-slate-600"><span>Items</span><span id="items-count" class="font-semibold">0</span></div>
+                    <div class="flex justify-between text-slate-600"><span>Subtotal</span><span id="subtotal" class="font-semibold">{{ $currency }} 0.00</span></div>
+                    <div class="flex justify-between text-slate-600 js-cart-discount-row hidden"><span>Discount</span><span id="discount-amount" class="font-semibold text-rose-600">{{ $currency }} 0.00</span></div>
+                    <div class="flex justify-between text-slate-600"><span>Tax</span><span id="tax-amount" class="font-semibold">{{ $currency }} 0.00</span></div>
+                    <div class="flex justify-between font-bold text-slate-800 border-t border-slate-200 pt-1"><span>Total</span><span id="total" class="text-indigo-700">{{ $currency }} 0.00</span></div>
+                    <div id="card-fee-row" class="flex justify-between text-slate-600 hidden"><span id="card-fee-label">Card Fee</span><span id="card-fee-amount" class="font-semibold">{{ $currency }} 0.00</span></div>
+                    <div id="payable-row" class="flex justify-between font-extrabold text-slate-900 text-base"><span>Payable</span><span id="total-payable">{{ $currency }} 0.00</span></div>
+                    <!-- Discount input -->
+                    <div class="flex items-center gap-2 pt-1">
+                        <label class="inline-flex items-center gap-1 text-xs cursor-pointer"><input type="radio" name="discount_type" value="fixed" class="discount-type" checked><span>Fixed</span></label>
+                        <label class="inline-flex items-center gap-1 text-xs cursor-pointer"><input type="radio" name="discount_type" value="percent" class="discount-type"><span>%</span></label>
+                        <input id="discount-value" type="number" step="0.01" min="0" class="flex-1 h-8 px-2 border border-slate-300 rounded-lg text-sm" placeholder="Discount">
                     </div>
+                </div>
 
-                    <div class="mt-3 flex flex-col md:flex-row md:items-end gap-2">
-                        <div class="flex items-center gap-3">
-                            <label class="inline-flex items-center gap-2 text-xs text-slate-700">
-                                <input type="radio" name="discount_type" value="fixed" class="discount-type" checked>
-                                <span>Fixed</span>
-                            </label>
-                            <label class="inline-flex items-center gap-2 text-xs text-slate-700">
-                                <input type="radio" name="discount_type" value="percent" class="discount-type">
-                                <span>Percent</span>
-                            </label>
+                <!-- Action buttons -->
+                <div class="border-t border-slate-200 bg-white px-3 py-2 space-y-2">
+                    <div class="grid grid-cols-3 gap-1.5">
+                        <button id="btn-draft" class="py-2 text-xs bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-semibold"><i class="fas fa-file-alt mr-1"></i>{{ $isQuotationMode ? 'Save Quot.' : 'Quotation' }}</button>
+                        <button id="btn-print-quotation" class="py-2 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold hidden"><i class="fas fa-print mr-1"></i>Print Quot.</button>
+                        @unless($isQuotationMode)
+                        <button id="btn-open-holds" class="py-2 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 font-semibold"><i class="fas fa-pause mr-1"></i>Hold (<span id="hold-count">0</span>)</button>
+                        <button id="btn-return-mode" class="py-2 text-xs bg-rose-50 text-rose-700 border border-rose-200 rounded-lg hover:bg-rose-100 font-semibold"><i class="fas fa-undo mr-1"></i>Return</button>
+                        @endunless
+                    </div>
+                    @unless($isQuotationMode)
+                    <div class="grid grid-cols-12 gap-2">
+                        <button id="btn-pay-multi" type="button" class="col-span-3 py-2.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold"><i class="fas fa-layer-group mr-1"></i>Multi</button>
+                        <select id="payment-method" class="col-span-9 h-11 px-3 rounded-lg border border-slate-200 bg-white text-sm font-semibold focus:ring-2 focus:ring-indigo-500">
+                            <option value="cash">Cash</option>
+                            <option value="card">Card</option>
+                            <option value="bank_transfer">Bank Transfer</option>
+                            <option value="cheque">Cheque Payment</option>
+                            <option value="mobile_payment">Mobile Payment</option>
+                        </select>
+                        <input id="cash-amount" type="number" step="0.01" min="0" class="col-span-7 h-11 px-3 rounded-lg border border-slate-200 bg-white text-sm font-semibold focus:ring-2 focus:ring-indigo-500" placeholder="Amount">
+                        <button id="btn-checkout" type="button" class="col-span-5 py-2.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-semibold"><i class="fas fa-check mr-1"></i>Pay</button>
+                    </div>
+                    <div id="cheque-fields" class="hidden grid grid-cols-1 gap-2 rounded-lg border border-indigo-200 bg-indigo-50 p-2">
+                        <input type="date" id="cheque-date" class="h-10 px-3 rounded-lg border border-indigo-200 bg-white text-sm focus:ring-2 focus:ring-indigo-500" placeholder="Cheque pass date">
+                        <input type="text" id="cheque-number" class="h-10 px-3 rounded-lg border border-indigo-200 bg-white text-sm focus:ring-2 focus:ring-indigo-500" placeholder="Cheque number">
+                        <input type="text" id="cheque-bank" class="h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm focus:ring-2 focus:ring-indigo-500" placeholder="Bank">
+                        <input type="text" id="cheque-name" class="h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm focus:ring-2 focus:ring-indigo-500" placeholder="Customer name">
+                    </div>
+                    @endunless
+                    <div class="flex items-center gap-2">
+                        <div class="flex-1 min-w-0">
+                            <div class="text-[10px] text-slate-500 font-bold uppercase">Total Payable</div>
+                            <div id="total-payable-bottom" class="text-xl font-extrabold text-slate-900 truncate">{{ $currency }} 0.00</div>
                         </div>
-                        <input id="discount-value" type="number" step="0.01" min="0" class="w-full md:w-56 px-3 py-2 border border-slate-300 rounded-lg" placeholder="Discount value">
+                        <button id="btn-clear" class="px-3 py-2 text-sm bg-rose-600 text-white rounded-lg hover:bg-rose-700 font-semibold shrink-0"><i class="fas fa-times mr-1"></i>Cancel</button>
+                        @unless($isQuotationMode)
+                        <button id="btn-recent-transactions" type="button" class="px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold shrink-0" title="Recent Transactions"><i class="fas fa-clock"></i></button>
+                        @endunless
                     </div>
-                    <div id="card-fee-row" class="mt-2 text-sm flex justify-between hidden">
-                        <span id="card-fee-label" class="text-slate-600">Card Fee</span>
-                        <span id="card-fee-amount" class="font-semibold">{{ $currency }} 0.00</span>
-                    </div>
-                    <div id="payable-row" class="mt-1 text-sm flex justify-between">
-                        <span class="font-semibold text-slate-800">Total Payable</span>
-                        <span id="total-payable" class="font-bold text-slate-900">{{ $currency }} 0.00</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Products (right) -->
-            <div id="pos-products-panel" class="lg:col-span-3 bg-slate-100 flex flex-col overflow-hidden">
-                <div class="p-3 border-b border-slate-200 bg-white">
-                    <button type="button" class="w-full bg-indigo-600 text-white rounded-xl py-2.5 text-sm font-semibold flex items-center justify-center gap-2 shadow-sm">
-                        <i class="fas fa-layer-group"></i>
-                        <span>All Categories</span>
-                    </button>
-                    <div id="pos-category-tabs" class="mt-3 flex gap-2 overflow-x-auto pb-1"></div>
-                </div>
-                <div class="flex-1 overflow-y-auto p-3">
-                    <div id="product-grid" class="grid grid-cols-2 gap-3"></div>
                 </div>
             </div>
         </div>
 
-        <!-- Bottom Bar -->
-        <div class="bg-white border-t border-slate-200 px-3 md:px-4 py-2">
-            <div class="lg:hidden grid grid-cols-2 gap-2 mb-2">
-                <button id="btn-view-products" type="button" class="h-11 rounded-xl border border-slate-200 bg-white text-slate-800 font-semibold flex items-center justify-center gap-2">
-                    <i class="fas fa-th-large text-slate-500"></i>
-                    <span>Products</span>
-                </button>
-                <button id="btn-view-cart" type="button" class="h-11 rounded-xl border border-slate-200 bg-white text-slate-800 font-semibold flex items-center justify-center gap-2">
-                    <i class="fas fa-shopping-cart text-slate-500"></i>
-                    <span>Cart</span>
-                    <span id="mobile-cart-badge" class="ml-1 inline-flex items-center justify-center min-w-[26px] h-6 px-2 rounded-full bg-indigo-600 text-white text-xs font-bold">0</span>
-                </button>
-            </div>
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-2 items-center">
-                <div class="lg:col-span-4 flex items-center gap-2 flex-wrap">
-                    <button id="btn-draft" class="px-3 py-2 text-sm bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50" title="Save as Quotation">
-                        <i class="fas fa-file-alt mr-1 text-slate-500"></i>Quotation
-                    </button>
-                    <button id="btn-print-quotation" class="px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 hidden" title="Print quotation">
-                        <i class="fas fa-print mr-1"></i>Print
-                    </button>
-                    <button id="btn-open-holds" class="px-3 py-2 text-sm bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50" title="Suspend / Holds">
-                        <i class="fas fa-pause mr-1 text-slate-500"></i>Suspend (<span id="hold-count">0</span>)
-                    </button>
-                    <button id="btn-return-mode" class="px-3 py-2 text-sm bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50" title="Return / Exchange">
-                        <i class="fas fa-undo mr-1 text-slate-500"></i>Return
-                    </button>
-                </div>
-
-                <div class="lg:col-span-5 flex items-center justify-start lg:justify-center gap-2 flex-wrap">
-                    <button id="btn-pay-multi" type="button" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm" title="Multiple Pay">
-                        <i class="fas fa-layer-group mr-1"></i>Multiple Pay
-                    </button>
-                    <button id="btn-pay-cash" type="button" class="px-5 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 shadow-sm">
-                        <i class="fas fa-money-bill mr-1"></i>Cash
-                    </button>
-                    <button id="btn-pay-card" type="button" class="px-5 py-2 text-sm bg-slate-900 text-white rounded-lg hover:bg-slate-800 shadow-sm">
-                        <i class="fas fa-credit-card mr-1"></i>Card
-                    </button>
-                    <button id="btn-clear" class="px-5 py-2 text-sm bg-rose-600 text-white rounded-lg hover:bg-rose-700 shadow-sm" title="Clear Cart">
-                        <i class="fas fa-times mr-1"></i>Cancel
-                    </button>
-                </div>
-
-                <div class="lg:col-span-3 flex items-center justify-between lg:justify-end gap-3">
-                    <div class="text-right">
-                        <div class="text-xs text-slate-500">TOTAL PAYABLE</div>
-                        <div id="total-payable-bottom" class="text-2xl font-extrabold text-slate-900">{{ $currency }} 0.00</div>
-                    </div>
-                    <button id="btn-recent-transactions" type="button" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm">
-                        <i class="fas fa-clock mr-1"></i>Recent Transactions
-                    </button>
-                </div>
-            </div>
+        <!-- Mobile toggle buttons -->
+        <div class="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex z-40">
+            <button id="btn-view-products" type="button" class="flex-1 py-3 text-sm font-semibold text-slate-700 flex items-center justify-center gap-2 border-r border-slate-200">
+                <i class="fas fa-th-large text-slate-500"></i>Products
+            </button>
+            <button id="btn-view-cart" type="button" class="flex-1 py-3 text-sm font-semibold text-slate-700 flex items-center justify-center gap-2">
+                <i class="fas fa-shopping-cart text-slate-500"></i>Cart
+                <span id="mobile-cart-badge" class="inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full bg-indigo-600 text-white text-xs font-bold">0</span>
+            </button>
         </div>
 
-        <!-- Hidden inputs for compatibility with existing JS -->
-        <select id="payment-method" class="hidden">
-            <option value="cash">Cash</option>
-            <option value="card">Card</option>
-        </select>
+        <!-- Hidden inputs for JS compatibility -->
+        @if($isQuotationMode)
+        <select id="payment-method" class="hidden"><option value="cash">Cash</option></select>
         <input id="cash-amount" type="number" class="hidden" value="0">
+        @endif
         <div id="change-display" class="hidden"></div>
         <div id="due-display" class="hidden"></div>
         <span id="change-amount" class="hidden"></span>
         <span id="due-amount" class="hidden"></span>
         <div id="customer-due" class="hidden"></div>
         <span id="customer-due-amount" class="hidden"></span>
+        @if($isQuotationMode)
         <button id="btn-checkout" class="hidden"></button>
+        @endif
         <button id="btn-hold" class="hidden"></button>
     </div>
 
@@ -291,41 +277,8 @@
 <div class="space-y-4">
     
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        <!-- Products Section -->
-        <div class="lg:col-span-2 space-y-4">
-            <!-- Search -->
-            <div class="bg-white rounded-xl shadow-md p-4">
-                <div class="relative">
-                    <input 
-                        id="product-search"
-                        type="text" 
-                        placeholder="Search products by name, SKU, or barcode..."
-                        class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                    <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
-                </div>
-            </div>
 
-            <!-- Products Grid -->
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h3 class="text-lg font-bold text-gray-800 mb-4">
-                    <i class="fas fa-box text-blue-600 mr-2"></i>Products
-                </h3>
-                @php
-                    // Provided by POSController@index for both layouts
-                    $productPayload = $productPayload ?? collect();
-                @endphp
-                <div id="product-grid" class="grid grid-cols-2 md:grid-cols-3 gap-4 max-h-[600px] overflow-y-auto">
-                    <div class="col-span-full text-center py-12 text-gray-500">
-                        <i class="fas fa-spinner fa-spin text-blue-500 text-3xl mb-2"></i>
-                        Loading products...
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Cart Section -->
+        <!-- Cart Section (LEFT) -->
         <div class="lg:col-span-1">
             <div class="bg-white rounded-xl shadow-md p-6 sticky top-4">
                 <h3 class="text-lg font-bold text-gray-800 mb-4">
@@ -372,14 +325,12 @@
                             <i class="fas fa-user-plus"></i>
                         </button>
                     </div>
-                    <select id="customer-select" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                        <option value="">Walk-in Customer</option>
-                        @isset($customers)
-                            @foreach($customers as $c)
-                                <option value="{{ $c->id }}">{{ $c->name }}</option>
-                            @endforeach
-                        @endisset
-                    </select>
+                    <div class="pos-customer-picker relative" data-customers='@json($customerList)'>
+                        <input type="text" class="pos-customer-search w-full px-4 py-2 pr-9 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Search customer name / phone / email" autocomplete="off" value="Walk-in Customer">
+                        <input id="customer-select" type="hidden" class="pos-customer-id" value="">
+                        <i class="fas fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none"></i>
+                        <div class="pos-customer-results hidden absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg"></div>
+                    </div>
                     <div id="customer-due" class="mt-2 hidden text-sm p-2 rounded border bg-yellow-50 border-yellow-200 text-yellow-800">
                         Outstanding Due: <span id="customer-due-amount">{{ $currency }} 0.00</span>
                     </div>
@@ -402,6 +353,7 @@
                     <p class="text-xs text-gray-500 mt-1">When Percent is selected, value is treated as % of subtotal.</p>
                 </div>
 
+                @unless($isQuotationMode)
                 <!-- Payment Section -->
                 <div class="mt-4 border-2 border-emerald-300 rounded-xl bg-emerald-50 p-4">
                     <div class="flex items-center justify-between mb-2">
@@ -412,8 +364,17 @@
                     <select id="payment-method" class="w-full mb-2 px-3 py-2 border-2 border-emerald-300 rounded-lg focus:ring-2 focus:ring-emerald-500">
                         <option value="cash">Cash</option>
                         <option value="card">Card</option>
+                        <option value="bank_transfer">Bank Transfer</option>
+                        <option value="cheque">Cheque Payment</option>
+                        <option value="mobile_payment">Mobile Payment</option>
                     </select>
                     <input type="number" step="0.01" min="0" id="cash-amount" class="w-full px-3 py-2 border-2 border-emerald-300 rounded-lg focus:ring-2 focus:ring-emerald-500" placeholder="Enter cash amount">
+                    <div id="cheque-fields" class="hidden mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <input type="date" id="cheque-date" class="px-3 py-2 border-2 border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="Cheque pass date">
+                        <input type="text" id="cheque-number" class="px-3 py-2 border-2 border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="Cheque number">
+                        <input type="text" id="cheque-bank" class="px-3 py-2 border border-gray-300 rounded-lg" placeholder="Bank">
+                        <input type="text" id="cheque-name" class="px-3 py-2 border border-gray-300 rounded-lg" placeholder="Customer name">
+                    </div>
                     <div class="grid grid-cols-2 gap-2 mt-3">
                         <div id="change-display" class="p-2 bg-green-50 border border-green-200 rounded-lg hidden">
                             <div class="flex justify-between items-center">
@@ -429,9 +390,21 @@
                         </div>
                     </div>
                 </div>
+                @else
+                <select id="payment-method" class="hidden">
+                    <option value="cash" selected>Cash</option>
+                </select>
+                <input type="number" step="0.01" min="0" id="cash-amount" class="hidden" value="0">
+                <div id="cheque-fields" class="hidden"></div>
+                <div id="change-display" class="hidden"></div>
+                <span id="change-amount" class="hidden"></span>
+                <div id="due-display" class="hidden"></div>
+                <span id="due-amount" class="hidden"></span>
+                @endunless
 
                 <!-- Action Buttons -->
                 <div class="mt-6 space-y-2">
+                    @unless($isQuotationMode)
                     <button id="btn-checkout" class="w-full py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 transition shadow-lg font-semibold">
                         <i class="fas fa-check-circle mr-2"></i>Complete Sale
                     </button>
@@ -444,8 +417,9 @@
                     <button id="btn-return-mode" class="w-full py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition" title="Load a previous sale for return/exchange">
                         <i class="fas fa-undo mr-2"></i>Return / Exchange
                     </button>
+                    @endunless
                     <button id="btn-draft" class="w-full py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition" title="Save cart as a Quotation without affecting stock">
-                        <i class="fas fa-file-invoice mr-2"></i>Save as Quotation
+                        <i class="fas fa-file-invoice mr-2"></i>{{ $isQuotationMode ? 'Save Quotation' : 'Save as Quotation' }}
                     </button>
                     <button id="btn-print-quotation" class="w-full py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition hidden" title="Print the last saved quotation">
                         <i class="fas fa-print mr-2"></i>Print Quotation
@@ -457,6 +431,48 @@
             </div>
         </div>
 
+        <!-- Products Section (RIGHT) -->
+        <div class="lg:col-span-2 space-y-4">
+            <!-- Search -->
+            <div class="bg-white rounded-xl shadow-md p-4">
+                <div class="relative">
+                    <input 
+                        id="product-search"
+                        type="text" 
+                        placeholder="Search products by name, SKU, or barcode..."
+                        class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                    <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                </div>
+            </div>
+
+            <!-- Category Tabs -->
+            <div class="bg-white rounded-xl shadow-md p-4">
+                <div id="pos-category-tabs" class="flex flex-wrap gap-2"></div>
+            </div>
+
+            <!-- Products Grid -->
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-bold text-gray-800">
+                        <i class="fas fa-box text-blue-600 mr-2"></i>Products
+                        <span id="product-count-label" class="text-sm font-normal text-gray-500 ml-2"></span>
+                    </h3>
+                </div>
+                @php
+                    $productPayload = $productPayload ?? collect();
+                @endphp
+                <div id="product-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                    <div class="col-span-full text-center py-12 text-gray-500">
+                        <i class="fas fa-spinner fa-spin text-blue-500 text-3xl mb-2"></i>
+                        Loading products...
+                    </div>
+                </div>
+                <!-- Pagination -->
+                <div id="product-pagination" class="mt-6 flex items-center justify-center gap-2 flex-wrap"></div>
+            </div>
+        </div>
+
     </div>
 
 </div>
@@ -465,7 +481,7 @@
 
 <!-- Multiple Pay Modal -->
 <div id="multi-pay-modal" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center">
-    <div class="bg-white rounded-xl shadow-xl w-full max-w-3xl mx-4 overflow-hidden">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-6xl mx-4 overflow-hidden">
         <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
             <h3 class="text-lg font-bold text-gray-800">Payment</h3>
             <button class="text-gray-500 hover:text-gray-700" data-close-multi-pay>
@@ -473,8 +489,8 @@
             </button>
         </div>
 
-        <div class="p-5 grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div class="lg:col-span-2 space-y-4">
+        <div class="p-5 grid grid-cols-1 xl:grid-cols-4 gap-4">
+            <div class="xl:col-span-3 space-y-4">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 mb-2">Amount*</label>
@@ -702,9 +718,16 @@
     (function(){
     const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
 
-    function currency(v){ return '{{ $currency }} ' + Number(v).toFixed(2); }
+    function currency(v){
+        if (typeof window.posCurrency === 'function') {
+            return window.posCurrency(v);
+        }
+        return '{{ $currency }} ' + Number(v).toFixed(2);
+    }
 
     const POS_LAYOUT = @json($posLayout ?? 'default');
+    const POS_MODE = @json($posMode ?? 'sale');
+    const IS_QUOTATION_MODE = POS_MODE === 'quotation';
     const POS_CARD_FEE = @json($posCardFee ?? ['enabled' => false, 'rate' => 0, 'mode' => 'customer']);
 
     // Modern sidebar toggle
@@ -747,7 +770,7 @@
     function getPaymentMethod(){
         const el = document.getElementById('payment-method');
         const v = (el?.value || 'cash').toLowerCase();
-        return (v === 'card') ? 'card' : 'cash';
+        return ['cash', 'cheque', 'bank_transfer', 'mobile_payment'].includes(v) ? v : 'cash';
     }
 
     function computeCardFee(baseTotal, paymentMethod, cardUsedOverride = null){
@@ -812,6 +835,19 @@
         if (totalPayableBottomEl) {
             totalPayableBottomEl.textContent = currency(computePayableTotal(baseTotal, cardUsedOverride));
         }
+
+        syncSinglePayAmount();
+    }
+
+    function syncSinglePayAmount(){
+        const cashEl = document.getElementById('cash-amount');
+        if (!cashEl || IS_QUOTATION_MODE) return;
+
+        const payable = computePayableTotal(readBaseTotal());
+        const next = String(payable.toFixed(2));
+        if (cashEl.value !== next) {
+            cashEl.value = next;
+        }
     }
 
     // Modern layout clock
@@ -836,10 +872,10 @@
             document.getElementById('btn-return-mode')?.click();
         });
         document.getElementById('btn-modern-customers')?.addEventListener('click', () => {
-            document.getElementById('customer-select')?.focus();
+            document.querySelector('.pos-customer-search')?.focus();
         });
         document.getElementById('btn-modern-print')?.addEventListener('click', async () => {
-            if (window.__lastReceiptSaleData) {
+            if (!IS_QUOTATION_MODE && window.__lastReceiptSaleData) {
                 try {
                     await showPrintReceipt(window.__lastReceiptSaleData);
                     return;
@@ -872,15 +908,21 @@
     function updateCheckoutState(){
         const checkoutBtn = document.getElementById('btn-checkout');
         if(!checkoutBtn) return;
-        const customerSelectEl = document.getElementById('customer-select');
+        if (IS_QUOTATION_MODE) {
+            checkoutBtn.disabled = true;
+            checkoutBtn.classList.add('opacity-50','cursor-not-allowed');
+            checkoutBtn.setAttribute('title','Checkout is disabled in quotation mode');
+            return;
+        }
+        const customerSelectEl = getActiveCustomerSelect();
         const isWalkIn = customerSelectEl && !customerSelectEl.value;
         const baseTotal = readBaseTotal();
         const payableTotal = computePayableTotal(baseTotal);
         const cashVal = parseFloat(document.getElementById('cash-amount')?.value || '0');
         const due = Math.max(0, payableTotal - cashVal);
         if(isWalkIn && due > 0){
-            checkoutBtn.disabled = true;
-            checkoutBtn.classList.add('opacity-50','cursor-not-allowed');
+            checkoutBtn.disabled = false;
+            checkoutBtn.classList.remove('opacity-50','cursor-not-allowed');
             checkoutBtn.setAttribute('title','Select a customer to allow due / partial payment');
         } else {
             checkoutBtn.disabled = false;
@@ -1101,8 +1143,153 @@
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
 
+    function getActiveCustomerSelect(){
+        const visiblePicker = Array.from(document.querySelectorAll('.pos-customer-picker'))
+            .find(picker => picker.offsetParent !== null);
+
+        return (visiblePicker || document).querySelector('#customer-select');
+    }
+
+    function selectedCustomerId(){
+        return getActiveCustomerSelect()?.value || '';
+    }
+
+    function customerSearchText(customer){
+        return [customer.name, customer.phone, customer.email]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+    }
+
+    function customerLabel(customer){
+        return customer.name || 'Unnamed Customer';
+    }
+
+    function syncCustomerPickers(selectedCustomer){
+        document.querySelectorAll('.pos-customer-picker').forEach(picker => {
+            const input = picker.querySelector('.pos-customer-search');
+            const hidden = picker.querySelector('.pos-customer-id');
+            const results = picker.querySelector('.pos-customer-results');
+            hidden.value = selectedCustomer?.id || '';
+            input.value = selectedCustomer ? customerLabel(selectedCustomer) : 'Walk-in Customer';
+            results.classList.add('hidden');
+            hidden.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        updateCheckoutState();
+    }
+
+    function renderCustomerResults(picker, customers, query = ''){
+        const results = picker.querySelector('.pos-customer-results');
+        const search = query.trim().toLowerCase();
+        const matched = search
+            ? customers.filter(customer => customerSearchText(customer).includes(search)).slice(0, 30)
+            : [{ id: '', name: 'Walk-in Customer', phone: '', email: '' }, ...customers.slice(0, 29)];
+
+        if (!matched.length) {
+            results.innerHTML = '<div class="px-3 py-2 text-sm text-slate-500">No customers found</div>';
+            results.classList.remove('hidden');
+            return;
+        }
+
+        results.innerHTML = matched.map(customer => {
+            const meta = [customer.phone, customer.email].filter(Boolean).join(' • ');
+            return `
+                <button type="button" class="customer-result w-full text-left px-3 py-2 hover:bg-indigo-50 focus:bg-indigo-50 border-b border-slate-100 last:border-b-0" data-id="${escapeAttr(customer.id || '')}">
+                    <div class="text-sm font-semibold text-slate-800">${escapeHtml(customerLabel(customer))}</div>
+                    ${meta ? `<div class="text-xs text-slate-500">${escapeHtml(meta)}</div>` : ''}
+                </button>
+            `;
+        }).join('');
+        results.classList.remove('hidden');
+    }
+
+    function initCustomerSearch(){
+        document.querySelectorAll('.pos-customer-picker').forEach(picker => {
+            const input = picker.querySelector('.pos-customer-search');
+            const hidden = picker.querySelector('.pos-customer-id');
+            const results = picker.querySelector('.pos-customer-results');
+            const customers = JSON.parse(picker.dataset.customers || '[]');
+            picker.__customers = customers;
+
+            input.addEventListener('focus', () => renderCustomerResults(picker, customers, input.value === 'Walk-in Customer' ? '' : input.value));
+            input.addEventListener('input', () => {
+                hidden.value = '';
+                renderCustomerResults(picker, customers, input.value);
+            });
+            input.addEventListener('keydown', event => {
+                if (event.key === 'Escape') {
+                    results.classList.add('hidden');
+                    input.value = hidden.value
+                        ? customerLabel(customers.find(customer => String(customer.id) === String(hidden.value)) || {})
+                        : 'Walk-in Customer';
+                }
+            });
+            results.addEventListener('click', event => {
+                const button = event.target.closest('.customer-result');
+                if (!button) return;
+                const id = button.dataset.id || '';
+                const selected = id ? customers.find(customer => String(customer.id) === String(id)) : null;
+                syncCustomerPickers(selected || null);
+            });
+        });
+
+        document.addEventListener('click', event => {
+            if (event.target.closest('.pos-customer-picker')) return;
+            document.querySelectorAll('.pos-customer-results').forEach(results => results.classList.add('hidden'));
+        });
+    }
+
+    function addCustomerToPickers(customer){
+        if (!customer?.id) return;
+        const normalized = {
+            id: customer.id,
+            name: customer.name || 'Unnamed Customer',
+            phone: customer.phone || '',
+            email: customer.email || '',
+        };
+
+        document.querySelectorAll('.pos-customer-picker').forEach(picker => {
+            picker.__customers = picker.__customers || [];
+            const existingIndex = picker.__customers.findIndex(item => String(item.id) === String(normalized.id));
+            if (existingIndex >= 0) {
+                picker.__customers[existingIndex] = normalized;
+            } else {
+                picker.__customers.push(normalized);
+            }
+        });
+
+        syncCustomerPickers(normalized);
+    }
+
+    function displayMoney(product){
+        if (typeof product?.display_selling_price === 'string' && product.display_selling_price.trim() !== '') {
+            return product.display_selling_price;
+        }
+
+        return currency(product?.selling_price ?? 0);
+    }
+
+    function resolveStockQuantity(product) {
+        const storeId = document.getElementById('pos-location')?.value;
+        if (storeId && product.store_stocks && (storeId in product.store_stocks)) {
+            return Number(product.store_stocks[storeId] ?? 0);
+        } else if (storeId) {
+            return 0;
+        }
+        return Number(product.stock_quantity ?? 0);
+    }
+
+    function displayStock(product){
+        if (typeof product?.display_stock_quantity === 'string' && product.display_stock_quantity === '—') {
+            return '—';
+        }
+        const qty = resolveStockQuantity(product);
+        return Number.isFinite(qty) ? qty.toFixed(2).replace(/\.00$/, '') : '—';
+    }
+
     function buildProductCard(product){
-        const isOutOfStock = (product.stock_quantity ?? 0) <= 0;
+        const activeStock = resolveStockQuantity(product);
+        const isOutOfStock = activeStock <= 0;
         const visibleUnits = Array.isArray(product.visible_units) ? product.visible_units : [];
         const categories = (product.categories || []).join(', ');
         const brands = (product.brands || []).join(', ');
@@ -1118,28 +1305,87 @@
             ? 'border-rose-300 bg-rose-50/40 shadow-[0_0_0_4px_rgba(248,113,113,0.22)]'
             : 'border-slate-200 bg-white hover:border-indigo-300 hover:shadow-sm';
         return `
-            <div class="rounded-xl border ${cardBorderClass} cursor-pointer transition add-to-cart"
+            <div class="rounded-lg border ${cardBorderClass} cursor-pointer transition add-to-cart"
                  data-product-id="${product.id}"
                  data-product-name="${escapeAttr(product.name)}"
                  data-product-price="${product.selling_price}"
                  data-visible-units="${visibleUnitsAttr}"
-                 data-stock-quantity="${product.stock_quantity ?? 0}">
-                <div class="w-full aspect-square rounded-t-xl overflow-hidden bg-slate-50">
+                 data-stock-quantity="${activeStock}">
+                <div class="w-full aspect-[4/3] rounded-t-lg overflow-hidden bg-slate-50">
                     ${imageContent}
                 </div>
-                <div class="p-3">
-                    <div class="text-sm font-semibold text-indigo-700 truncate">${escapeHtml(product.name)}</div>
-                    <div class="mt-1 text-lg font-extrabold text-slate-900">${currency(product.selling_price ?? 0)}</div>
-                    <div class="text-[12px] mt-0.5 ${isOutOfStock ? 'text-rose-600 font-bold' : 'text-slate-500'}">
-                        Stock: ${product.stock_quantity ?? 0}
-                        ${isOutOfStock ? '<span class="ml-2 uppercase font-extrabold">OUT OF STOCK</span>' : ''}
+                <div class="p-1.5">
+                    <div class="text-[11px] font-semibold text-indigo-700 truncate leading-tight">${escapeHtml(product.name)}</div>
+                    <div class="mt-0.5 text-sm font-extrabold text-slate-900 leading-tight">${displayMoney(product)}</div>
+                    <div class="text-[10px] mt-0.5 ${isOutOfStock ? 'text-rose-600 font-bold' : 'text-slate-400'} leading-tight">
+                        Stk: ${displayStock(product)}${isOutOfStock ? ' <span class="uppercase font-extrabold">OUT</span>' : ''}
                     </div>
-                    ${categoriesHtml}
-                    ${brandsHtml}
                     ${unitHtml}
                 </div>
             </div>
         `;
+    }
+
+    // ─── Pagination state ───────────────────────────────────────────────────
+    const PAGE_SIZE = 15;
+    const posPageState = { page: 1, category: 'All', searchTerm: '' };
+
+    function getPagedProducts(list) {
+        const start = (posPageState.page - 1) * PAGE_SIZE;
+        return list.slice(start, start + PAGE_SIZE);
+    }
+
+    function renderPagination(totalCount) {
+        const paginationEl = document.getElementById('product-pagination');
+        const countLabel = document.getElementById('product-count-label');
+        if (countLabel) {
+            countLabel.textContent = `(${totalCount} products)`;
+        }
+        if (!paginationEl) return;
+        const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+        if (totalPages <= 1) { paginationEl.innerHTML = ''; return; }
+        const currentPage = posPageState.page;
+        let html = '';
+        // Prev
+        html += `<button type="button" class="px-3 py-1.5 rounded border text-sm ${currentPage === 1 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700'}" data-page="${currentPage - 1}" ${currentPage === 1 ? 'disabled' : ''}>&laquo; Prev</button>`;
+        // Pages
+        const range = [];
+        const delta = 2;
+        for (let i = Math.max(1, currentPage - delta); i <= Math.min(totalPages, currentPage + delta); i++) {
+            range.push(i);
+        }
+        if (range[0] > 1) { html += `<button type="button" class="px-3 py-1.5 rounded border text-sm bg-white border-gray-300 hover:bg-gray-50 text-gray-700" data-page="1">1</button>`; if (range[0] > 2) html += `<span class="px-2 text-gray-400">…</span>`; }
+        range.forEach(p => {
+            const active = p === currentPage;
+            html += `<button type="button" class="px-3 py-1.5 rounded border text-sm ${active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700'}" data-page="${p}">${p}</button>`;
+        });
+        if (range[range.length - 1] < totalPages) { if (range[range.length - 1] < totalPages - 1) html += `<span class="px-2 text-gray-400">…</span>`; html += `<button type="button" class="px-3 py-1.5 rounded border text-sm bg-white border-gray-300 hover:bg-gray-50 text-gray-700" data-page="${totalPages}">${totalPages}</button>`; }
+        // Next
+        html += `<button type="button" class="px-3 py-1.5 rounded border text-sm ${currentPage === totalPages ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700'}" data-page="${currentPage + 1}" ${currentPage === totalPages ? 'disabled' : ''}>Next &raquo;</button>`;
+        paginationEl.innerHTML = html;
+        paginationEl.querySelectorAll('button[data-page]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const p = parseInt(btn.dataset.page);
+                if (!p || p < 1 || p > totalPages) return;
+                posPageState.page = p;
+                applyProductDisplay();
+            });
+        });
+    }
+
+    function getFilteredList() {
+        let list = activeProductList;
+        if (posPageState.category && posPageState.category !== 'All') {
+            list = list.filter(p => (p.categories || []).includes(posPageState.category));
+        }
+        return list;
+    }
+
+    function applyProductDisplay() {
+        const filtered = getFilteredList();
+        const paged = getPagedProducts(filtered);
+        renderProductGrid(paged);
+        renderPagination(filtered.length);
     }
 
     function renderProductGrid(products = []){
@@ -1151,6 +1397,10 @@
                     No products found
                 </div>
             `;
+            const countLabel = document.getElementById('product-count-label');
+            if (countLabel) countLabel.textContent = '(0 products)';
+            const paginationEl = document.getElementById('product-pagination');
+            if (paginationEl) paginationEl.innerHTML = '';
             return;
         }
         productGridElement.innerHTML = products.map(buildProductCard).join('');
@@ -1168,19 +1418,21 @@
     }
 
     async function loadProducts(term = ''){
+        posPageState.searchTerm = term;
+        posPageState.page = 1; // reset to first page on new search
         if (!term) {
             activeProductList = PRELOADED_PRODUCTS;
-            renderProductGrid(activeProductList);
-            return;
+        } else {
+            try {
+                const data = await fetchProducts(term);
+                activeProductList = Array.isArray(data) ? data : [];
+            } catch(err) {
+                console.error('Product search failed', err);
+                showToast('error', err.message || 'Product search failed');
+                return;
+            }
         }
-        try {
-            const data = await fetchProducts(term);
-            activeProductList = Array.isArray(data) ? data : [];
-            renderProductGrid(activeProductList);
-        } catch(err) {
-            console.error('Product search failed', err);
-            showToast('error', err.message || 'Product search failed');
-        }
+        applyProductDisplay();
     }
 
     let productSearchTimer;
@@ -1192,6 +1444,13 @@
                 loadProducts(term);
             }, 250);
         });
+
+        const posLocationEl = document.getElementById('pos-location');
+        if (posLocationEl) {
+            posLocationEl.addEventListener('change', () => {
+                applyProductDisplay();
+            });
+        }
 
         const findByCode = (list, term) => {
             const needle = String(term || '').trim().toLowerCase();
@@ -1221,7 +1480,7 @@
 
             if (!product) return false;
 
-            const stockQty = Number(product.stock_quantity ?? 0);
+            const stockQty = resolveStockQuantity(product);
             if (Number.isFinite(stockQty) && stockQty <= 0) {
                 (window.showToast || showToast)?.('warning', 'Out of stock');
                 return true;
@@ -1230,9 +1489,13 @@
             if (typeof window.addProductToCart !== 'function') {
                 return false;
             }
-            await window.addProductToCart(product.id, 1, null);
-            return true;
-        };
+	            if (typeof window.addProductWithPriceFlow === 'function') {
+	                await window.addProductWithPriceFlow(product.id, 1);
+	            } else {
+	                await window.addProductToCart(product.id, 1, null);
+	            }
+	            return true;
+	        };
 
         productSearchInput.addEventListener('keydown', async (e) => {
             if (e.key !== 'Enter') return;
@@ -1246,9 +1509,10 @@
         });
     }
 
-    renderProductGrid(activeProductList);
+    // Initial render with pagination
+    applyProductDisplay();
 
-    // Category tabs (Modern layout)
+    // Category tabs (works for both Modern and Default layouts)
     (function initCategoryTabs(){
         const tabs = document.getElementById('pos-category-tabs');
         if (!tabs) return;
@@ -1272,33 +1536,26 @@
         });
         const all = [{ name: 'All', count: PRELOADED_PRODUCTS.length }]
             .concat(Array.from(counts.entries()).sort((a,b) => a[0].localeCompare(b[0])).map(([name, count]) => ({ name, count })));
-        let active = 'All';
-        const render = () => {
+
+        const renderTabs = () => {
             tabs.innerHTML = all.map(c => {
-                const isActive = c.name === active;
+                const isActive = c.name === posPageState.category;
                 const cls = isActive
                     ? 'bg-indigo-600 text-white border-indigo-600'
                     : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:text-indigo-700';
                 return `<button type="button" class="whitespace-nowrap text-xs px-3 py-1.5 rounded-full border ${cls}" data-cat="${escAttr(c.name)}">${escHtml(c.name)} (${c.count})</button>`;
             }).join('');
         };
-        const applyFilter = () => {
-            if (active === 'All') {
-                renderProductGrid(activeProductList);
-                return;
-            }
-            const filtered = (activeProductList || []).filter(p => (p.categories || []).includes(active));
-            renderProductGrid(filtered);
-        };
+
         tabs.addEventListener('click', (e) => {
             const btn = e.target.closest('button[data-cat]');
             if (!btn) return;
-            active = btn.dataset.cat;
-            render();
-            applyFilter();
+            posPageState.category = btn.dataset.cat;
+            posPageState.page = 1; // reset page on category change
+            renderTabs();
+            applyProductDisplay();
         });
-        render();
-        applyFilter();
+        renderTabs();
     })();
 
     const holdModal = document.getElementById('hold-modal');
@@ -1911,8 +2168,9 @@
                 const cartAfterUnit = await postJSON('{{ route('pos.cart.unit') }}', { cart_key: effectiveKey, unit_id: requestedUnitId });
 
                 // Determine the new key (unit route uses productId_unit_unitId)
-                const productId = itemDiscountProductId || Number(currentIt?.id || 0);
-                const newKey = productId ? `${productId}_unit_${requestedUnitId}` : null;
+	                const productId = itemDiscountProductId || Number(currentIt?.id || 0);
+                    const priceId = Number(currentIt?.product_price_id || 0);
+	                const newKey = productId ? `${productId}${priceId ? `_price_${priceId}` : ''}_unit_${requestedUnitId}` : null;
                 if (newKey && cartAfterUnit?.items && cartAfterUnit.items[newKey]) {
                     effectiveKey = newKey;
                 } else {
@@ -2021,12 +2279,20 @@
     const dueAmountEl = document.getElementById('due-amount');
 
     const paymentMethodEl = document.getElementById('payment-method');
+    function toggleChequeFields(){
+        const wrap = document.getElementById('cheque-fields');
+        if (!wrap) return;
+        wrap.classList.toggle('hidden', getPaymentMethod() !== 'cheque');
+    }
     paymentMethodEl?.addEventListener('change', () => {
+        toggleChequeFields();
         updatePayableUI(readBaseTotal());
+        syncSinglePayAmount();
         // Recompute due/change for new payable
         if (cashInput) cashInput.dispatchEvent(new Event('input'));
         updateCheckoutState();
     });
+    toggleChequeFields();
     
     cashInput?.addEventListener('input', () => {
         const cash = parseFloat(cashInput.value || '0');
@@ -2051,13 +2317,14 @@
         updateCheckoutState();
     });
 
+    initCustomerSearch();
+
     // Customer due fetch
-    const customerSelect = document.getElementById('customer-select');
     const customerDueWrap = document.getElementById('customer-due');
     const customerDueAmount = document.getElementById('customer-due-amount');
-    if (customerSelect) {
-        customerSelect.addEventListener('change', async () => {
-            const id = customerSelect.value;
+    document.querySelectorAll('.pos-customer-id').forEach(customerSelectEl => {
+        customerSelectEl.addEventListener('change', async () => {
+            const id = selectedCustomerId();
             if (!id) { customerDueWrap.classList.add('hidden'); return; }
             try {
                 const res = await fetch(`/api/customer-due/${id}`);
@@ -2069,12 +2336,11 @@
             } catch(_){}
             updateCheckoutState();
         });
-        // Initial state
-        updateCheckoutState();
-    }
+    });
+    updateCheckoutState();
 
     // New Customer Modal
-    const newCustomerBtn = document.getElementById('btn-new-customer');
+    const newCustomerBtns = document.querySelectorAll('#btn-new-customer');
     let customerModal;
     function ensureCustomerModal(){
         if (customerModal) return customerModal;
@@ -2128,23 +2394,19 @@
                 if(!res.ok){ throw new Error('Failed to create customer'); }
                 const data = await res.json();
                 const c = data.customer;
-                // Append to select
-                const opt = document.createElement('option');
-                opt.value = c.id; opt.textContent = c.name;
-                customerSelect.appendChild(opt);
-                customerSelect.value = c.id;
+                addCustomerToPickers(c);
                 customerModal.classList.add('hidden');
                 showToast('success', 'Customer added');
             } catch(err){ showToast('error', err.message); }
         });
         return customerModal;
     }
-    if(newCustomerBtn){
+    newCustomerBtns.forEach(newCustomerBtn => {
         newCustomerBtn.addEventListener('click', () => {
             ensureCustomerModal();
             customerModal.classList.remove('hidden');
         });
-    }
+    });
 
     // Clear
     document.getElementById('btn-clear').addEventListener('click', async () => {
@@ -2155,7 +2417,10 @@
     // Draft
     document.getElementById('btn-draft').addEventListener('click', async () => {
         try {
-            const res = await postJSON('{{ route('pos.draft') }}', {});
+            const customerId = selectedCustomerId();
+            const res = await postJSON('{{ route('pos.draft') }}', {
+                customer_id: customerId ? Number(customerId) : null
+            });
             if(res && res.sale_id){
                 const label = res.sale_no ? res.sale_no : ('#' + res.sale_id);
                 showToast('success', 'Quotation saved ' + label);
@@ -2171,17 +2436,43 @@
     });
 
     async function doCheckout(payloadExtra = {}){
+        if (IS_QUOTATION_MODE) {
+            showToast('warning', 'Checkout is disabled. Use Save Quotation.');
+            return;
+        }
         const cashAmount = parseFloat(document.getElementById('cash-amount')?.value || '0');
         const baseTotal = readBaseTotal();
         const payableTotal = computePayableTotal(baseTotal);
         const due = Math.max(0, payableTotal - cashAmount);
-        const customerId = document.getElementById('customer-select') ? document.getElementById('customer-select').value : '';
+        const customerId = selectedCustomerId();
+        const method = getPaymentMethod();
+        const hasCheque = method === 'cheque' || (Array.isArray(payloadExtra.payments) && payloadExtra.payments.some(p => p.method === 'cheque'));
         if (due > 0 && !customerId) {
             showToast('warning', 'Customer is required when there is a due amount.');
-            if (document.getElementById('customer-select')) {
-                document.getElementById('customer-select').classList.add('ring-2','ring-amber-500');
-                setTimeout(()=>document.getElementById('customer-select').classList.remove('ring-2','ring-amber-500'), 1500);
+            const activeCustomerSearch = getActiveCustomerSelect()?.closest('.pos-customer-picker')?.querySelector('.pos-customer-search');
+            if (activeCustomerSearch) {
+                activeCustomerSearch.classList.add('ring-2','ring-amber-500');
+                setTimeout(()=>activeCustomerSearch.classList.remove('ring-2','ring-amber-500'), 1500);
             }
+            return;
+        }
+        if (hasCheque && !customerId) {
+            showToast('warning', 'Customer is required for cheque payments.');
+            return;
+        }
+
+        let chequeDate = document.getElementById('cheque-date')?.value || '';
+        let chequeNumber = document.getElementById('cheque-number')?.value || '';
+        let chequeBank = document.getElementById('cheque-bank')?.value || '';
+        let chequeName = document.getElementById('cheque-name')?.value || '';
+        if (Array.isArray(payloadExtra.payments)) {
+            const missingCheque = payloadExtra.payments.find(p => p.method === 'cheque' && (!p.cheque_date || !String(p.cheque_number || '').trim()));
+            if (missingCheque) {
+                showToast('warning', 'Cheque pass date and cheque number are required.');
+                return;
+            }
+        } else if (hasCheque && (!chequeDate || !chequeNumber.trim())) {
+            showToast('warning', 'Cheque pass date and cheque number are required.');
             return;
         }
         
@@ -2190,7 +2481,12 @@
             res = await postJSON('{{ route('pos.checkout') }}', {
                 paid_amount: cashAmount,
                 customer_id: customerId ? Number(customerId) : null,
-                payment_method: getPaymentMethod(),
+                store_id: document.getElementById('pos-location')?.value || null,
+                payment_method: method,
+                cheque_date: chequeDate || null,
+                cheque_number: chequeNumber || null,
+                cheque_bank: chequeBank || null,
+                cheque_name: chequeName || null,
                 ...payloadExtra
             });
         } catch(err){ showToast('error', err.message || 'Checkout failed'); return; }
@@ -2234,6 +2530,10 @@
             const cart = await postJSON('{{ route('pos.cart.clear') }}');
             renderCart(cart);
             document.getElementById('cash-amount').value = '';
+            ['cheque-date','cheque-number','cheque-bank','cheque-name'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
             changeDisplay?.classList.add('hidden');
             dueDisplay?.classList.add('hidden');
             showToast('success', 'Sale completed #' + res.sale_id);
@@ -2244,23 +2544,6 @@
 
     // Checkout (default layout)
     document.getElementById('btn-checkout')?.addEventListener('click', () => doCheckout());
-
-    // Quick pay buttons (modern layout)
-    function quickPay(method){
-        const paymentEl = document.getElementById('payment-method');
-        if (paymentEl) paymentEl.value = method;
-        updatePayableUI(readBaseTotal());
-        const baseTotal = readBaseTotal();
-        const payable = computePayableTotal(baseTotal);
-        const cashEl = document.getElementById('cash-amount');
-        if (cashEl) {
-            cashEl.value = String(payable);
-            cashEl.dispatchEvent(new Event('input'));
-        }
-        doCheckout();
-    }
-    document.getElementById('btn-pay-cash')?.addEventListener('click', () => quickPay('cash'));
-    document.getElementById('btn-pay-card')?.addEventListener('click', () => quickPay('card'));
 
     /* ----------------------- Multiple Pay Workflow ----------------------- */
     const multiPayModal = document.getElementById('multi-pay-modal');
@@ -2280,31 +2563,47 @@
 
     function buildPaymentRow(method = 'cash', amount = ''){
         const row = document.createElement('div');
-        row.className = 'grid grid-cols-12 gap-2 items-center';
+        row.className = 'grid grid-cols-12 gap-3 items-start rounded-lg border border-slate-200 bg-white p-3';
         row.innerHTML = `
-            <div class="col-span-6">
-                <select class="w-full px-3 py-2 border border-gray-300 rounded-lg payment-method">
+            <div class="col-span-12 md:col-span-5">
+                <select class="w-full h-12 px-3 border border-gray-300 rounded-lg payment-method">
                     <option value="cash">Cash</option>
                     <option value="card">Card</option>
                     <option value="bank_transfer">Bank Transfer</option>
+                    <option value="cheque">Cheque Payment</option>
                     <option value="mobile_payment">Mobile Payment</option>
                 </select>
             </div>
-            <div class="col-span-5">
-                <input type="number" step="0.01" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-lg payment-amount" placeholder="Amount" />
+            <div class="col-span-10 md:col-span-6">
+                <input type="number" step="0.01" min="0" class="w-full h-12 px-3 border border-gray-300 rounded-lg payment-amount" placeholder="Amount" />
             </div>
-            <div class="col-span-1 text-right">
-                <button type="button" class="text-red-600 hover:text-red-800 btn-remove-pay" title="Remove">
+            <div class="col-span-2 md:col-span-1 text-right">
+                <button type="button" class="h-12 w-10 rounded-lg text-red-600 hover:bg-red-50 hover:text-red-800 btn-remove-pay" title="Remove">
                     <i class="fas fa-trash"></i>
                 </button>
+            </div>
+            <div class="col-span-12 cheque-row-fields hidden grid grid-cols-1 md:grid-cols-2 gap-3 bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+                <input type="date" class="h-12 px-3 border border-indigo-200 rounded-lg bg-white cheque-date" placeholder="Cheque pass date">
+                <input type="text" class="h-12 px-3 border border-indigo-200 rounded-lg bg-white cheque-number" placeholder="Cheque number">
+                <input type="text" class="h-12 px-3 border border-gray-300 rounded-lg bg-white cheque-bank" placeholder="Bank">
+                <input type="text" class="h-12 px-3 border border-gray-300 rounded-lg bg-white cheque-name" placeholder="Customer name">
             </div>
         `;
         const sel = row.querySelector('select.payment-method');
         const inp = row.querySelector('input.payment-amount');
+        const chequeFields = row.querySelector('.cheque-row-fields');
+        const toggleRowCheque = () => {
+            chequeFields?.classList.toggle('hidden', sel.value !== 'cheque');
+            updateMultiPaySummary();
+        };
         sel.value = method;
         inp.value = amount;
-        sel.addEventListener('change', updateMultiPaySummary);
+        sel.addEventListener('change', toggleRowCheque);
         inp.addEventListener('input', updateMultiPaySummary);
+        row.querySelectorAll('.cheque-date,.cheque-number,.cheque-bank,.cheque-name').forEach(el => {
+            el.addEventListener('input', updateMultiPaySummary);
+            el.addEventListener('change', updateMultiPaySummary);
+        });
         row.querySelector('.btn-remove-pay')?.addEventListener('click', () => {
             row.remove();
             if (multiPayRows && multiPayRows.children.length === 0) {
@@ -2312,6 +2611,7 @@
             }
             updateMultiPaySummary();
         });
+        toggleRowCheque();
         return row;
     }
 
@@ -2319,6 +2619,7 @@
         const payments = [];
         let cardUsed = false;
         let cardAmount = 0;
+        let chequeUsed = false;
         multiPayRows?.querySelectorAll(':scope > div').forEach(row => {
             const method = row.querySelector('select.payment-method')?.value;
             const amount = parseFloat(row.querySelector('input.payment-amount')?.value || '0');
@@ -2328,14 +2629,24 @@
                 cardUsed = true;
                 cardAmount += amount;
             }
-            payments.push({ method, amount: Math.round(amount * 100) / 100 });
+            if (method === 'cheque') {
+                chequeUsed = true;
+            }
+            const payload = { method, amount: Math.round(amount * 100) / 100 };
+            if (method === 'cheque') {
+                payload.cheque_date = row.querySelector('.cheque-date')?.value || '';
+                payload.cheque_number = row.querySelector('.cheque-number')?.value || '';
+                payload.cheque_bank = row.querySelector('.cheque-bank')?.value || '';
+                payload.cheque_name = row.querySelector('.cheque-name')?.value || '';
+            }
+            payments.push(payload);
         });
-        return { payments, cardUsed, cardAmount: Math.round(cardAmount * 100) / 100 };
+        return { payments, cardUsed, chequeUsed, cardAmount: Math.round(cardAmount * 100) / 100 };
     }
 
     function updateMultiPaySummary(){
         const baseTotal = readBaseTotal();
-        const { payments, cardUsed, cardAmount } = getMultiPayPayments();
+        const { payments, cardUsed, chequeUsed, cardAmount } = getMultiPayPayments();
         const paying = payments.reduce((s,p) => s + (Number(p.amount)||0), 0);
         const payable = computePayableTotalSplit(baseTotal, cardAmount);
         const fee = computeCardFeeAmount(cardAmount);
@@ -2373,19 +2684,23 @@
     function openMultiPay(){
         if (!multiPayModal || !multiPayRows) return;
         multiPayRows.innerHTML = '';
-        multiPayRows.appendChild(buildPaymentRow('cash',''));
+        const payable = computePayableTotalSplit(readBaseTotal(), 0);
+        multiPayRows.appendChild(buildPaymentRow('cash', payable.toFixed(2)));
         multiPayModal.classList.remove('hidden');
         updateMultiPaySummary();
     }
 
     openMultiPayBtn?.addEventListener('click', openMultiPay);
     addPaymentRowBtn?.addEventListener('click', () => {
-        multiPayRows?.appendChild(buildPaymentRow('cash',''));
+        const { payments, cardAmount } = getMultiPayPayments();
+        const paid = payments.reduce((s,p) => s + (Number(p.amount)||0), 0);
+        const remaining = Math.max(0, computePayableTotalSplit(readBaseTotal(), cardAmount) - paid);
+        multiPayRows?.appendChild(buildPaymentRow('cash', remaining > 0 ? remaining.toFixed(2) : ''));
         updateMultiPaySummary();
     });
 
     finalizeMultiPayBtn?.addEventListener('click', async () => {
-        const { payments, cardUsed, cardAmount } = getMultiPayPayments();
+        const { payments, cardUsed, chequeUsed, cardAmount } = getMultiPayPayments();
         if (!payments.length) {
             showToast('warning', 'Please enter at least one payment amount');
             return;
@@ -2406,7 +2721,7 @@
         const notes = [sellNote, staffNote].filter(Boolean).join(' | ');
 
         // Proceed with checkout using payments payload
-        await doCheckout({ payments, notes, _multi_pay_payable: payable });
+        await doCheckout({ payments, notes, _multi_pay_payable: payable, _multi_has_cheque: chequeUsed });
         closeMultiPay();
     });
 
@@ -2459,6 +2774,28 @@
                 <button id="confirm-print-quotation" type="button" class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">Open Print View</button>
             </div>
         </div>
+    </div>
+</div>
+
+<!-- Price Selection Modal -->
+<div id="price-selection-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center px-4" style="z-index: 9998;">
+    <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[86vh] overflow-hidden">
+        <div class="bg-gradient-to-r from-purple-600 to-purple-700 text-white p-5">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-xl font-bold">Select Selling Price</h3>
+                    <p id="price-modal-product-name" class="text-purple-100 mt-1 text-sm"></p>
+                </div>
+                <button type="button" id="close-price-modal" class="h-9 w-9 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="mt-4 relative">
+                <input id="price-modal-search" type="text" class="w-full rounded-lg border-0 px-4 py-2 text-gray-800 focus:ring-2 focus:ring-white" placeholder="Filter prices">
+                <i class="fas fa-search absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+            </div>
+        </div>
+        <div id="price-options-list" class="p-4 grid grid-cols-1 md:grid-cols-2 gap-3 overflow-y-auto max-h-[56vh]"></div>
     </div>
 </div>
 
@@ -2526,7 +2863,13 @@
     const confirmBtn = document.getElementById('confirm-add-to-cart');
     const productNameEl = document.getElementById('modal-product-name');
     const unitOptionsEl = document.getElementById('unit-options');
-    const quantityInput = document.getElementById('modal-quantity');
+	    const quantityInput = document.getElementById('modal-quantity');
+        const priceModal = document.getElementById('price-selection-modal');
+        const priceModalName = document.getElementById('price-modal-product-name');
+        const priceModalSearch = document.getElementById('price-modal-search');
+        const priceOptionsList = document.getElementById('price-options-list');
+        const closePriceModalBtn = document.getElementById('close-price-modal');
+        const productPricesUrlTemplate = @json(route('pos.product-prices', ['product' => '__PRODUCT__']));
     
     let selectedProductId = null;
     let selectedProductPrice = null;
@@ -2553,10 +2896,116 @@
         if (e.target === modal) closeModal();
     });
     
-    // Click product card: auto-add default unit (no unit modal)
-    document.addEventListener('click', (e) => {
-        const productCard = e.target.closest('.add-to-cart');
-        if (!productCard) return;
+        let priceModalState = {
+            productId: null,
+            prices: [],
+            resolve: null,
+        };
+
+        const money = (value) => '{{ $currency }} ' + Number(value || 0).toFixed(2);
+        const htmlEscape = (value = '') => String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+
+        function closePriceModal(selectedId = null) {
+            priceModal?.classList.add('hidden');
+            const resolve = priceModalState.resolve;
+            priceModalState = { productId: null, prices: [], resolve: null };
+            if (priceModalSearch) priceModalSearch.value = '';
+            if (priceOptionsList) priceOptionsList.innerHTML = '';
+            if (resolve) resolve(selectedId);
+        }
+
+        function renderPriceOptions(filter = '') {
+            if (!priceOptionsList) return;
+            const term = String(filter || '').trim().toLowerCase();
+            const prices = (priceModalState.prices || []).filter(price => {
+                if (!term) return true;
+                return [
+                    Number(price.selling_price || 0).toFixed(2),
+                    Number(price.cost_price || 0).toFixed(2),
+                    Number(price.stock_qty || 0).toFixed(3),
+                ].some(value => value.includes(term));
+            });
+
+            if (!prices.length) {
+                priceOptionsList.innerHTML = '<div class="md:col-span-2 text-center py-8 text-gray-500">No matching prices</div>';
+                return;
+            }
+
+            priceOptionsList.innerHTML = prices.map(price => {
+                const stockBadge = price.use_price_wise_stock
+                    ? `<span class="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold">Stock ${Number(price.stock_qty || 0).toFixed(3)}</span>`
+                    : '';
+                const costLine = Object.prototype.hasOwnProperty.call(price, 'cost_price')
+                    ? `<div class="text-xs text-gray-500 mt-1">Cost: ${money(price.cost_price)}</div>`
+                    : '';
+                const defaultBadge = price.is_default
+                    ? '<span class="px-2 py-1 rounded-full bg-purple-50 text-purple-700 text-xs font-semibold">Default</span>'
+                    : '';
+                return `
+                    <button type="button" data-price-id="${price.id}" class="price-option-card text-left border border-gray-200 hover:border-purple-400 hover:bg-purple-50 rounded-xl p-4 transition">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <div class="text-2xl font-extrabold text-gray-900">${money(price.selling_price)}</div>
+                                ${costLine}
+                            </div>
+                            <div class="flex flex-col items-end gap-2">${defaultBadge}${stockBadge}</div>
+                        </div>
+                        <div class="mt-4 text-sm font-semibold text-purple-700">Select</div>
+                    </button>
+                `;
+            }).join('');
+        }
+
+        async function fetchProductPrices(productId) {
+            const url = productPricesUrlTemplate.replace('__PRODUCT__', encodeURIComponent(productId));
+            const response = await fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+            if (!response.ok) {
+                const payload = await response.json().catch(() => ({}));
+                throw new Error(payload.message || 'Unable to load price options');
+            }
+            return await response.json();
+        }
+
+        function choosePriceFromModal(payload) {
+            priceModalState.productId = payload.product_id;
+            priceModalState.prices = Array.isArray(payload.prices) ? payload.prices : [];
+            if (priceModalName) priceModalName.textContent = payload.product_name || '';
+            renderPriceOptions();
+            priceModal?.classList.remove('hidden');
+            priceModalSearch?.focus();
+            return new Promise(resolve => { priceModalState.resolve = resolve; });
+        }
+
+        async function pickProductPrice(productId) {
+            const payload = await fetchProductPrices(productId);
+            const prices = Array.isArray(payload.prices) ? payload.prices : [];
+            if (prices.length === 0) {
+                (window.showToast || showToast)?.('warning', 'No available stock for this product.');
+                return null;
+            }
+            if (prices.length === 1) {
+                return prices[0].id;
+            }
+            return await choosePriceFromModal(payload);
+        }
+
+        closePriceModalBtn?.addEventListener('click', () => closePriceModal(null));
+        priceModal?.addEventListener('click', (event) => {
+            if (event.target === priceModal) closePriceModal(null);
+            const option = event.target.closest?.('[data-price-id]');
+            if (option) closePriceModal(Number(option.dataset.priceId));
+        });
+        priceModalSearch?.addEventListener('input', () => renderPriceOptions(priceModalSearch.value));
+
+	    // Click product card: auto-add default unit (no unit modal)
+	    document.addEventListener('click', (e) => {
+	        const productCard = e.target.closest('.add-to-cart');
+	        if (!productCard) return;
 
         e.preventDefault();
         e.stopPropagation();
@@ -2567,8 +3016,8 @@
             (window.showToast || showToast)?.('warning', 'Out of stock');
             return;
         }
-        addProductToCart(productId, 1, null);
-    });
+	        addProductWithPriceFlow(productId, 1);
+	    });
 
     // Click cart item "Edit": open unit/qty modal
     document.getElementById('cart-items')?.addEventListener('click', (e) => {
@@ -2653,15 +3102,46 @@
                 const newUnitId = Number(selectedUnit?.id || 0);
 
                 if (newUnitId && currentUnitId && newUnitId !== currentUnitId) {
-                    const cartAfterUnit = await postJSON('{{ route('pos.cart.unit') }}', { cart_key: currentKey, unit_id: newUnitId });
-                    renderCart(cartAfterUnit);
-                    const newKey = `${selectedProductId}_unit_${newUnitId}`;
+	                    const cartAfterUnit = await fetch('{{ route('pos.cart.unit') }}', {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                                'Accept': 'application/json'
+                            },
+                            body: JSON.stringify({ cart_key: currentKey, unit_id: newUnitId })
+                        }).then(async response => {
+                            if (!response.ok) {
+                                const payload = await response.json().catch(() => ({}));
+                                throw new Error(payload.message || 'Failed to update unit');
+                            }
+                            return response.json();
+                        });
+	                    renderCart(cartAfterUnit);
+                        const priceId = Number(it?.product_price_id || 0);
+	                    const newKey = `${selectedProductId}${priceId ? `_price_${priceId}` : ''}_unit_${newUnitId}`;
                     if (cartAfterUnit?.items && cartAfterUnit.items[newKey]) {
                         currentKey = newKey;
                     }
                 }
 
-                const cartAfterQty = await postJSON('{{ route('pos.cart.update') }}', { cart_key: currentKey, qty: quantity });
+	                const cartAfterQty = await fetch('{{ route('pos.cart.update') }}', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({ cart_key: currentKey, qty: quantity })
+                    }).then(async response => {
+                        if (!response.ok) {
+                            const payload = await response.json().catch(() => ({}));
+                            throw new Error(payload.message || 'Failed to update quantity');
+                        }
+                        return response.json();
+                    });
                 renderCart(cartAfterQty);
                 (window.showToast || showToast)?.('success', 'Item updated');
                 closeModal();
@@ -2675,7 +3155,18 @@
     });
     
     // Add product to cart function
-    async function addProductToCart(productId, quantity = 1, unit = null) {
+        async function addProductWithPriceFlow(productId, quantity = 1, unit = null) {
+            try {
+                const priceId = await pickProductPrice(productId);
+                if (!priceId) return;
+                await addProductToCart(productId, quantity, unit, priceId);
+            } catch (error) {
+                console.error('Price selection failed:', error);
+                (window.showToast || showToast)?.('error', error.message || 'Unable to select price');
+            }
+        }
+
+	    async function addProductToCart(productId, quantity = 1, unit = null, productPriceId = null) {
         try {
             const cartBefore = window.__posCartSnapshot || {};
             const beforeItems = cartBefore.items || {};
@@ -2694,10 +3185,11 @@
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
                     'Accept': 'application/json'
                 },
-                body: JSON.stringify({ 
-                    product_id: productId,
-                    quantity: quantity,
-                    unit: unit
+	                body: JSON.stringify({ 
+	                    product_id: productId,
+                        product_price_id: productPriceId,
+	                    quantity: quantity,
+	                    unit: unit
                 })
             });
             
@@ -2737,7 +3229,8 @@
         }
     }
 
-    window.addProductToCart = addProductToCart;
+	    window.addProductToCart = addProductToCart;
+        window.addProductWithPriceFlow = addProductWithPriceFlow;
     
     // Enter key to confirm
     quantityInput.addEventListener('keypress', (e) => {

@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
-use Illuminate\Support\Facades\Storage;
-use Carbon\Carbon;
+use App\Services\ExpenseAccountingService;
 use App\Support\PublicStorageSync;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class ExpenseController extends Controller
 {
@@ -18,6 +20,7 @@ class ExpenseController extends Controller
     {
         $expenses = Expense::with('category')->latest()->paginate(20);
         $categories = ExpenseCategory::where('is_active', true)->get();
+
         return view('expenses.index', compact('expenses', 'categories'));
     }
 
@@ -27,6 +30,7 @@ class ExpenseController extends Controller
     public function create()
     {
         $categories = ExpenseCategory::where('is_active', true)->get();
+
         return view('expenses.create', compact('categories'));
     }
 
@@ -36,9 +40,11 @@ class ExpenseController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
+            'store_id' => 'nullable|exists:stores,id',
             'expense_category_id' => 'required|exists:expense_categories,id',
             'expense_date' => 'required|date',
             'amount' => 'required|numeric|min:0',
+            'payment_method' => 'required|in:cash,bank_transfer',
             'description' => 'nullable|string',
             'receipt' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
         ]);
@@ -51,21 +57,21 @@ class ExpenseController extends Controller
             if ($category->reset_frequency === 'monthly') {
                 $expenseDate = Carbon::parse($validated['expense_date']);
                 $resetDay = $category->reset_date ?? 1;
-                
+
                 $startDate = $expenseDate->copy();
                 if ($expenseDate->day < $resetDay) {
                     $startDate->subMonth();
                 }
                 // Handle months with fewer days
                 $startDate->day = min($resetDay, $startDate->daysInMonth);
-                
+
                 $query->where('expense_date', '>=', $startDate->format('Y-m-d'));
             }
 
             $currentTotal = $query->sum('amount');
-            
+
             if (($currentTotal + $validated['amount']) > $category->limit) {
-                return back()->withInput()->withErrors(['amount' => "Expense limit reached for this category. Limit: {$category->limit}, Current Total: {$currentTotal}, Remaining: " . max(0, $category->limit - $currentTotal)]);
+                return back()->withInput()->withErrors(['amount' => "Expense limit reached for this category. Limit: {$category->limit}, Current Total: {$currentTotal}, Remaining: ".max(0, $category->limit - $currentTotal)]);
             }
         }
 
@@ -76,7 +82,10 @@ class ExpenseController extends Controller
 
         $validated['user_id'] = $request->user()->id;
 
-        Expense::create($validated);
+        DB::transaction(function () use ($validated, $request) {
+            $expense = Expense::create($validated);
+            app(ExpenseAccountingService::class)->sync($expense->load('category'), $request->user()->id);
+        });
 
         return redirect()->route('expenses.index')->with('success', 'Expense recorded successfully');
     }
@@ -87,6 +96,7 @@ class ExpenseController extends Controller
     public function show(Expense $expense)
     {
         $expense->load('category', 'user');
+
         return view('expenses.show', compact('expense'));
     }
 
@@ -96,6 +106,7 @@ class ExpenseController extends Controller
     public function edit(Expense $expense)
     {
         $categories = ExpenseCategory::where('is_active', true)->get();
+
         return view('expenses.edit', compact('expense', 'categories'));
     }
 
@@ -105,9 +116,11 @@ class ExpenseController extends Controller
     public function update(Request $request, Expense $expense)
     {
         $validated = $request->validate([
+            'store_id' => 'nullable|exists:stores,id',
             'expense_category_id' => 'required|exists:expense_categories,id',
             'expense_date' => 'required|date',
             'amount' => 'required|numeric|min:0',
+            'payment_method' => 'required|in:cash,bank_transfer',
             'description' => 'nullable|string',
             'receipt' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
         ]);
@@ -116,25 +129,25 @@ class ExpenseController extends Controller
         $category = ExpenseCategory::find($validated['expense_category_id']);
         if ($category->limit > 0) {
             $query = Expense::where('expense_category_id', $category->id)
-                            ->where('id', '!=', $expense->id); // Exclude current expense
+                ->where('id', '!=', $expense->id); // Exclude current expense
 
             if ($category->reset_frequency === 'monthly') {
                 $expenseDate = Carbon::parse($validated['expense_date']);
                 $resetDay = $category->reset_date ?? 1;
-                
+
                 $startDate = $expenseDate->copy();
                 if ($expenseDate->day < $resetDay) {
                     $startDate->subMonth();
                 }
                 $startDate->day = min($resetDay, $startDate->daysInMonth);
-                
+
                 $query->where('expense_date', '>=', $startDate->format('Y-m-d'));
             }
 
             $currentTotal = $query->sum('amount');
-            
+
             if (($currentTotal + $validated['amount']) > $category->limit) {
-                return back()->withInput()->withErrors(['amount' => "Expense limit reached for this category. Limit: {$category->limit}, Current Total: {$currentTotal}, Remaining: " . max(0, $category->limit - $currentTotal)]);
+                return back()->withInput()->withErrors(['amount' => "Expense limit reached for this category. Limit: {$category->limit}, Current Total: {$currentTotal}, Remaining: ".max(0, $category->limit - $currentTotal)]);
             }
         }
 
@@ -147,7 +160,10 @@ class ExpenseController extends Controller
             PublicStorageSync::syncFile($validated['receipt']);
         }
 
-        $expense->update($validated);
+        DB::transaction(function () use ($expense, $validated, $request) {
+            $expense->update($validated);
+            app(ExpenseAccountingService::class)->sync($expense->fresh('category'), $request->user()?->id);
+        });
 
         return redirect()->route('expenses.index')->with('success', 'Expense updated successfully');
     }
@@ -162,7 +178,11 @@ class ExpenseController extends Controller
             Storage::disk('public')->delete($expense->receipt);
             PublicStorageSync::removeFile($expense->receipt);
         }
-        $expense->delete();
+        DB::transaction(function () use ($expense) {
+            app(ExpenseAccountingService::class)->reverse($expense);
+            $expense->delete();
+        });
+
         return redirect()->route('expenses.index')->with('success', 'Expense deleted');
     }
 }

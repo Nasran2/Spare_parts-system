@@ -2,31 +2,42 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Session;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Str;
-use App\Models\Product;
-use App\Models\Sale;
-use App\Models\SaleItem;
-use App\Models\Setting;
+use App\Models\ChequePayment;
 use App\Models\Customer;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\Payment;
+use App\Models\Product;
+use App\Models\ProductPrice;
+use App\Models\Sale;
+use App\Models\SaleItem;
+use App\Models\Setting;
 use App\Models\Unit;
+use App\Models\User;
+use App\Services\DashboardVisibilityService;
+use App\Services\PrivacyModeService;
+use App\Services\SalePaymentAccountingService;
+use App\Support\DatabaseAutoIncrementRepair;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Str;
 
 class POSController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * Build shared data payload for POS and quotation builder views.
      */
-    public function index()
+    private function buildPosViewData(string $mode = 'sale', ?User $user = null): array
     {
-        // Render the POS index view with current cart snapshot
         $cart = $this->cart();
-        $customers = Customer::where('is_active', true)->orderBy('name')->get(['id','name']);
+        $hiddenCustomerIds = DashboardVisibilityService::hiddenCustomerIdsForUser($user);
+        $customers = Customer::query()
+            ->where('is_active', true)
+            ->when(! empty($hiddenCustomerIds), fn ($q) => $q->whereNotIn('id', $hiddenCustomerIds))
+            ->orderBy('name')
+            ->get(['id', 'name', 'phone', 'email']);
         $invoicePaperSize = Setting::get('invoice_paper_size', 'a4');
         $posLayout = Setting::get('pos_layout', 'default');
 
@@ -34,13 +45,19 @@ class POSController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'short_name']);
 
-        $products = Product::with(['unit', 'categories', 'brands'])
+        $hiddenProductIds = DashboardVisibilityService::hiddenProductIdsForUser($user);
+        $controls = DashboardVisibilityService::configForUser($user);
+
+        $stores = \App\Models\Store::where('is_active', true)->orderBy('name')->get(['id', 'name', 'is_default']);
+
+        $products = Product::with(['unit', 'categories', 'brands', 'activePrices', 'storeStocks'])
             ->where('is_active', true)
+            ->when(! empty($hiddenProductIds), fn ($q) => $q->whereNotIn('id', $hiddenProductIds))
             ->orderBy('name')
             ->get();
 
         $productPayload = $products
-            ->map(fn (Product $product) => $this->formatProductForPOS($product))
+            ->map(fn (Product $product) => $this->formatProductForPOS($product, $controls))
             ->values();
 
         $posCardFee = [
@@ -50,16 +67,35 @@ class POSController extends Controller
             'record_expense' => (bool) Setting::get('pos_card_fee_record_expense', true),
             'expense_category_id' => (int) Setting::get('pos_card_fee_expense_category_id', 0),
         ];
-        
-        return view('pos.index', [
+
+        return [
             'cart' => $cart,
+            'stores' => $stores,
             'customers' => $customers,
             'invoicePaperSize' => $invoicePaperSize,
             'posLayout' => $posLayout,
             'posCardFee' => $posCardFee,
             'allUnits' => $allUnits,
             'productPayload' => $productPayload,
-        ]);
+            'posMode' => $mode,
+            'isQuotationMode' => $mode === 'quotation',
+        ];
+    }
+
+    /**
+     * Display a listing of the resource.
+     */
+    public function index(Request $request)
+    {
+        return view('pos.index', $this->buildPosViewData('sale', $request->user()));
+    }
+
+    /**
+     * Dedicated quotation builder view (separate from normal POS sale flow).
+     */
+    public function quotationCreate(Request $request)
+    {
+        return view('pos.index', $this->buildPosViewData('quotation', $request->user()));
     }
 
     /**
@@ -116,10 +152,16 @@ class POSController extends Controller
     public function searchProducts(Request $request)
     {
         $term = $request->input('term');
-        if (!$term) return response()->json([]);
+        if (! $term) {
+            return response()->json([]);
+        }
 
-        $products = Product::with(['unit', 'categories', 'brands'])
+        $hiddenProductIds = DashboardVisibilityService::hiddenProductIdsForUser($request->user());
+        $controls = DashboardVisibilityService::configForUser($request->user());
+
+        $products = Product::with(['unit', 'categories', 'brands', 'activePrices', 'storeStocks'])
             ->where('is_active', true)
+            ->when(! empty($hiddenProductIds), fn ($q) => $q->whereNotIn('id', $hiddenProductIds))
             ->where(function ($q) use ($term) {
                 $q->where('name', 'LIKE', "%{$term}%")
                     ->orWhere('sku', 'LIKE', "%{$term}%")
@@ -129,26 +171,87 @@ class POSController extends Controller
             ->take(20)
             ->get();
 
-        $payload = $products->map(fn($product) => $this->formatProductForPOS($product));
+        $payload = $products->map(fn ($product) => $this->formatProductForPOS($product, $controls));
+
         return response()->json($payload);
     }
 
-    /**
-     * @param mixed $product
-     */
-    private function formatProductForPOS($product): array
+    public function productPrices(Request $request, Product $product)
     {
-        if (!$product instanceof Product) {
+        if (! $product->is_active) {
+            return response()->json(['message' => 'Product not found'], 404);
+        }
+
+        $hiddenProductIds = DashboardVisibilityService::hiddenProductIdsForUser($request->user());
+        if (in_array($product->id, $hiddenProductIds, true)) {
+            return response()->json(['message' => 'Product not found'], 404);
+        }
+
+        $this->ensureProductHasPriceOption($product);
+        $product->load('activePrices');
+
+        return response()->json([
+            'product_id' => $product->id,
+            'product_name' => $product->name,
+            'use_price_wise_stock' => (bool) Setting::get('use_price_wise_stock', true),
+            'show_cost_price' => $this->canShowCostPriceInPos($request),
+            'prices' => $this->availablePricePayload($product, $request),
+        ]);
+    }
+
+    /**
+     * @param  mixed  $product
+     */
+    private function formatProductForPOS($product, array $controls = []): array
+    {
+        if (! $product instanceof Product) {
             throw new \InvalidArgumentException('formatProductForPOS expects a Product model');
         }
+
+        $usePriceWiseStock = (bool) Setting::get('use_price_wise_stock', true);
+        $activePrices = $product->relationLoaded('activePrices') ? $product->activePrices : collect();
+        $defaultPrice = $activePrices->firstWhere('is_default', true) ?: $activePrices->first();
+
+        $rawSellingPrice = $defaultPrice ? (float) $defaultPrice->selling_price : (float) $product->selling_price;
+        $rawStockQty = $usePriceWiseStock && $activePrices->isNotEmpty()
+            ? (float) $activePrices->sum('stock_qty')
+            : (float) ($product->stock_quantity ?? 0);
+        $priceVisiblePct = (float) ($controls['price_visible_percentage'] ?? 100);
+
+        $displaySellingPrice = ! empty($controls['hide_price_wise_data']) || ! empty($controls['hide_actual_stock_price'])
+            ? '—'
+            : number_format(
+                $priceVisiblePct < 100
+                    ? round(DashboardVisibilityService::maskByPercentage($rawSellingPrice, $priceVisiblePct))
+                    : DashboardVisibilityService::maskByPercentage($rawSellingPrice, $priceVisiblePct),
+                $priceVisiblePct < 100 ? 0 : 2
+            );
+
+        $displayStockQty = ! empty($controls['hide_qty_wise_data']) || ! empty($controls['hide_actual_stock_quantity'])
+            ? '—'
+            : number_format(
+                round(DashboardVisibilityService::maskByPercentage(
+                    $rawStockQty,
+                    (float) ($controls['stock_visible_percentage'] ?? 100)
+                )),
+                0
+            );
+
         return [
             'id' => $product->id,
             'name' => $product->name,
             'sku' => $product->sku,
             'barcode' => $product->barcode,
-            'selling_price' => (float)$product->selling_price,
-            'stock_quantity' => (int)($product->stock_quantity ?? 0),
-            'image' => $product->image ? asset('storage/' . $product->image) : null,
+            'selling_price' => $rawSellingPrice,
+            'stock_quantity' => (int) $rawStockQty,
+            'available_price_count' => $usePriceWiseStock
+                ? $activePrices->where('stock_qty', '>', 0)->count()
+                : $activePrices->count(),
+            'has_price_options' => $activePrices->isNotEmpty(),
+            'store_stocks' => $product->relationLoaded('storeStocks') ? $product->storeStocks->pluck('quantity', 'store_id')->toArray() : [],
+            'display_selling_price' => $displaySellingPrice,
+            'display_stock_quantity' => $displayStockQty,
+            'image' => $product->image ? asset('storage/'.$product->image) : null,
             'categories' => $product->categories->pluck('name')->values()->toArray(),
             'brands' => $product->brands->pluck('name')->values()->toArray(),
             'unit' => $product->unit ? [
@@ -160,29 +263,99 @@ class POSController extends Controller
         ];
     }
 
+    private function availablePricePayload(Product $product, Request $request): array
+    {
+        $usePriceWiseStock = (bool) Setting::get('use_price_wise_stock', true);
+        $showCost = $this->canShowCostPriceInPos($request);
+
+        return $product->activePrices
+            ->filter(fn (ProductPrice $price) => ! $usePriceWiseStock || (float) $price->stock_qty > 0)
+            ->sortByDesc('is_default')
+            ->values()
+            ->map(function (ProductPrice $price) use ($usePriceWiseStock, $showCost) {
+                $payload = [
+                    'id' => $price->id,
+                    'selling_price' => (float) $price->selling_price,
+                    'stock_qty' => (float) $price->stock_qty,
+                    'is_default' => (bool) $price->is_default,
+                    'use_price_wise_stock' => $usePriceWiseStock,
+                ];
+
+                if ($showCost) {
+                    $payload['cost_price'] = (float) $price->cost_price;
+                }
+
+                return $payload;
+            })
+            ->all();
+    }
+
+    private function canShowCostPriceInPos(Request $request): bool
+    {
+        return (bool) Setting::get('show_cost_price_in_pos_popup', false)
+            && $request->user()?->hasPermission('view_cost_price_in_pos');
+    }
+
+    private function ensureProductHasPriceOption(Product $product): ProductPrice
+    {
+        $price = ProductPrice::query()
+            ->where('product_id', $product->id)
+            ->where('status', 'active')
+            ->orderByDesc('is_default')
+            ->oldest()
+            ->first();
+
+        if ($price) {
+            ProductPrice::ensureDefaultForProduct($product->id);
+
+            return $price;
+        }
+
+        return ProductPrice::create([
+            'product_id' => $product->id,
+            'cost_price' => round((float) ($product->cost_price ?? 0), 2),
+            'selling_price' => round((float) ($product->selling_price ?? 0), 2),
+            'stock_qty' => round((float) ($product->stock_quantity ?? 0), 3),
+            'is_default' => true,
+            'status' => 'active',
+        ]);
+    }
+
     /**
      * Search for a sale to return items from.
      */
     public function searchSale(Request $request)
     {
         $term = $request->input('term');
-        if (!$term) {
+        if (! $term) {
             return response()->json(['message' => 'Please enter a Sale ID or Invoice Number'], 422);
         }
+
+        $hiddenProductIds = DashboardVisibilityService::hiddenProductIdsForUser($request->user());
+        $hiddenCustomerIds = DashboardVisibilityService::hiddenCustomerIdsForUser($request->user());
+        $hiddenSaleIds = DashboardVisibilityService::hiddenSaleIdsForUser($request->user());
 
         $sale = Sale::with(['items.product', 'customer'])
             ->where('id', $term)
             ->orWhere('sale_no', 'LIKE', "%{$term}%")
             ->first();
 
-        if (!$sale) {
+        if (! $sale) {
+            return response()->json(['message' => 'Sale not found'], 404);
+        }
+
+        if (! empty($hiddenProductIds) && $sale->items->whereIn('product_id', $hiddenProductIds)->isNotEmpty()) {
+            return response()->json(['message' => 'Sale not found'], 404);
+        }
+        if (in_array((int) $sale->id, $hiddenSaleIds, true)
+            || ($sale->customer_id && in_array((int) $sale->customer_id, $hiddenCustomerIds, true))) {
             return response()->json(['message' => 'Sale not found'], 404);
         }
 
         $items = $sale->items->map(function ($item) {
             $returnedQty = \App\Models\SaleReturnItem::where('sale_item_id', $item->id)->sum('quantity');
             $remainingQty = $item->quantity - $returnedQty;
-            
+
             return [
                 'sale_item_id' => $item->id,
                 'product_name' => $item->product->name,
@@ -201,7 +374,7 @@ class POSController extends Controller
                 'customer' => $sale->customer ? $sale->customer->name : 'Walk-in',
                 'date' => $sale->sale_date,
             ],
-            'items' => $items
+            'items' => $items,
         ]);
     }
 
@@ -216,7 +389,7 @@ class POSController extends Controller
         ]);
 
         $saleItem = SaleItem::with(['product', 'sale'])->find($request->sale_item_id);
-        
+
         // Validate remaining quantity
         $returnedQty = \App\Models\SaleReturnItem::where('sale_item_id', $saleItem->id)->sum('quantity');
         $remainingQty = $saleItem->quantity - $returnedQty;
@@ -227,28 +400,30 @@ class POSController extends Controller
 
         $cart = $this->cart();
         $items = $cart['items'];
-        
+
         // Unique key for return item
-        $cartKey = 'return_' . $saleItem->id;
-        
+        $cartKey = 'return_'.$saleItem->id;
+
         // Negative quantity for return
         $returnQty = -1 * abs($request->quantity);
-        
+
         $items[$cartKey] = [
             'id' => $saleItem->product_id,
+            'product_price_id' => $saleItem->product_price_id,
             'cart_key' => $cartKey,
-            'name' => $saleItem->product->name . ' (RETURN)',
-            'price' => (float)$saleItem->unit_price, // Keep positive price, qty is negative
+            'name' => $saleItem->product->name.' (RETURN)',
+            'price' => (float) $saleItem->unit_price, // Keep positive price, qty is negative
             'qty' => $returnQty,
-            'base_price' => (float)$saleItem->unit_price,
+            'base_price' => (float) $saleItem->unit_price,
             'is_return' => true,
             'sale_item_id' => $saleItem->id,
             'max_return_qty' => $remainingQty,
             'sale_ref' => $saleItem->sale->sale_no ?? 'Unknown',
         ];
-        
+
         $cart['items'] = $items;
         $cart = $this->putCart($cart);
+
         return response()->json($cart);
     }
 
@@ -267,11 +442,12 @@ class POSController extends Controller
         try {
             $userId = Auth::id();
             $customerId = $request->integer('customer_id') ?: null;
-            
+            $storeId = $request->integer('store_id') ?: null;
+
             // Separate items
             $saleItemsData = [];
             $returnItemsData = [];
-            
+
             foreach ($cart['items'] as $item) {
                 if ($item['qty'] > 0) {
                     $saleItemsData[] = $item;
@@ -285,14 +461,16 @@ class POSController extends Controller
             $createdReturnIds = [];
 
             // Process Returns
-            if (!empty($returnItemsData)) {
+            if (! empty($returnItemsData)) {
                 // Group by original sale if needed. For now, we create one return record.
                 // If items come from multiple sales, we might need multiple return records or just pick one sale_id.
                 // To be safe, we'll group by sale_id.
                 $returnsBySale = [];
                 foreach ($returnItemsData as $rItem) {
                     // If sale_item_id is missing (shouldn't happen for returns), skip or handle error
-                    if (!isset($rItem['sale_item_id'])) continue;
+                    if (! isset($rItem['sale_item_id'])) {
+                        continue;
+                    }
                     $saleItem = \App\Models\SaleItem::find($rItem['sale_item_id']);
                     if ($saleItem) {
                         $returnsBySale[$saleItem->sale_id][] = $rItem;
@@ -320,13 +498,14 @@ class POSController extends Controller
                         $saleItem = \App\Models\SaleItem::find($item['sale_item_id']);
                         $alreadyReturned = \App\Models\SaleReturnItem::where('sale_item_id', $saleItem->id)->sum('quantity');
                         if ($qty > ($saleItem->quantity - $alreadyReturned)) {
-                            throw new \Exception("Cannot return more than remaining quantity for " . $item['name']);
+                            throw new \Exception('Cannot return more than remaining quantity for '.$item['name']);
                         }
 
                         \App\Models\SaleReturnItem::create([
                             'sale_return_id' => $saleReturn->id,
                             'sale_item_id' => $item['sale_item_id'],
                             'product_id' => $item['id'],
+                            'product_price_id' => $saleItem->product_price_id,
                             'quantity' => $qty,
                             'unit_price' => (float) $item['price'],
                             'total' => $qty * (float) $item['price'],
@@ -335,7 +514,18 @@ class POSController extends Controller
                         // Increment Stock
                         $product = Product::find($item['id']);
                         if ($product) {
+                            if ($originalSale && $originalSale->store_id) {
+                                $storeStock = \App\Models\StoreStock::firstOrCreate([
+                                    'store_id' => $originalSale->store_id,
+                                    'product_id' => $item['id'],
+                                    'product_price_id' => ((bool) Setting::get('use_price_wise_stock', true) && $saleItem->product_price_id) ? $saleItem->product_price_id : null,
+                                ], ['quantity' => 0]);
+                                $storeStock->increment('quantity', $qty);
+                            }
                             $product->increment('stock_quantity', $qty);
+                            if ((bool) Setting::get('use_price_wise_stock', true) && $saleItem->product_price_id) {
+                                ProductPrice::whereKey($saleItem->product_price_id)->increment('stock_qty', $qty);
+                            }
                         }
                     }
 
@@ -349,7 +539,50 @@ class POSController extends Controller
             }
 
             // Process New Sale
-            if (!empty($saleItemsData)) {
+            if (! empty($saleItemsData)) {
+                $usePriceWiseStock = (bool) Setting::get('use_price_wise_stock', true);
+                foreach ($saleItemsData as $item) {
+                    $product = Product::find($item['id']);
+                    if (! $product) {
+                        throw new \Exception('Product not found in cart.');
+                    }
+
+                    $multiplier = max(1.0, (float) ($item['unit_multiplier'] ?? 1));
+                    $baseQty = (float) ($item['qty'] ?? 0) * $multiplier;
+
+                    if ($storeId) {
+                        $storeStock = \App\Models\StoreStock::where('store_id', $storeId)
+                            ->where('product_id', $product->id)
+                            ->where('product_price_id', $usePriceWiseStock ? ($item['product_price_id'] ?? null) : null)
+                            ->lockForUpdate()
+                            ->first();
+
+                        if (! $storeStock || (float) $storeStock->quantity < $baseQty) {
+                            throw new \Exception("Not enough stock for {$product->name} in the selected branch.");
+                        }
+                    } else {
+                        if ($usePriceWiseStock) {
+                            $priceId = (int) ($item['product_price_id'] ?? 0);
+                            $price = ProductPrice::query()
+                                ->whereKey($priceId)
+                                ->where('product_id', $product->id)
+                                ->where('status', 'active')
+                                ->lockForUpdate()
+                                ->first();
+
+                            if (! $price) {
+                                throw new \Exception("Selected price option is not available for {$product->name}.");
+                            }
+
+                            if ((float) $price->stock_qty < $baseQty) {
+                                throw new \Exception("Not enough stock for {$product->name} at the selected selling price.");
+                            }
+                        } elseif ((float) ($product->stock_quantity ?? 0) < $baseQty) {
+                            throw new \Exception("Not enough stock for {$product->name}.");
+                        }
+                    }
+                }
+
                 $subtotal = 0.0;
                 $lineDiscountTotal = 0.0;
 
@@ -359,7 +592,7 @@ class POSController extends Controller
                     $lineSubtotal = $qty * $price;
                     $lineDiscount = 0.0;
 
-                    if ($qty > 0 && !empty($it['line_discount']) && is_array($it['line_discount'])) {
+                    if ($qty > 0 && ! empty($it['line_discount']) && is_array($it['line_discount'])) {
                         $type = ($it['line_discount']['type'] ?? 'fixed') === 'percent' ? 'percent' : 'fixed';
                         $value = (float) ($it['line_discount']['value'] ?? 0);
                         $value = max(0, $value);
@@ -393,36 +626,54 @@ class POSController extends Controller
                 }
 
                 $discountAmount = $lineDiscountTotal + $cartDiscount;
-                $taxAmount = round(($subtotal - $discountAmount) * ((float)($cart['tax_rate'] ?? 0)) / 100, 2);
+                $taxAmount = round(($subtotal - $discountAmount) * ((float) ($cart['tax_rate'] ?? 0)) / 100, 2);
                 $totalAmount = max(0, $subtotal - $discountAmount + $taxAmount);
 
                 // Payment method(s)
-                $allowedMethods = ['cash', 'card', 'bank_transfer', 'mobile_payment'];
+                $allowedMethods = ['cash', 'credit', 'cheque', 'bank_deposit', 'bank_transfer', 'card', 'mobile_payment'];
 
                 $paymentMethod = (string) $request->input('payment_method', 'cash');
-                if (!in_array($paymentMethod, $allowedMethods, true)) {
+                if (! in_array($paymentMethod, $allowedMethods, true)) {
                     $paymentMethod = 'cash';
                 }
 
                 $splitPayments = $request->input('payments');
                 $normalizedPayments = [];
                 $cardPaidAmount = 0.0;
+                $chequeHeldAmount = 0.0;
+                $chequePaymentDetails = [];
                 if (is_array($splitPayments)) {
                     foreach ($splitPayments as $p) {
-                        if (!is_array($p)) continue;
+                        if (! is_array($p)) {
+                            continue;
+                        }
                         $method = (string) ($p['method'] ?? $p['payment_method'] ?? '');
                         $amount = (float) ($p['amount'] ?? 0);
-                        if (!in_array($method, $allowedMethods, true)) continue;
-                        if ($amount <= 0) continue;
+                        if (! in_array($method, $allowedMethods, true)) {
+                            continue;
+                        }
+                        if ($amount <= 0) {
+                            continue;
+                        }
                         $amount = round($amount, 2);
                         $normalizedPayments[] = ['method' => $method, 'amount' => $amount];
                         if ($method === 'card') {
                             $cardPaidAmount += $amount;
                         }
+                        if ($method === 'cheque') {
+                            $chequeHeldAmount += $amount;
+                            $chequePaymentDetails[] = [
+                                'amount' => $amount,
+                                'cheque_date' => $p['cheque_date'] ?? null,
+                                'cheque_number' => $p['cheque_number'] ?? null,
+                                'bank_name' => $p['cheque_bank'] ?? null,
+                                'account_name' => $p['cheque_name'] ?? null,
+                            ];
+                        }
                     }
 
-                    if (!empty($normalizedPayments)) {
-                        // Choose a representative payment_method for sales table enum
+                    if (! empty($normalizedPayments)) {
+                        // Choose a representative payment_method for the sales record
                         $paymentMethod = collect($normalizedPayments)
                             ->sortByDesc('amount')
                             ->first()['method'] ?? $paymentMethod;
@@ -450,57 +701,99 @@ class POSController extends Controller
 
                 // Calculate Payment
                 $paidCash = (float) $request->input('paid_amount', 0);
-                if (!empty($normalizedPayments)) {
+                if (! empty($normalizedPayments)) {
                     $paidCash = (float) collect($normalizedPayments)->sum('amount');
+                }
+                $singleChequeAmount = 0.0;
+                if (empty($normalizedPayments) && $paymentMethod === 'cheque') {
+                    $singleChequeAmount = max(0.0, round($paidCash, 2));
+                    $chequeHeldAmount = $singleChequeAmount;
+                    $chequePaymentDetails[] = [
+                        'amount' => $singleChequeAmount,
+                        'cheque_date' => $request->input('cheque_date'),
+                        'cheque_number' => $request->input('cheque_number'),
+                        'bank_name' => $request->input('cheque_bank'),
+                        'account_name' => $request->input('cheque_name'),
+                    ];
+                }
+
+                if ($chequeHeldAmount > 0) {
+                    if (! $request->user()?->hasPermission('cheque_payments.create')) {
+                        throw new \Exception('You do not have permission to accept cheque payments.');
+                    }
+                    if (! $customerId) {
+                        throw new \Exception('Customer is required for cheque payments.');
+                    }
+                    foreach ($chequePaymentDetails as $chequeDetail) {
+                        if (empty($chequeDetail['cheque_date']) || empty(trim((string) $chequeDetail['cheque_number']))) {
+                            throw new \Exception('Cheque pass date and cheque number are required.');
+                        }
+                    }
                 }
 
                 // Track tendered money for receipt (before change is returned).
                 // Note: salePaid below is capped at total to reflect net payment.
                 $tenderedAmount = max(0, $paidCash);
-                
+
                 $returnCredit = 0;
-                if (!empty($returnItemsData)) {
-                     foreach ($returnItemsData as $rItem) {
-                         $returnCredit += abs($rItem['qty']) * $rItem['price'];
-                     }
+                if (! empty($returnItemsData)) {
+                    foreach ($returnItemsData as $rItem) {
+                        $returnCredit += abs($rItem['qty']) * $rItem['price'];
+                    }
                 }
 
-                $totalPaid = $paidCash + $returnCredit;
+                $cashLikePaid = max(0, $paidCash - $chequeHeldAmount);
+                $totalPaid = $cashLikePaid + $returnCredit;
                 $salePaid = min($effectiveTotalAmount, $totalPaid);
-                $due = $effectiveTotalAmount - $salePaid;
-                if ($due < 0) $due = 0;
+                $heldChequeForSale = min(max(0, $effectiveTotalAmount - $salePaid), $chequeHeldAmount);
+                $due = $effectiveTotalAmount - $salePaid - $heldChequeForSale;
+                if ($due < 0) {
+                    $due = 0;
+                }
 
-                if ($due > 0 && !$customerId) {
+                if ($due > 0 && ! $customerId) {
                     throw new \Exception('Customer is required when there is a due amount.');
                 }
 
+                $firstChequeDetail = collect($chequePaymentDetails)->first();
+
+                DatabaseAutoIncrementRepair::repairPrimaryId('sales');
                 $sale = Sale::create([
-                    'customer_id'   => $customerId,
-                    'user_id'       => $userId,
-                    'sale_date'     => now(),
-                    'subtotal'      => $subtotal,
-                    'tax'           => $taxAmount,
-                    'discount'      => $discountAmount,
-                    'total_amount'  => $effectiveTotalAmount,
-                    'paid_amount'   => $salePaid,
+                    'store_id' => $storeId,
+                    'customer_id' => $customerId,
+                    'user_id' => $userId,
+                    'sale_date' => now(),
+                    'subtotal' => $subtotal,
+                    'tax' => $taxAmount,
+                    'discount' => $discountAmount,
+                    'total_amount' => $effectiveTotalAmount,
+                    'paid_amount' => $salePaid,
+                    'held_cheque_amount' => $heldChequeForSale,
                     'tendered_amount' => $tenderedAmount,
-                    'due_amount'    => $due,
-                    'payment_status'=> $due > 0 ? 'partial' : 'paid',
-                    'payment_method'=> $paymentMethod,
-                    'sale_type'     => 'sale',
-                    'notes'         => $request->string('notes')
-                        . (!empty($returnItemsData) ? " (Exchange/Return Processed)" : "")
-                        . (($hasCard && $cardFee > 0)
+                    'due_amount' => $due,
+                    'payment_status' => ($due > 0 || $heldChequeForSale > 0) ? 'partial' : 'paid',
+                    'payment_method' => $paymentMethod,
+                    'cheque_number' => $chequeHeldAmount > 0 ? ($firstChequeDetail['cheque_number'] ?? null) : null,
+                    'bank_reference' => $chequeHeldAmount > 0 ? ($firstChequeDetail['bank_name'] ?? null) : null,
+                    'sale_type' => 'sale',
+                    'notes' => $request->string('notes')
+                        .(! empty($returnItemsData) ? ' (Exchange/Return Processed)' : '')
+                        .(($hasCard && $cardFee > 0)
                             ? ($cardFeeMode === 'customer'
                                 ? " (Card fee charged to customer: {$cardFeeRate}% = {$cardFee})"
                                 : " (Card fee paid by seller: {$cardFeeRate}% = {$cardFee})")
-                            : "")
+                            : ''),
                 ]);
 
+                $salePaymentAccounting = app(SalePaymentAccountingService::class);
+
                 // Record split payments as Payment rows (optional but useful for reporting)
-                if (!empty($normalizedPayments)) {
+                if (! empty($normalizedPayments)) {
                     foreach ($normalizedPayments as $p) {
-                        Payment::create([
+                        if ($p['method'] === 'cheque') {
+                            continue;
+                        }
+                        $payment = Payment::create([
                             'sale_id' => $sale->id,
                             'customer_id' => $customerId,
                             'amount' => $p['amount'],
@@ -508,11 +801,12 @@ class POSController extends Controller
                             'payment_date' => now()->toDateString(),
                             'notes' => $request->input('notes'),
                         ]);
+                        $salePaymentAccounting->recordSalePayment($payment, $sale, $userId);
                     }
                 } else {
                     // Single-payment flow: write a single Payment row when money is taken
-                    if ($salePaid > 0) {
-                        Payment::create([
+                    if ($salePaid > 0 && $paymentMethod !== 'cheque') {
+                        $payment = Payment::create([
                             'sale_id' => $sale->id,
                             'customer_id' => $customerId,
                             'amount' => $salePaid,
@@ -520,6 +814,37 @@ class POSController extends Controller
                             'payment_date' => now()->toDateString(),
                             'notes' => $request->input('notes'),
                         ]);
+                        $salePaymentAccounting->recordSalePayment($payment, $sale, $userId);
+                    }
+                }
+
+                if ($heldChequeForSale > 0 && ! empty($chequePaymentDetails)) {
+                    $remainingHeldCheque = $heldChequeForSale;
+                    foreach ($chequePaymentDetails as $chequeDetail) {
+                        if ($remainingHeldCheque <= 0) {
+                            break;
+                        }
+
+                        $chequeAmount = min((float) $chequeDetail['amount'], $remainingHeldCheque);
+                        if ($chequeAmount <= 0) {
+                            continue;
+                        }
+
+                        $chequePayment = ChequePayment::create([
+                            'sale_id' => $sale->id,
+                            'customer_id' => $customerId,
+                            'user_id' => $userId,
+                            'cheque_date' => \Carbon\Carbon::parse($chequeDetail['cheque_date'])->toDateString(),
+                            'cheque_number' => (string) $chequeDetail['cheque_number'],
+                            'bank_name' => $chequeDetail['bank_name'],
+                            'account_name' => $chequeDetail['account_name'],
+                            'amount' => round($chequeAmount, 2),
+                            'status' => 'pending',
+                            'notes' => $request->input('notes'),
+                        ]);
+                        $salePaymentAccounting->recordChequeHold($chequePayment, $sale, $userId);
+
+                        $remainingHeldCheque = round($remainingHeldCheque - $chequeAmount, 2);
                     }
                 }
 
@@ -537,7 +862,7 @@ class POSController extends Controller
                             'user_id' => $userId,
                             'expense_date' => now()->toDateString(),
                             'amount' => $cardFee,
-                            'description' => 'Card fee for Sale ' . ($sale->sale_no ?? ('#' . $sale->id)),
+                            'description' => 'Card fee for Sale '.($sale->sale_no ?? ('#'.$sale->id)),
                         ]);
                     }
                 }
@@ -550,18 +875,32 @@ class POSController extends Controller
                     $effectiveUnitPrice = $qty > 0 ? round($lineTotal / $qty, 2) : (float) ($item['price'] ?? 0);
 
                     SaleItem::create([
-                        'sale_id'    => $sale->id,
+                        'sale_id' => $sale->id,
                         'product_id' => $item['id'],
-                        'quantity'   => $item['qty'],
+                        'product_price_id' => $item['product_price_id'] ?? null,
+                        'quantity' => $item['qty'],
                         'unit_price' => $effectiveUnitPrice,
-                        'total'      => round($lineTotal, 2),
+                        'total' => round($lineTotal, 2),
                     ]);
 
                     // Reduce stock
                     $product = Product::find($item['id']);
                     if ($product) {
-                        $multiplier = isset($item['unit_multiplier']) ? (int)$item['unit_multiplier'] : 1;
-                        $decrementQty = $item['qty'] * max(1, $multiplier);
+                        $multiplier = isset($item['unit_multiplier']) ? (float) $item['unit_multiplier'] : 1.0;
+                        $decrementQty = $item['qty'] * max(1.0, $multiplier);
+
+                        if ($storeId) {
+                            $storeStock = \App\Models\StoreStock::where('store_id', $storeId)
+                                ->where('product_id', $product->id)
+                                ->where('product_price_id', $usePriceWiseStock ? ($item['product_price_id'] ?? null) : null)
+                                ->first();
+                            if ($storeStock) {
+                                $storeStock->decrement('quantity', $decrementQty);
+                            }
+                        }
+                        if ($usePriceWiseStock && ! empty($item['product_price_id'])) {
+                            ProductPrice::whereKey($item['product_price_id'])->decrement('stock_qty', $decrementQty);
+                        }
                         $product->decrement('stock_quantity', $decrementQty);
                         $product->refresh();
                         \App\Services\StockAlertService::check($product);
@@ -571,7 +910,7 @@ class POSController extends Controller
 
                 // If this transaction included returns, link those return records to this new sale
                 // so the printed receipt/invoice can show returned items + credit.
-                if (!empty($createdReturnIds)) {
+                if (! empty($createdReturnIds)) {
                     \App\Models\SaleReturn::whereIn('id', $createdReturnIds)
                         ->update(['exchange_sale_id' => $sale->id]);
                 }
@@ -579,7 +918,7 @@ class POSController extends Controller
 
             DB::commit();
             Session::forget('pos.cart');
-            
+
             return response()->json([
                 'message' => 'Transaction completed successfully',
                 'sale_id' => $createdSale ? $createdSale->id : null,
@@ -588,12 +927,13 @@ class POSController extends Controller
                     'id' => $createdSale->id,
                     'sale_no' => $createdSale->sale_no,
                     'total_amount' => $createdSale->total_amount,
-                ] : null
+                ] : null,
             ]);
         } catch (\Throwable $e) {
             DB::rollBack();
             report($e);
-            return response()->json(['message' => 'Checkout failed: ' . $e->getMessage()], 500);
+
+            return response()->json(['message' => 'Checkout failed: '.$e->getMessage()], 500);
         }
     }
 
@@ -601,7 +941,7 @@ class POSController extends Controller
     private function cart(): array
     {
         $cart = Session::get('pos.cart');
-        if (!$cart) {
+        if (! $cart) {
             $cart = [
                 'items' => [], // keyed by product id
                 'discount' => ['type' => 'fixed', 'value' => 0],
@@ -609,6 +949,7 @@ class POSController extends Controller
             ];
             Session::put('pos.cart', $cart);
         }
+
         return $this->withTotals($cart);
     }
 
@@ -624,7 +965,7 @@ class POSController extends Controller
             $lineDiscount = 0.0;
 
             // No discounts on return lines (negative qty)
-            if ($qty > 0 && !empty($it['line_discount']) && is_array($it['line_discount'])) {
+            if ($qty > 0 && ! empty($it['line_discount']) && is_array($it['line_discount'])) {
                 $type = ($it['line_discount']['type'] ?? 'fixed') === 'percent' ? 'percent' : 'fixed';
                 $value = (float) ($it['line_discount']['value'] ?? 0);
                 $value = max(0, $value);
@@ -660,7 +1001,7 @@ class POSController extends Controller
         }
 
         $discountAmount = $lineDiscountTotal + $cartDiscount;
-        $taxAmount = round(($subtotal - $discountAmount) * ((float)($cart['tax_rate'] ?? 0)) / 100, 2);
+        $taxAmount = round(($subtotal - $discountAmount) * ((float) ($cart['tax_rate'] ?? 0)) / 100, 2);
         $total = $subtotal - $discountAmount + $taxAmount;
 
         // Net subtotal after item-level discounts (cart discount not applied yet)
@@ -674,12 +1015,14 @@ class POSController extends Controller
             'tax_amount' => round($taxAmount, 2),
             'total' => round($total, 2),
         ];
+
         return $cart;
     }
 
     private function putCart(array $cart): array
     {
         Session::put('pos.cart', $cart);
+
         return $this->withTotals($cart);
     }
 
@@ -697,6 +1040,7 @@ class POSController extends Controller
     {
         $items = $hold['cart']['items'] ?? [];
         $totals = $hold['cart']['totals'] ?? ['total' => 0];
+
         return [
             'id' => $hold['id'],
             'label' => $hold['label'] ?? 'Hold',
@@ -712,75 +1056,114 @@ class POSController extends Controller
     {
         $request->validate([
             'product_id' => 'required|integer|exists:products,id',
+            'product_price_id' => 'nullable|integer|exists:product_prices,id',
             'quantity' => 'nullable|integer|min:1',
             'unit' => 'nullable|array',
             'unit.id' => 'required_with:unit|integer',
-            'unit.name' => 'required_with:unit|string'
+            'unit.name' => 'required_with:unit|string',
         ]);
-        
-        $product = Product::findOrFail($request->integer('product_id'));
+
+        $product = Product::with('activePrices')->findOrFail($request->integer('product_id'));
+        $this->ensureProductHasPriceOption($product);
+        $product->load('activePrices');
+
         $quantity = $request->integer('quantity', 1);
         $unit = $request->input('unit');
+        $usePriceWiseStock = (bool) Setting::get('use_price_wise_stock', true);
 
         // Determine available units for product
         $visibleUnits = collect($product->visible_units ?? [])->filter()->values();
-        $basePrice = (float)$product->selling_price; // price per base unit
+        $selectedPrice = null;
+        if ($request->filled('product_price_id')) {
+            $selectedPrice = $product->activePrices->firstWhere('id', $request->integer('product_price_id'));
+            if (! $selectedPrice) {
+                return response()->json(['message' => 'Selected price option is not available for this product.'], 422);
+            }
+        } else {
+            $availablePrices = $product->activePrices
+                ->filter(fn (ProductPrice $price) => ! $usePriceWiseStock || (float) $price->stock_qty > 0)
+                ->values();
+            $selectedPrice = $availablePrices->firstWhere('is_default', true) ?: $availablePrices->first();
+        }
+
+        if (! $selectedPrice) {
+            return response()->json(['message' => 'No available stock for this product.'], 422);
+        }
+
+        $basePrice = (float) $selectedPrice->selling_price; // price per base unit
         $selectedUnitId = null;
         $selectedUnitName = null;
-        $selectedMultiplier = 1;
+        $selectedMultiplier = 1.0;
 
         if ($unit) {
-            $selectedUnitId = (int)$unit['id'];
+            $selectedUnitId = (int) $unit['id'];
             $selectedUnit = \App\Models\Unit::find($selectedUnitId);
             if ($selectedUnit) {
                 $selectedUnitName = $selectedUnit->short_name ?? $selectedUnit->name;
-                $selectedMultiplier = (float)$selectedUnit->base_unit_multiplier;
+                $selectedMultiplier = (float) $selectedUnit->base_unit_multiplier;
             }
         } elseif ($visibleUnits->count() > 0) {
             // Auto-select default unit if none provided:
             // Prefer base unit (multiplier == 1) if present, else first visible unit.
             $candidateUnits = \App\Models\Unit::whereIn('id', $visibleUnits->all())->get(['id', 'name', 'short_name', 'base_unit_multiplier']);
             $default = $candidateUnits->firstWhere('base_unit_multiplier', 1) ?? $candidateUnits->first();
-            $selectedUnitId = $default ? (int)$default->id : (int)$visibleUnits->first();
+            $selectedUnitId = $default ? (int) $default->id : (int) $visibleUnits->first();
             $selectedUnit = $default ?: \App\Models\Unit::find($selectedUnitId);
             if ($selectedUnit) {
                 $selectedUnitName = $selectedUnit->short_name ?? $selectedUnit->name;
-                $selectedMultiplier = (float)$selectedUnit->base_unit_multiplier;
+                $selectedMultiplier = (float) $selectedUnit->base_unit_multiplier;
             }
         }
 
+        $selectedMultiplier = max(1.0, (float) $selectedMultiplier);
+        $baseQuantity = $quantity * $selectedMultiplier;
+
+        if ($usePriceWiseStock && (float) $selectedPrice->stock_qty < $baseQuantity) {
+            return response()->json(['message' => 'Not enough stock for selected price option.'], 422);
+        }
+
         $finalPrice = round($basePrice * $selectedMultiplier, 2);
-        
+
         $cart = $this->cart();
         $items = $cart['items'];
         // Unique key includes unit if selected
-        $cartKey = $selectedUnitId ? ($product->id . '_unit_' . $selectedUnitId) : (string)$product->id;
-        
+        $priceKey = 'price_'.$selectedPrice->id;
+        $cartKey = $selectedUnitId
+            ? ($product->id.'_'.$priceKey.'_unit_'.$selectedUnitId)
+            : ($product->id.'_'.$priceKey);
+
         if (isset($items[$cartKey])) {
-            $items[$cartKey]['qty'] += $quantity;
+            $newQty = (float) $items[$cartKey]['qty'] + $quantity;
+            if ($usePriceWiseStock && (float) $selectedPrice->stock_qty < ($newQty * $selectedMultiplier)) {
+                return response()->json(['message' => 'Not enough stock for selected price option.'], 422);
+            }
+            $items[$cartKey]['qty'] = $newQty;
         } else {
             $itemName = $product->name;
             if ($selectedUnitName) {
-                $itemName .= ' (' . $selectedUnitName . ')';
+                $itemName .= ' ('.$selectedUnitName.')';
             }
-            
+
             $items[$cartKey] = [
                 'id' => $product->id,
+                'product_price_id' => $selectedPrice->id,
                 'cart_key' => $cartKey,
                 'name' => $itemName,
                 'price' => $finalPrice,
                 'qty' => $quantity,
                 'base_price' => $basePrice,
-                'stock_quantity' => (int)($product->stock_quantity ?? 0),
+                'cost_price' => (float) $selectedPrice->cost_price,
+                'stock_quantity' => $usePriceWiseStock ? (float) $selectedPrice->stock_qty : (int) ($product->stock_quantity ?? 0),
                 'unit_id' => $selectedUnitId,
                 'unit_name' => $selectedUnitName,
                 'unit_multiplier' => $selectedMultiplier,
                 'visible_units' => $visibleUnits->toArray(),
             ];
         }
-        
+
         $cart['items'] = $items;
         $cart = $this->putCart($cart);
+
         return response()->json($cart);
     }
 
@@ -791,11 +1174,11 @@ class POSController extends Controller
     {
         $data = $request->validate([
             'cart_key' => 'required|string',
-            'unit_id' => 'required|integer|exists:units,id'
+            'unit_id' => 'required|integer|exists:units,id',
         ]);
         $cart = $this->cart();
         $oldKey = $data['cart_key'];
-        if (!isset($cart['items'][$oldKey])) {
+        if (! isset($cart['items'][$oldKey])) {
             return response()->json(['message' => 'Item not found'], 404);
         }
         $item = $cart['items'][$oldKey];
@@ -803,19 +1186,20 @@ class POSController extends Controller
         // Parse product id from cart key (format productId[_unit_unitId])
         $productId = $item['id'];
         $product = Product::find($productId);
-        if (!$product) {
+        if (! $product) {
             return response()->json(['message' => 'Product not found'], 404);
         }
 
         $unit = \App\Models\Unit::find($data['unit_id']);
-        if (!$unit) {
+        if (! $unit) {
             return response()->json(['message' => 'Unit not found'], 404);
         }
 
         // Build new key & compute price
-        $newKey = $product->id . '_unit_' . $unit->id;
-        $multiplier = (float)$unit->base_unit_multiplier;
-        $newPrice = round(((float)$item['base_price']) * $multiplier, 2);
+        $priceId = (int) ($item['product_price_id'] ?? 0);
+        $newKey = $product->id.($priceId ? ('_price_'.$priceId) : '').'_unit_'.$unit->id;
+        $multiplier = (float) $unit->base_unit_multiplier;
+        $newPrice = round(((float) $item['base_price']) * $multiplier, 2);
         $unitName = $unit->short_name ?? $unit->name;
 
         // If new key exists, merge quantities
@@ -829,12 +1213,13 @@ class POSController extends Controller
             $item['unit_name'] = $unitName;
             $item['unit_multiplier'] = $multiplier;
             $item['price'] = $newPrice;
-            $item['name'] = $product->name . ' (' . $unitName . ')';
+            $item['name'] = $product->name.' ('.$unitName.')';
             unset($cart['items'][$oldKey]);
             $cart['items'][$newKey] = $item;
         }
 
         $cart = $this->putCart($cart);
+
         return response()->json($cart);
     }
 
@@ -842,14 +1227,25 @@ class POSController extends Controller
     {
         $data = $request->validate([
             'cart_key' => 'required|string',
-            'qty' => 'required|integer|min:1'
+            'qty' => 'required|integer|min:1',
         ]);
         $cart = $this->cart();
-        if (!isset($cart['items'][$data['cart_key']])) {
+        if (! isset($cart['items'][$data['cart_key']])) {
             return response()->json(['message' => 'Item not found'], 404);
         }
-        $cart['items'][$data['cart_key']]['qty'] = (int)$data['qty'];
+
+        $item = $cart['items'][$data['cart_key']];
+        if ((bool) Setting::get('use_price_wise_stock', true) && ! empty($item['product_price_id'])) {
+            $price = ProductPrice::find($item['product_price_id']);
+            $multiplier = max(1.0, (float) ($item['unit_multiplier'] ?? 1));
+            if (! $price || $price->status !== 'active' || (float) $price->stock_qty < ((int) $data['qty'] * $multiplier)) {
+                return response()->json(['message' => 'Not enough stock for selected price option.'], 422);
+            }
+        }
+
+        $cart['items'][$data['cart_key']]['qty'] = (int) $data['qty'];
         $cart = $this->putCart($cart);
+
         return response()->json($cart);
     }
 
@@ -867,7 +1263,7 @@ class POSController extends Controller
         ]);
 
         $cart = Session::get('pos.cart');
-        if (!$cart || empty($cart['items'][$data['cart_key']])) {
+        if (! $cart || empty($cart['items'][$data['cart_key']])) {
             return response()->json(['message' => 'Item not found'], 404);
         }
 
@@ -897,6 +1293,7 @@ class POSController extends Controller
 
         $cart['items'][$data['cart_key']] = $item;
         $cart = $this->putCart($cart);
+
         return response()->json($cart);
     }
 
@@ -906,12 +1303,14 @@ class POSController extends Controller
         $cart = $this->cart();
         unset($cart['items'][$request->input('cart_key')]);
         $cart = $this->putCart($cart);
+
         return response()->json($cart);
     }
 
     public function clearCart()
     {
         Session::forget('pos.cart');
+
         return response()->json($this->cart());
     }
 
@@ -919,11 +1318,12 @@ class POSController extends Controller
     {
         $data = $request->validate([
             'type' => 'required|in:percent,fixed',
-            'value' => 'required|numeric|min:0'
+            'value' => 'required|numeric|min:0',
         ]);
         $cart = $this->cart();
         $cart['discount'] = $data;
         $cart = $this->putCart($cart);
+
         return response()->json($cart);
     }
 
@@ -939,18 +1339,20 @@ class POSController extends Controller
         $holdId = Str::uuid()->toString();
         $holds[$holdId] = [
             'id' => $holdId,
-            'label' => $label ?: 'Hold ' . now()->format('Y-m-d H:i'),
+            'label' => $label ?: 'Hold '.now()->format('Y-m-d H:i'),
             'created_at' => now()->toDateTimeString(),
             'cart' => $cart,
         ];
         $this->saveHoldStorage($holds);
         Session::forget('pos.cart');
-        return response()->json([ 'message' => 'Bill held', 'cart' => $this->cart() ]);
+
+        return response()->json(['message' => 'Bill held', 'cart' => $this->cart()]);
     }
 
     public function listHolds()
     {
-        $holds = array_values(array_map(fn($hold) => $this->formatHoldPreview($hold), $this->getHoldStorage()));
+        $holds = array_values(array_map(fn ($hold) => $this->formatHoldPreview($hold), $this->getHoldStorage()));
+
         return response()->json($holds);
     }
 
@@ -958,12 +1360,13 @@ class POSController extends Controller
     {
         $holdId = $request->input('hold_id');
         $holds = $this->getHoldStorage();
-        if (!isset($holds[$holdId])) {
+        if (! isset($holds[$holdId])) {
             return response()->json(['message' => 'Hold not found'], 404);
         }
         Session::put('pos.cart', $holds[$holdId]['cart']);
         unset($holds[$holdId]);
         $this->saveHoldStorage($holds);
+
         return response()->json(['message' => 'Hold loaded', 'cart' => $this->cart()]);
     }
 
@@ -975,6 +1378,7 @@ class POSController extends Controller
             unset($holds[$holdId]);
             $this->saveHoldStorage($holds);
         }
+
         return response()->json(['message' => 'Hold deleted']);
     }
 
@@ -986,21 +1390,22 @@ class POSController extends Controller
         }
         DB::beginTransaction();
         try {
+            DatabaseAutoIncrementRepair::repairPrimaryId('sales');
             $sale = Sale::create([
-                'customer_id'   => $request->integer('customer_id') ?: null,
-                'user_id'       => Auth::id(),
-                'sale_date'     => now(),
-                'subtotal'      => $cart['totals']['subtotal'],
-                'tax'           => $cart['totals']['tax_amount'],
-                'discount'      => $cart['totals']['discount_amount'],
-                'total_amount'  => $cart['totals']['total'],
+                'customer_id' => $request->integer('customer_id') ?: null,
+                'user_id' => Auth::id(),
+                'sale_date' => now(),
+                'subtotal' => $cart['totals']['subtotal'],
+                'tax' => $cart['totals']['tax_amount'],
+                'discount' => $cart['totals']['discount_amount'],
+                'total_amount' => $cart['totals']['total'],
                 // Quotations shouldn't record payment fields
-                'paid_amount'   => 0,
-                'due_amount'    => 0,
-                'payment_status'=> 'unpaid',
-                'payment_method'=> 'cash',
-                'sale_type'     => 'quotation',
-                'notes'         => $request->string('notes')
+                'paid_amount' => 0,
+                'due_amount' => 0,
+                'payment_status' => 'unpaid',
+                'payment_method' => 'cash',
+                'sale_type' => 'quotation',
+                'notes' => $request->string('notes'),
             ]);
 
             foreach ($cart['items'] as $item) {
@@ -1011,19 +1416,22 @@ class POSController extends Controller
                 $effectiveUnitPrice = $qty != 0 ? round($lineTotal / $qty, 2) : (float) ($item['price'] ?? 0);
 
                 SaleItem::create([
-                    'sale_id'    => $sale->id,
+                    'sale_id' => $sale->id,
                     'product_id' => $item['id'],
-                    'quantity'   => $item['qty'],
+                    'product_price_id' => $item['product_price_id'] ?? null,
+                    'quantity' => $item['qty'],
                     'unit_price' => $effectiveUnitPrice,
-                    'total'      => round($lineTotal, 2),
+                    'total' => round($lineTotal, 2),
                 ]);
             }
 
             DB::commit();
+
             return response()->json(['message' => 'Draft saved', 'sale_id' => $sale->id, 'sale_no' => $sale->sale_no]);
         } catch (\Throwable $e) {
             DB::rollBack();
             report($e);
+
             return response()->json(['message' => 'Failed to save draft', 'error' => $e->getMessage()], 500);
         }
     }
@@ -1057,7 +1465,7 @@ class POSController extends Controller
         if ($tenderedAmount <= 0) {
             $tenderedAmount = (float) $sale->paid_amount;
         }
-        
+
         return response()->json([
             'id' => $sale->id,
             'sale_no' => $sale->sale_no,
@@ -1100,11 +1508,18 @@ class POSController extends Controller
      */
     public function getCustomerDue($id)
     {
+        if (DashboardVisibilityService::isCustomerHiddenForUser((int) $id, auth()->user())) {
+            abort(404);
+        }
+
         $due = Sale::where('customer_id', $id)
             ->where('sale_type', 'sale')
             ->where('due_amount', '>', 0)
             ->sum('due_amount');
-        return response()->json(['customer_id' => (int)$id, 'outstanding_due' => (float)$due]);
+        $controls = DashboardVisibilityService::configForUser(auth()->user());
+        $due = DashboardVisibilityService::customerValue((float) $due, $controls);
+
+        return response()->json(['customer_id' => (int) $id, 'outstanding_due' => (float) $due]);
     }
 
     /**
@@ -1112,19 +1527,38 @@ class POSController extends Controller
      */
     public function recentSales(Request $request)
     {
+        $limit = 10;
+        $isActive = PrivacyModeService::isActiveForUser($request->user()) && PrivacyModeService::shouldMaskForCurrentPage();
+
+        if ($isActive) {
+            $limit = (int) PrivacyModeService::setting('visible_invoice_limit', 10);
+        }
+
         $sales = Sale::query()
             ->with('customer:id,name')
             ->withCount('returns')
             ->where('sale_type', 'sale')
+            ->when(! empty(DashboardVisibilityService::hiddenSaleIdsForUser($request->user())), fn ($q) => $q->whereNotIn('id', DashboardVisibilityService::hiddenSaleIdsForUser($request->user())))
+            ->when(! empty(DashboardVisibilityService::hiddenCustomerIdsForUser($request->user())), function ($q) use ($request) {
+                $hiddenCustomerIds = DashboardVisibilityService::hiddenCustomerIdsForUser($request->user());
+                $q->where(function ($customerQuery) use ($hiddenCustomerIds) {
+                    $customerQuery->whereNull('customer_id')
+                        ->orWhereNotIn('customer_id', $hiddenCustomerIds);
+                });
+            })
             ->orderByDesc('created_at')
-            ->limit(10)
-            ->get(['id', 'sale_no', 'customer_id', 'total_amount', 'created_at']);
+            ->limit($limit)
+            ->get(['id', 'sale_no', 'customer_id', 'total_amount', 'sale_date', 'created_at']);
 
         return response()->json(
-            $sales->map(function (Sale $sale) {
+            tap($sales, function ($sales) use ($isActive) {
+                if ($isActive) {
+                    PrivacyModeService::applyDailyInvoiceLabels($sales);
+                }
+            })->map(function (Sale $sale) use ($isActive) {
                 return [
                     'id' => $sale->id,
-                    'sale_no' => $sale->sale_no,
+                    'sale_no' => $isActive ? PrivacyModeService::displayInvoiceNumber($sale) : $sale->sale_no,
                     'customer_name' => $sale->customer?->name ?: 'Walk-in',
                     'total_amount' => (float) $sale->total_amount,
                     'is_returned' => ((int) ($sale->returns_count ?? 0)) > 0,

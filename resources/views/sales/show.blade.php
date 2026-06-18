@@ -4,6 +4,61 @@
 @section('page-title', 'Sale #'.$sale->sale_no)
 
 @section('content')
+@php
+    $controls = \App\Services\DashboardVisibilityService::configForUser(auth()->user());
+    $priceVisiblePct = (float) ($controls['price_visible_percentage'] ?? 100);
+    $applyPct = function ($value, $pct) {
+        $pct = max(0, min(100, (float) $pct));
+        return (float) $value * ($pct / 100);
+    };
+    $maskMoneyValue = function ($value, $forceHide = false) use ($controls, $priceVisiblePct, $applyPct) {
+        if ($forceHide || !empty($controls['hide_price_wise_data'])) {
+            return null;
+        }
+
+        $raw = (float) $value;
+        $masked = $applyPct(abs($raw), $priceVisiblePct);
+        if ($priceVisiblePct < 100) {
+            $masked = round($masked);
+        }
+        if ($priceVisiblePct < 100 && abs($raw) > 0 && $masked <= 0) {
+            $masked = 1;
+        }
+        if ($raw < 0) {
+            $masked *= -1;
+        }
+
+        return $masked;
+    };
+    $formatMoney = function ($value) use ($priceVisiblePct) {
+        if ($value === null) {
+            return '—';
+        }
+
+        return number_format((float) $value, $priceVisiblePct < 100 ? 0 : 2);
+    };
+    $maskQty = function ($value, $forceHide = false) use ($controls) {
+        if ($forceHide || !empty($controls['hide_qty_wise_data'])) {
+            return '—';
+        }
+
+        $qty = (float) $value;
+        if ($qty > 0 && $qty < 1) {
+            $qty = 1;
+        }
+        if ($qty < 0 && $qty > -1) {
+            $qty = -1;
+        }
+
+        return number_format(round($qty), 0);
+    };
+    $heldChequeAmount = (float) ($sale->held_cheque_amount ?? 0);
+    $hasChequeHold = $heldChequeAmount > 0;
+    $displayPaymentStatus = $hasChequeHold ? 'Hold' : ucfirst((string) $sale->payment_status);
+    $displayPaymentStatusClass = $hasChequeHold
+        ? 'bg-indigo-100 text-indigo-700'
+        : ($sale->payment_status === 'paid' ? 'bg-green-100 text-green-700' : ($sale->payment_status === 'partial' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'));
+@endphp
 <div class="space-y-6">
     <div class="bg-white rounded-xl shadow-sm p-6">
         <div class="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-4">
@@ -36,16 +91,25 @@
                 </thead>
                 <tbody>
                     @foreach(($netItems ?? $sale->items) as $it)
+                        @php
+                            $lineQtyRaw = (float) ($it->net_quantity ?? $it->quantity);
+                            $lineUnitRaw = (float) ($it->display_unit_price ?? $it->unit_price);
+                            $lineUnitMasked = $maskMoneyValue($lineUnitRaw, !empty($controls['hide_actual_stock_price']) || !empty($controls['hide_invoice_details']));
+                            $lineTotalMasked = $lineUnitMasked === null ? null : ($lineUnitMasked * $lineQtyRaw);
+                        @endphp
                         <tr class="border-b">
                             <td class="py-2 pr-4">
                                 <div>{{ $it->product->name ?? ('#'.$it->product_id) }}</div>
                                 @if(((float) ($it->line_discount_amount ?? 0)) > 0)
-                                    <div class="text-xs text-red-600 font-semibold">Discount: -{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, (float) ($it->line_discount_amount ?? 0), $currency) }}</div>
+                                    @php
+                                        $lineDiscountMasked = $maskMoneyValue((float) ($it->line_discount_amount ?? 0), !empty($controls['hide_invoice_details']));
+                                    @endphp
+                                    <div class="text-xs text-red-600 font-semibold">Discount: -{{ trim($currency) }} {{ $formatMoney($lineDiscountMasked) }}</div>
                                 @endif
                             </td>
-                            <td class="py-2 pr-4 text-right">{{ $it->net_quantity ?? $it->quantity }}</td>
-                            <td class="py-2 pr-4 text-right">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $it->display_unit_price ?? $it->unit_price, $currency) }}</td>
-                            <td class="py-2 pr-4 text-right">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $it->net_total ?? $it->total, $currency) }}</td>
+                            <td class="py-2 pr-4 text-right">{{ $maskQty($it->net_quantity ?? $it->quantity) }}</td>
+                            <td class="py-2 pr-4 text-right">{{ trim($currency) }} {{ $formatMoney($lineUnitMasked) }}</td>
+                            <td class="py-2 pr-4 text-right">{{ trim($currency) }} {{ $formatMoney($lineTotalMasked) }}</td>
                         </tr>
                     @endforeach
                 </tbody>
@@ -75,7 +139,7 @@
                                 @foreach($exchangeReturnItems as $rit)
                                     <tr class="border-b bg-red-50/30">
                                         <td class="py-2 pr-4">{{ $rit->product?->name ?? ('#'.$rit->product_id) }}</td>
-                                        <td class="py-2 pr-4 text-right">{{ -1 * (int) $rit->quantity }}</td>
+                                        <td class="py-2 pr-4 text-right">{{ $maskQty(-1 * (int) $rit->quantity) }}</td>
                                         <td class="py-2 pr-4 text-right">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, (float) $rit->unit_price, $currency) }}</td>
                                         <td class="py-2 pr-4 text-right">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, -1 * (float) $rit->total, $currency) }}</td>
                                     </tr>
@@ -101,7 +165,7 @@
                                 @foreach($returnItems as $rit)
                                     <tr class="border-b bg-red-50/30">
                                         <td class="py-2 pr-4">{{ $rit->product?->name ?? ('#'.$rit->product_id) }}</td>
-                                        <td class="py-2 pr-4 text-right">{{ -1 * (int) $rit->quantity }}</td>
+                                        <td class="py-2 pr-4 text-right">{{ $maskQty(-1 * (int) $rit->quantity) }}</td>
                                         <td class="py-2 pr-4 text-right">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, (float) $rit->unit_price, $currency) }}</td>
                                         <td class="py-2 pr-4 text-right">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, -1 * (float) $rit->total, $currency) }}</td>
                                     </tr>
@@ -129,12 +193,55 @@
                             @case('card') bg-blue-100 text-blue-700 @break
                             @case('bank_transfer') bg-purple-100 text-purple-700 @break
                             @case('mobile_payment') bg-teal-100 text-teal-700 @break
+                            @case('cheque') bg-indigo-100 text-indigo-700 @break
                             @default bg-gray-100 text-gray-600
                         @endswitch
                     ">
-                        {{ str_replace('_',' ', ucfirst((string) ($sale->payment_method ?? ''))) }}
+                        {{ ((string) ($sale->payment_method ?? '')) === 'cheque' ? 'Cheque Payment' : str_replace('_',' ', ucfirst((string) ($sale->payment_method ?? ''))) }}
                     </span>
                 </div>
+                @if($sale->payments?->count())
+                    <div class="mt-4 rounded-lg border border-emerald-100 bg-emerald-50/60 p-4">
+                        <div class="mb-3 font-semibold text-gray-800">
+                            <i class="fas fa-credit-card text-emerald-600 mr-2"></i>Payment Details
+                        </div>
+                        <div class="space-y-2">
+                            @foreach($sale->payments as $payment)
+                                <div class="flex items-center justify-between gap-3 rounded-lg bg-white p-3 text-sm">
+                                    <div>
+                                        <div class="font-semibold text-gray-800">{{ str_replace('_', ' ', ucfirst((string) $payment->payment_method)) }}</div>
+                                        <div class="text-gray-500">{{ $payment->payment_date?->format('Y-m-d') ?? '-' }}</div>
+                                    </div>
+                                    <div class="font-semibold text-emerald-700">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $payment->amount, $currency) }}</div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
+                @if($sale->chequePayments?->count())
+                    <div class="mt-4 rounded-lg border border-indigo-100 bg-indigo-50/60 p-4">
+                        <div class="mb-3 flex items-center justify-between gap-3">
+                            <div class="font-semibold text-gray-800">
+                                <i class="fas fa-money-check-alt text-indigo-600 mr-2"></i>Cheque Details
+                            </div>
+                            @if($hasChequeHold)
+                                <span class="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">Held</span>
+                            @endif
+                        </div>
+                        <div class="space-y-3">
+                            @foreach($sale->chequePayments as $cheque)
+                                <div class="grid gap-2 rounded-lg bg-white p-3 text-sm md:grid-cols-2">
+                                    <div><span class="text-gray-500">Pass Date:</span> <span class="font-semibold">{{ $cheque->cheque_date?->format('Y-m-d') ?? '-' }}</span></div>
+                                    <div><span class="text-gray-500">Cheque No:</span> <span class="font-semibold">{{ $cheque->cheque_number }}</span></div>
+                                    <div><span class="text-gray-500">Bank:</span> <span class="font-semibold">{{ $cheque->bank_name ?: '-' }}</span></div>
+                                    <div><span class="text-gray-500">Name:</span> <span class="font-semibold">{{ $cheque->account_name ?: '-' }}</span></div>
+                                    <div><span class="text-gray-500">Amount:</span> <span class="font-semibold">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $cheque->amount, $currency) }}</span></div>
+                                    <div><span class="text-gray-500">Status:</span> <span class="font-semibold">{{ $cheque->status === 'pending' ? 'Hold until passed' : ucfirst($cheque->status) }}</span></div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
                 <div class="pt-3">
                     <a href="{{ route('sales.print', $sale->id) }}" target="_blank" class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
                         <i class="fas fa-receipt mr-2"></i> Re-print (Thermal)
@@ -167,10 +274,13 @@
                     @endif
                 @endif
                 <div class="flex justify-between text-green-700"><span>Paid</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->paid_amount, $currency) }}</span></div>
+                @if($heldChequeAmount > 0)
+                    <div class="flex justify-between text-indigo-700"><span>Cheque Held</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $heldChequeAmount, $currency) }}</span></div>
+                @endif
                 <div class="flex justify-between text-amber-700"><span>Due</span><span>{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->due_amount, $currency) }}</span></div>
                 <div class="flex justify-between"><span>Status</span>
-                    <span class="px-2 py-1 rounded text-xs font-semibold {{ $sale->payment_status === 'paid' ? 'bg-green-100 text-green-700' : ($sale->payment_status === 'partial' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700') }}">
-                        {{ ucfirst($sale->payment_status) }}
+                    <span class="px-2 py-1 rounded text-xs font-semibold {{ $displayPaymentStatusClass }}">
+                        {{ $displayPaymentStatus }}
                     </span>
                 </div>
             </div>
@@ -196,7 +306,7 @@
                     <div class="border rounded-lg p-3 flex items-center justify-between">
                         <div>
                             <div class="font-semibold text-sm">{{ $it->product->name ?? ('#'.$it->product_id) }}</div>
-                            <div class="text-xs text-gray-500">Sold: {{ $it->quantity }}, Returned: {{ $alreadyReturned }}, Remaining: {{ $remainingQty }} @ {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $it->unit_price, $currency) }}</div>
+                            <div class="text-xs text-gray-500">Sold: {{ $maskQty($it->quantity) }}, Returned: {{ $maskQty($alreadyReturned) }}, Remaining: {{ $maskQty($remainingQty) }} @ {{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $it->unit_price, $currency) }}</div>
                         </div>
                         <div class="flex items-center space-x-2">
                             <input type="hidden" name="items[{{ $it->id }}][sale_item_id]" value="{{ $it->id }}">

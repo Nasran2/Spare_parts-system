@@ -4,6 +4,34 @@
 @section('page-title', 'Product Write-off')
 
 @section('content')
+@php
+    $controls = \App\Services\DashboardVisibilityService::configForUser(auth()->user());
+    $priceVisiblePct = (float) ($controls['price_visible_percentage'] ?? 100);
+    $stockVisiblePct = (float) ($controls['stock_visible_percentage'] ?? 100);
+    $applyPct = function ($value, $pct) {
+        $pct = max(0, min(100, (float) $pct));
+        return (float) $value * ($pct / 100);
+    };
+    $maskMoney = function ($value, $forceHide = false) use ($controls, $priceVisiblePct, $applyPct) {
+        if ($forceHide || !empty($controls['hide_price_wise_data'])) {
+            return '—';
+        }
+
+        $masked = $applyPct((float) $value, $priceVisiblePct);
+
+        $roundToWhole = $priceVisiblePct < 100;
+
+
+        return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
+    };
+    $maskStockQty = function ($value, $forceHide = false) use ($controls, $stockVisiblePct, $applyPct) {
+        if ($forceHide || !empty($controls['hide_qty_wise_data']) || !empty($controls['hide_actual_stock_quantity'])) {
+            return '—';
+        }
+
+        return number_format(round($applyPct((float) $value, $stockVisiblePct)), 0);
+    };
+@endphp
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     
     <!-- Write-off Form -->
@@ -44,8 +72,8 @@
                     >
                         <option value="">Select Product</option>
                         @foreach($products as $product)
-                            <option value="{{ $product->id }}" data-stock="{{ $product->stock_quantity }}">
-                                {{ $product->name }} (Stock: {{ $product->stock_quantity }})
+                            <option value="{{ $product->id }}" data-stock="{{ $product->stock_quantity }}" data-stock-display="{{ $maskStockQty($product->stock_quantity) }}">
+                                {{ $product->name }} (Stock: {{ $maskStockQty($product->stock_quantity) }})
                             </option>
                         @endforeach
                     </select>
@@ -125,7 +153,7 @@
                                 {{ $expense->description }}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-semibold text-right">
-                                {{ number_format($expense->amount, 2) }}
+                                {{ $maskMoney($expense->amount) }}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                 {{ $expense->user->name ?? 'Unknown' }}
@@ -149,12 +177,13 @@
     function updateMaxQuantity(select) {
         const option = select.options[select.selectedIndex];
         const stock = option.getAttribute('data-stock');
+        const stockDisplay = option.getAttribute('data-stock-display') || stock;
         const quantityInput = document.getElementById('quantity');
         const hint = document.getElementById('stock-hint');
         
         if (stock) {
             quantityInput.max = stock;
-            hint.textContent = `Available Stock: ${stock}`;
+            hint.textContent = `Available Stock: ${stockDisplay}`;
             hint.classList.remove('text-red-500');
             hint.classList.add('text-gray-500');
         } else {

@@ -17,6 +17,29 @@
     </style>
 </head>
 <body>
+    @php
+        $controls = \App\Services\DashboardVisibilityService::configForUser(auth()->user());
+        $priceVisiblePct = (float) ($controls['price_visible_percentage'] ?? 100);
+        $applyPct = function ($value, $pct) {
+            $pct = max(0, min(100, (float) $pct));
+            return (float) $value * ($pct / 100);
+        };
+        $maskMoney = function ($value, $forceHide = false) use ($controls, $priceVisiblePct, $applyPct) {
+        if (\App\Services\PrivacyModeService::isActiveForUser(auth()->user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
+            return \App\Services\PrivacyModeService::maskAmount((float) $value);
+        }
+            if ($forceHide || !empty($controls['hide_price_wise_data'])) {
+                return '—';
+            }
+
+            $masked = $applyPct((float) $value, $priceVisiblePct);
+
+            $roundToWhole = $priceVisiblePct < 100;
+
+
+            return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
+        };
+    @endphp
     <div class="header">
         <div class="title">VAT Report</div>
         <div class="chip">Period: {{ $from ?? 'All' }} - {{ $to ?? 'All' }}</div>
@@ -34,9 +57,9 @@
     <div class="summary">
         <div class="card"><div class="label">VAT Enabled</div><div class="value">{{ ($summary['enabled'] ?? false) ? 'Yes' : 'No' }}</div></div>
         <div class="card"><div class="label">VAT Rate</div><div class="value">{{ number_format($summary['rate'] ?? 0, 2) }}%</div></div>
-        <div class="card"><div class="label">Total Sales</div><div class="value">{{ number_format($summary['totalFinal'] ?? 0, 2) }}</div></div>
-        <div class="card"><div class="label">VAT (Exclusive)</div><div class="value">{{ number_format($summary['vatExclusive'] ?? 0, 2) }}</div></div>
-        <div class="card"><div class="label">VAT (Inclusive)</div><div class="value">{{ number_format($summary['vatInclusive'] ?? 0, 2) }}</div></div>
+        <div class="card"><div class="label">Total Sales</div><div class="value">{{ $maskMoney(($summary['totalFinal'] ?? 0), !empty($controls['hide_total_sales'])) }}</div></div>
+        <div class="card"><div class="label">VAT (Exclusive)</div><div class="value">{{ $maskMoney(($summary['vatExclusive'] ?? 0)) }}</div></div>
+        <div class="card"><div class="label">VAT (Inclusive)</div><div class="value">{{ $maskMoney(($summary['vatInclusive'] ?? 0)) }}</div></div>
     </div>
     <table>
         <thead>
@@ -51,9 +74,9 @@
             @foreach($daily as $d)
                 <tr>
                     <td>{{ $d['date'] }}</td>
-                    <td>{{ number_format($d['final_total'], 2) }}</td>
-                    <td>{{ number_format($d['vat_exclusive'], 2) }}</td>
-                    <td>{{ number_format($d['vat_inclusive'], 2) }}</td>
+                    <td>{{ $maskMoney($d['final_total'], !empty($controls['hide_total_sales'])) }}</td>
+                    <td>{{ $maskMoney($d['vat_exclusive']) }}</td>
+                    <td>{{ $maskMoney($d['vat_inclusive']) }}</td>
                 </tr>
             @endforeach
         </tbody>

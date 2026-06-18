@@ -104,9 +104,12 @@
                 </h3>
 
                 @php
+                    $privacyModePermissions = auth()->user()?->isSuperAdmin()
+                        ? ['privacy_mode.view', 'privacy_mode.toggle', 'privacy_mode.settings', 'privacy_mode.bypass']
+                        : ['privacy_mode.view', 'privacy_mode.toggle'];
                     $permissionGroups = [
                         'Dashboard' => ['dashboard.view'],
-                        'Products' => ['products.view', 'products.create', 'products.edit', 'products.delete', 'products.update-price'],
+                        'Products' => ['products.view', 'products.create', 'products.edit', 'products.delete', 'products.update-price', 'view_product_prices', 'create_product_prices', 'edit_product_prices', 'delete_product_prices', 'view_cost_price_in_pos'],
                         'Categories' => ['categories.view', 'categories.create', 'categories.edit', 'categories.delete'],
                         'Brands' => ['brands.view', 'brands.create', 'brands.edit', 'brands.delete'],
                         'Units' => ['units.view', 'units.create', 'units.edit', 'units.delete'],
@@ -116,12 +119,16 @@
                         'Sales' => ['sales.view', 'sales.create', 'sales.edit', 'sales.delete'],
                         'Quotations' => ['quotations.view', 'quotations.create', 'quotations.edit', 'quotations.delete'],
                         'POS' => ['pos.access'],
+                        'Accounting' => ['accounting.view', 'accounting.manage', 'accounting.accounts', 'accounting.transactions', 'accounting.cash-book', 'accounting.bank-book', 'accounting.banks', 'accounting.petty-cash', 'accounting.ledger', 'accounting.t-accounts', 'accounting.trial-balance', 'accounting.balance-sheet', 'accounting.owner-equity.view', 'accounting.owner-equity.create', 'accounting.owner-equity.edit', 'accounting.owner-equity.delete'],
+                        'Store Stock' => ['stores.view', 'stores.manage', 'stores.stores', 'stores.allocations', 'stores.transfers', 'stores.transfer-report', 'stores.report'],
+                        'Cheque Payments' => ['cheque_payments.view', 'cheque_payments.create', 'cheque_payments.manage', 'cheque_payments.settings'],
                         'Expenses' => ['expenses.view', 'expenses.create', 'expenses.edit', 'expenses.delete'],
                         'Users' => ['users.view', 'users.create', 'users.edit', 'users.delete'],
                         'Roles' => ['roles.view', 'roles.create', 'roles.edit', 'roles.delete'],
                         'Settings' => ['settings.view', 'settings.edit'],
-                        'Reports' => ['reports.sales', 'reports.purchase', 'reports.profit-loss', 'reports.stock', 'reports.expense', 'reports.trending'],
+                        'Reports' => ['reports.sales', 'reports.purchase', 'reports.profit-loss', 'reports.stock', 'reports.expense', 'reports.trending', 'reports.vat', 'reports.receive', 'reports.debit', 'reports.rate-conversion', 'reports.due-bills', 'reports.customer-due', 'reports.never-sold', 'reports.unsold-recently'],
                         'Barcodes' => ['barcode.print', 'barcode.settings'],
+                        'Privacy Mode' => $privacyModePermissions,
                         'Activity Log' => ['activity-log.view'],
                         'Notifications' => ['notifications.view', 'notifications.configure'],
                     ];
@@ -145,7 +152,7 @@
                                     {{ in_array($permission, $currentPermissions) ? 'checked' : '' }}
                                 >
                                 <span class="ml-3 text-sm text-gray-700">
-                                    {{ ucfirst(str_replace(['.', '-'], [' ', ' '], explode('.', $permission)[1] ?? $permission)) }}
+                                    {{ ucfirst(str_replace(['.', '-', '_'], [' ', ' ', ' '], strpos($permission, '.') !== false ? substr($permission, strpos($permission, '.') + 1) : $permission)) }}
                                 </span>
                             </label>
                             @endforeach

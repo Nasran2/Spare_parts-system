@@ -17,6 +17,23 @@
     </style>
 </head>
 <body>
+    @php
+        $controls = is_array($controls ?? null) ? $controls : [];
+        $priceVisiblePct = (float) ($controls['price_visible_percentage'] ?? 100);
+        $applyPct = function ($value, $pct) {
+            $pct = max(0, min(100, (float) $pct));
+            return (float) $value * ($pct / 100);
+        };
+        $maskMoney = function ($value, $forceHide = false) use ($controls, $priceVisiblePct, $applyPct) {
+            if ($forceHide || !empty($controls['hide_price_wise_data'])) {
+                return '—';
+            }
+            $masked = $applyPct((float) $value, $priceVisiblePct);
+            $roundToWhole = $priceVisiblePct < 100;
+
+            return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
+        };
+    @endphp
     <div class="header">
         @if(!empty($shop['logo']))
             <img src="{{ public_path($shop['logo']) }}" alt="Logo" />
@@ -45,10 +62,10 @@
         <tbody>
             @foreach($sales as $sale)
                 <tr>
-                    <td>{{ $sale->sale_no }}</td>
+                    <td>{{ !empty($controls['hide_invoice_details']) ? 'HIDDEN' : \App\Services\PrivacyModeService::displayInvoiceNumber($sale) }}</td>
                     <td>{{ optional($sale->sale_date)->format('Y-m-d') ?? $sale->created_at->format('Y-m-d') }}</td>
-                    <td>{{ $sale->customer->name ?? 'Walk-in Customer' }}</td>
-                    <td class="right">{{ number_format((float)$sale->total_amount, 2) }}</td>
+                    <td>{{ !empty($controls['hide_supplier_names']) ? 'Hidden' : ($sale->customer->name ?? 'Walk-in Customer') }}</td>
+                    <td class="right">{{ $maskMoney($sale->total_amount, !empty($controls['hide_invoice_details'])) }}</td>
                     <td class="center">{{ ucfirst($sale->payment_status) }}</td>
                     <td class="center">{{ str_replace('_',' ', ucfirst($sale->payment_method)) }}</td>
                 </tr>

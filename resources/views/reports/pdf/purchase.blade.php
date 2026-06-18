@@ -19,6 +19,27 @@
 <body>
     <div class="container">
         @php
+            $controls = is_array($controls ?? null) ? $controls : [];
+            $priceVisiblePct = (float) ($controls['price_visible_percentage'] ?? 100);
+            $applyPct = function ($value, $pct) {
+                $pct = max(0, min(100, (float) $pct));
+                return (float) $value * ($pct / 100);
+            };
+            $maskMoney = function ($value, $forceHide = false) use ($controls, $priceVisiblePct, $applyPct) {
+        if (\App\Services\PrivacyModeService::isActiveForUser(auth()->user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
+            return \App\Services\PrivacyModeService::maskAmount((float) $value);
+        }
+                if ($forceHide || !empty($controls['hide_price_wise_data'])) {
+                    return '—';
+                }
+
+                $masked = $applyPct((float) $value, $priceVisiblePct);
+
+                $roundToWhole = $priceVisiblePct < 100;
+
+
+                return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
+            };
             $businessName = \App\Models\Setting::get('shop_name') ?? \App\Models\Setting::get('business_name') ?? config('app.name', 'Vehicle POS');
             $businessAddress = \App\Models\Setting::get('shop_address') ?? \App\Models\Setting::get('business_address') ?? '';
             $businessPhone = \App\Models\Setting::get('shop_phone') ?? \App\Models\Setting::get('business_phone') ?? '';
@@ -48,21 +69,21 @@
                 @foreach($purchases as $p)
                 <tr>
                     <td>{{ optional($p->purchase_date)->toDateString() }}</td>
-                    <td>{{ $p->purchase_no }}</td>
-                    <td>{{ $p->supplier?->name ?? 'N/A' }}</td>
-                    <td class="right">{{ number_format($p->total_amount, 2) }}</td>
-                    <td class="right">{{ number_format($p->paid_amount, 2) }}</td>
-                    <td class="right">{{ number_format($p->due_amount, 2) }}</td>
+                    <td>{{ !empty($controls['hide_invoice_details']) ? 'HIDDEN' : $p->purchase_no }}</td>
+                    <td>{{ !empty($controls['hide_supplier_names']) ? 'Hidden' : ($p->supplier?->name ?? 'N/A') }}</td>
+                    <td class="right">{{ $maskMoney($p->total_amount, !empty($controls['hide_total_purchase']) || !empty($controls['hide_invoice_details'])) }}</td>
+                    <td class="right">{{ $maskMoney($p->paid_amount, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
+                    <td class="right">{{ $maskMoney($p->due_amount, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
                     <td>{{ ucfirst($p->payment_status) }}</td>
                 </tr>
                 @endforeach
             </tbody>
         </table>
         <div class="summary">
-            <strong>Total Purchases:</strong> {{ number_format($summary['total_purchases'], 2) }} —
-            <strong>Paid:</strong> {{ number_format($summary['total_paid'], 2) }} —
-            <strong>Due:</strong> {{ number_format($summary['total_due'], 2) }} —
-            <strong>Orders:</strong> {{ $summary['count'] }}
+            <strong>Total Purchases:</strong> {{ $maskMoney($summary['total_purchases'], !empty($controls['hide_total_purchase'])) }} —
+            <strong>Paid:</strong> {{ $maskMoney($summary['total_paid'], !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }} —
+            <strong>Due:</strong> {{ $maskMoney($summary['total_due'], !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }} —
+            <strong>Orders:</strong> {{ !empty($controls['hide_invoice_details']) ? '—' : $summary['count'] }}
         </div>
     </div>
 </body>

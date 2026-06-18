@@ -4,6 +4,11 @@
 @section('page-title', 'Customer Ledger')
 
 @section('content')
+@php
+    $formatVal = function ($val) {
+        return is_numeric($val) ? number_format((float) $val, 2) : $val;
+    };
+@endphp
 <div class="space-y-6">
     <div class="flex items-center justify-between">
         <div class="flex items-center gap-2 text-sm text-gray-600">
@@ -80,26 +85,26 @@
                         </div>
                         <div class="flex justify-between text-sm">
                             <span class="text-gray-600">Total invoice</span>
-                            <span class="font-semibold">{{ $currency }} {{ number_format($periodTotals['invoice'], 2) }}</span>
+                            <span class="font-semibold">{{ $currency }} {{ $formatVal($periodTotals['invoice']) }}</span>
                         </div>
                         <div class="flex justify-between text-sm">
                             <span class="text-gray-600">Total paid</span>
-                            <span class="font-semibold">{{ $currency }} {{ number_format($periodTotals['paid'], 2) }}</span>
+                            <span class="font-semibold">{{ $currency }} {{ $formatVal($periodTotals['paid']) }}</span>
                         </div>
                     </div>
                     <div class="p-4">
                         <div class="text-sm text-gray-600 mb-2">Overall Summary</div>
                         <div class="flex justify-between text-sm">
                             <span class="text-gray-600">Total invoice</span>
-                            <span class="font-semibold">{{ $currency }} {{ number_format($overallTotals['invoice'], 2) }}</span>
+                            <span class="font-semibold">{{ $currency }} {{ $formatVal($overallTotals['invoice']) }}</span>
                         </div>
                         <div class="flex justify-between text-sm">
                             <span class="text-gray-600">Total paid</span>
-                            <span class="font-semibold">{{ $currency }} {{ number_format($overallTotals['paid'], 2) }}</span>
+                            <span class="font-semibold">{{ $currency }} {{ $formatVal($overallTotals['paid']) }}</span>
                         </div>
                         <div class="flex justify-between text-sm mt-2 pt-2 border-t">
                             <span class="text-gray-700 font-semibold">Balance due</span>
-                            <span class="font-bold {{ $overallTotals['balance'] > 0 ? 'text-red-600' : 'text-green-600' }}">{{ $currency }} {{ number_format($overallTotals['balance'], 2) }}</span>
+                            <span class="font-bold {{ is_numeric($overallTotals['balance']) && $overallTotals['balance'] > 0 ? 'text-red-600' : 'text-green-600' }}">{{ $currency }} {{ $formatVal($overallTotals['balance']) }}</span>
                         </div>
                     </div>
                 </div>
@@ -150,8 +155,8 @@
                                         {{ ucfirst($status) }}
                                     </span>
                                 </td>
-                                <td class="px-4 py-2 text-right">{{ $t['debit'] ? number_format($t['debit'], 2) : '—' }}</td>
-                                <td class="px-4 py-2 text-right">{{ $t['credit'] ? number_format($t['credit'], 2) : '—' }}</td>
+                                <td class="px-4 py-2 text-right">{{ $t['debit'] ? $formatVal($t['debit']) : '—' }}</td>
+                                <td class="px-4 py-2 text-right">{{ $t['credit'] ? $formatVal($t['credit']) : '—' }}</td>
                                 <td class="px-4 py-2 text-center">{{ $t['payment_method'] ?: '—' }}</td>
                                 <td class="px-4 py-2">{{ $t['notes'] ?: '—' }}</td>
                             </tr>

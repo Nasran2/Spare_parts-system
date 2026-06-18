@@ -4,6 +4,26 @@
 @section('page-title', 'Brands')
 
 @section('content')
+@php
+    $controls = is_array($controls ?? null) ? $controls : [];
+    $priceVisiblePct = (float) ($controls['price_visible_percentage'] ?? 100);
+    $applyPct = function ($value, $pct) {
+        $pct = max(0, min(100, (float) $pct));
+        return (float) $value * ($pct / 100);
+    };
+    $maskMoney = function ($value, $forceHide = false) use ($controls, $priceVisiblePct, $applyPct) {
+        if ($forceHide || !empty($controls['hide_price_wise_data'])) {
+            return '—';
+        }
+
+        $masked = $applyPct((float) $value, $priceVisiblePct);
+
+        $roundToWhole = $priceVisiblePct < 100;
+
+
+        return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
+    };
+@endphp
 <div class="space-y-6">
     
     <!-- Header Actions -->
@@ -40,6 +60,10 @@
                         @if($brand->description)
                             <p class="text-sm text-gray-500 mt-2">{{ Str::limit($brand->description, 120) }}</p>
                         @endif
+                        <div class="mt-3 space-y-1 text-xs text-gray-600">
+                            <p>Total Cost: <span class="font-semibold text-gray-800">{{ $currency }}{{ $maskMoney((float) ($brand->total_cost_price ?? 0), !empty($controls['hide_actual_purchase_price']) || !empty($controls['hide_actual_stock_price'])) }}</span></p>
+                            <p>Total Selling: <span class="font-semibold text-gray-800">{{ $currency }}{{ $maskMoney((float) ($brand->total_selling_price ?? 0), !empty($controls['hide_actual_stock_price'])) }}</span></p>
+                        </div>
                     </div>
 
                     <div class="mt-4 flex items-center justify-between">
@@ -124,6 +148,7 @@ document.getElementById('createBrandForm')?.addEventListener('submit', async fun
     nameError.classList.add('hidden');
     nameError.textContent = '';
 
+
     try {
         const resp = await fetch(url, {
             method: 'POST',
@@ -157,6 +182,10 @@ document.getElementById('createBrandForm')?.addEventListener('submit', async fun
                         </span>
                     </div>
                     ${data.brand.description ? `<p class="text-sm text-gray-500 mt-2">${data.brand.description}</p>` : ''}
+                    <div class="mt-3 space-y-1 text-xs text-gray-600">
+                        <p>Total Cost: <span class="font-semibold text-gray-800">{{ $currency }}0.00</span></p>
+                        <p>Total Selling: <span class="font-semibold text-gray-800">{{ $currency }}0.00</span></p>
+                    </div>
                 </div>
                 <div class="mt-4 flex items-center justify-between">
                     <div class="text-sm text-gray-500">Created: ${new Date(data.brand.created_at).toISOString().slice(0,10)}</div>

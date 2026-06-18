@@ -30,4 +30,11 @@ class Role extends Model
     {
         return in_array($permission, $this->permissions ?? []);
     }
+
+    public function isSuperAdminRole(): bool
+    {
+        $name = strtolower(trim((string) $this->name));
+
+        return in_array($name, ['super admin', 'superadmin', 'super_admin'], true);
+    }
 }

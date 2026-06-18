@@ -19,6 +19,27 @@
 <body>
     <div class="container">
         @php
+            $controls = is_array($controls ?? null) ? $controls : [];
+            $priceVisiblePct = (float) ($controls['price_visible_percentage'] ?? 100);
+            $applyPct = function ($value, $pct) {
+                $pct = max(0, min(100, (float) $pct));
+                return (float) $value * ($pct / 100);
+            };
+            $maskMoney = function ($value, $forceHide = false) use ($controls, $priceVisiblePct, $applyPct) {
+        if (\App\Services\PrivacyModeService::isActiveForUser(auth()->user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
+            return \App\Services\PrivacyModeService::maskAmount((float) $value);
+        }
+                if ($forceHide || !empty($controls['hide_price_wise_data'])) {
+                    return '—';
+                }
+
+                $masked = $applyPct((float) $value, $priceVisiblePct);
+
+                $roundToWhole = $priceVisiblePct < 100;
+
+
+                return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
+            };
             $businessName = \App\Models\Setting::get('shop_name') ?? \App\Models\Setting::get('business_name') ?? config('app.name', 'Vehicle POS');
             $businessAddress = \App\Models\Setting::get('shop_address') ?? \App\Models\Setting::get('business_address') ?? '';
             $businessPhone = \App\Models\Setting::get('shop_phone') ?? \App\Models\Setting::get('business_phone') ?? '';
@@ -47,13 +68,13 @@
                     <td>{{ optional($e->expense_date)->toDateString() }}</td>
                     <td>{{ $e->category?->name ?? 'Uncategorized' }}</td>
                     <td>{{ $e->description }}</td>
-                    <td class="right">{{ number_format($e->amount, 2) }}</td>
+                    <td class="right">{{ $maskMoney($e->amount) }}</td>
                 </tr>
                 @endforeach
             </tbody>
         </table>
         <div class="summary">
-            <strong>Total Expense:</strong> {{ number_format($summary['total_expense'], 2) }} —
+            <strong>Total Expense:</strong> {{ $maskMoney($summary['total_expense']) }} —
             <strong>Entries:</strong> {{ $summary['count'] }}
         </div>
     </div>

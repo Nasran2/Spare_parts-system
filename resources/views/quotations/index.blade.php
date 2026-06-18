@@ -12,7 +12,7 @@
             <h3 class="text-lg font-semibold text-gray-800">Quotation Management</h3>
             <p class="text-sm text-gray-600">View and manage draft quotations</p>
         </div>
-        <a href="{{ route('pos.index') }}" class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition shadow-lg">
+        <a href="{{ route('quotations.create') }}" class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition shadow-lg">
             <i class="fas fa-file-invoice mr-2"></i>Create Quotation
         </a>
     </div>

@@ -7,6 +7,18 @@
 <div class="space-y-6">
     <form method="get" action="{{ route('reports.rates') }}" class="bg-white p-4 rounded shadow flex flex-wrap gap-4 items-end">
         <div>
+            <label class="text-sm font-medium text-gray-600">Store</label>
+            <select name="store_id" class="mt-1 border rounded px-3 py-2 text-sm w-48 bg-white">
+                <option value="">All Stores</option>
+                @if(isset($stores))
+                    @foreach($stores as $s)
+                        <option value="{{ $s->id }}" @selected(request('store_id') == $s->id)>{{ $s->name }}</option>
+                    @endforeach
+                @endif
+            </select>
+        </div>
+
+        <div>
             <label class="text-sm font-medium text-gray-600">Base Currency</label>
             <select name="base" class="mt-1 border rounded px-3 py-2 text-sm w-56">
                 @foreach($currencies as $code => $label)

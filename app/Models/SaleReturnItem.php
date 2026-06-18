@@ -13,6 +13,7 @@ class SaleReturnItem extends Model
         'sale_return_id',
         'sale_item_id',
         'product_id',
+        'product_price_id',
         'quantity',
         'unit_price',
         'total',
@@ -37,5 +38,10 @@ class SaleReturnItem extends Model
     public function saleItem()
     {
         return $this->belongsTo(SaleItem::class);
+    }
+
+    public function productPrice()
+    {
+        return $this->belongsTo(ProductPrice::class);
     }
 }

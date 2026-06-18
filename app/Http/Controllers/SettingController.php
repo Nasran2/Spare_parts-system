@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use App\Models\Setting;
 use App\Models\ExpenseCategory;
+use App\Models\Setting;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
 class SettingController extends Controller
@@ -30,7 +30,7 @@ class SettingController extends Controller
             'shop_email' => Setting::get('shop_email', ''),
             'shop_logo' => Setting::get('shop_logo', ''),
         ];
-        
+
         return view('settings.business', compact('settings'));
     }
 
@@ -53,7 +53,7 @@ class SettingController extends Controller
             'vat_enabled' => (bool) Setting::get('vat_enabled', false),
             'vat_rate' => (float) Setting::get('vat_rate', 0),
         ];
-        
+
         return view('settings.general', compact('settings'));
     }
 
@@ -69,7 +69,7 @@ class SettingController extends Controller
             'invoice_footer_text' => Setting::get('invoice_footer_text', 'Thank you for your business!'),
             'invoice_terms' => Setting::get('invoice_terms', ''),
         ];
-        
+
         return view('settings.invoice', compact('settings'));
     }
 
@@ -86,7 +86,7 @@ class SettingController extends Controller
             'quotation_footer_text' => Setting::get('quotation_footer_text', 'Thank you for your interest!'),
             'quotation_terms' => (string) Setting::get('quotation_terms', ''),
         ];
-        
+
         return view('settings.quotation', compact('settings'));
     }
 
@@ -97,6 +97,9 @@ class SettingController extends Controller
     {
         $settings = [
             'pos_layout' => Setting::get('pos_layout', 'default'),
+            'pos_store_id' => (int) Setting::get('pos_store_id', 0),
+            'use_price_wise_stock' => (bool) Setting::get('use_price_wise_stock', true),
+            'show_cost_price_in_pos_popup' => (bool) Setting::get('show_cost_price_in_pos_popup', false),
 
             // Card fee settings
             'pos_card_fee_enabled' => (bool) Setting::get('pos_card_fee_enabled', false),
@@ -104,13 +107,28 @@ class SettingController extends Controller
             'pos_card_fee_mode' => Setting::get('pos_card_fee_mode', 'customer'),
             'pos_card_fee_record_expense' => (bool) Setting::get('pos_card_fee_record_expense', true),
             'pos_card_fee_expense_category_id' => (int) Setting::get('pos_card_fee_expense_category_id', 0),
+            'pos_cheque_reminders_enabled' => (bool) Setting::get('pos_cheque_reminders_enabled', true),
+            'pos_cheque_reminder_days_before' => (int) Setting::get('pos_cheque_reminder_days_before', 3),
+            'pos_cheque_auto_pass_enabled' => (bool) Setting::get('pos_cheque_auto_pass_enabled', true),
+            'pos_cheque_auto_pass_days_after' => (int) Setting::get('pos_cheque_auto_pass_days_after', 15),
         ];
+
+        // If pos_store_id not set, default to the main (is_default) store
+        if ($settings['pos_store_id'] === 0) {
+            $defaultStore = \App\Models\Store::where('is_default', true)->first()
+                ?? \App\Models\Store::first();
+            $settings['pos_store_id'] = $defaultStore ? (int) $defaultStore->id : 0;
+        }
+
+        $stores = \App\Models\Store::where('is_active', true)->orderBy('name')->get();
 
         $expenseCategories = ExpenseCategory::where('is_active', true)
             ->orderBy('name')
             ->get(['id', 'name']);
 
-        return view('settings.pos', compact('settings', 'expenseCategories'));
+        $canManageChequeSettings = request()->user()?->hasPermission('cheque_payments.settings') ?? false;
+
+        return view('settings.pos', compact('settings', 'expenseCategories', 'canManageChequeSettings', 'stores'));
     }
 
     /**
@@ -118,6 +136,7 @@ class SettingController extends Controller
      */
     public function barcode()
     {
+        $canManageSecretCodes = auth()->user()?->isSuperAdmin() === true;
         $defaultMap = [
             '0' => 'E',
             '1' => 'M',
@@ -161,10 +180,25 @@ class SettingController extends Controller
         $presets = (array) Setting::get('barcode_presets', []);
         $defaultPreset = (string) Setting::get('barcode_default_preset', '');
 
+        if (! $canManageSecretCodes) {
+            $presets = array_map(function ($preset) {
+                if (isset($preset['settings']) && is_array($preset['settings'])) {
+                    unset(
+                        $preset['settings']['barcode_show_cost_code'],
+                        $preset['settings']['barcode_cost_code_map'],
+                        $preset['settings']['barcode_enable_selling_secret_code'],
+                        $preset['settings']['barcode_selling_code_map']
+                    );
+                }
+
+                return $preset;
+            }, $presets);
+        }
+
         $zeroFallback = (bool) config('app.secret_cost_zero_fallback', false);
         $sellingZeroFallback = (bool) config('app.secret_selling_zero_fallback', false);
 
-        return view('settings.barcode', compact('settings', 'presets', 'defaultPreset', 'zeroFallback', 'sellingZeroFallback'));
+        return view('settings.barcode', compact('settings', 'presets', 'defaultPreset', 'zeroFallback', 'sellingZeroFallback', 'canManageSecretCodes'));
     }
 
     /**
@@ -179,7 +213,7 @@ class SettingController extends Controller
             'shop_phone' => 'nullable|string|max:50',
             'shop_email' => 'nullable|email|max:255',
             'shop_logo' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:1024',
-            
+
             // General Settings
             'currency' => 'nullable|string|max:10',
             'currency_position' => 'nullable|in:before,after',
@@ -193,14 +227,14 @@ class SettingController extends Controller
             // VAT Settings
             'vat_enabled' => 'nullable|boolean',
             'vat_rate' => 'nullable|numeric|min:0|max:100',
-            
+
             // Invoice Settings
             'invoice_prefix' => 'nullable|string|max:20',
             'invoice_paper_size' => 'nullable|in:a4,80mm,58mm,letter',
             'invoice_show_logo' => 'nullable|boolean',
             'invoice_footer_text' => 'nullable|string|max:500',
             'invoice_terms' => 'nullable|string|max:2000',
-            
+
             // Quotation Settings
             'quotation_prefix' => 'nullable|string|max:20',
             'quotation_valid_days' => 'nullable|integer|min:1|max:3650',
@@ -211,6 +245,9 @@ class SettingController extends Controller
 
             // POS Settings
             'pos_layout' => 'nullable|in:default,modern',
+            'pos_store_id' => 'nullable|integer|min:0',
+            'use_price_wise_stock' => 'nullable|boolean',
+            'show_cost_price_in_pos_popup' => 'nullable|boolean',
 
             // Card fee settings
             'pos_card_fee_enabled' => 'nullable|boolean',
@@ -218,6 +255,10 @@ class SettingController extends Controller
             'pos_card_fee_mode' => 'nullable|in:customer,seller',
             'pos_card_fee_record_expense' => 'nullable|boolean',
             'pos_card_fee_expense_category_id' => 'nullable|integer|min:0',
+            'pos_cheque_reminders_enabled' => 'nullable|boolean',
+            'pos_cheque_reminder_days_before' => 'nullable|integer|min:0|max:365',
+            'pos_cheque_auto_pass_enabled' => 'nullable|boolean',
+            'pos_cheque_auto_pass_days_after' => 'nullable|integer|min:0|max:365',
 
             // Barcode Settings
             'barcode_sticker_width' => 'nullable|numeric|min:0.1|max:100',
@@ -260,12 +301,14 @@ class SettingController extends Controller
             '9' => 'L',
         ];
 
-        if ($request->has('barcode_cost_code')) {
+        $canManageSecretCodes = auth()->user()?->isSuperAdmin() === true;
+
+        if ($canManageSecretCodes && $request->has('barcode_cost_code')) {
             $inputMap = (array) $request->input('barcode_cost_code', []);
             $mergedMap = $defaultMap;
             foreach ($inputMap as $digit => $code) {
                 $digitKey = (string) $digit;
-                if ($digitKey === '' || !array_key_exists($digitKey, $mergedMap)) {
+                if ($digitKey === '' || ! array_key_exists($digitKey, $mergedMap)) {
                     continue;
                 }
                 $mergedMap[$digitKey] = (string) $code;
@@ -273,12 +316,12 @@ class SettingController extends Controller
             Setting::set('barcode_cost_code_map', $mergedMap, 'json', 'barcode');
         }
 
-        if ($request->has('barcode_selling_code')) {
+        if ($canManageSecretCodes && $request->has('barcode_selling_code')) {
             $inputMap = (array) $request->input('barcode_selling_code', []);
             $mergedMap = $defaultMap;
             foreach ($inputMap as $digit => $code) {
                 $digitKey = (string) $digit;
-                if ($digitKey === '' || !array_key_exists($digitKey, $mergedMap)) {
+                if ($digitKey === '' || ! array_key_exists($digitKey, $mergedMap)) {
                     continue;
                 }
                 $mergedMap[$digitKey] = (string) $code;
@@ -304,25 +347,49 @@ class SettingController extends Controller
             'barcode_height' => (float) $request->input('barcode_height', 0.7),
             'barcode_sticker_top_padding' => (float) $request->input('barcode_sticker_top_padding', 0.1),
             'barcode_sticker_bottom_padding' => (float) $request->input('barcode_sticker_bottom_padding', 0.1),
-            'barcode_show_cost_code' => (bool) $request->boolean('barcode_show_cost_code', false),
-            'barcode_enable_selling_secret_code' => (bool) $request->boolean('barcode_enable_selling_secret_code', false),
+            'barcode_show_cost_code' => $canManageSecretCodes
+                ? (bool) $request->boolean('barcode_show_cost_code', false)
+                : (bool) Setting::get('barcode_show_cost_code', false),
+            'barcode_enable_selling_secret_code' => $canManageSecretCodes
+                ? (bool) $request->boolean('barcode_enable_selling_secret_code', false)
+                : (bool) Setting::get('barcode_enable_selling_secret_code', false),
             'barcode_cost_code_map' => (array) Setting::get('barcode_cost_code_map', $defaultMap),
             'barcode_selling_code_map' => (array) Setting::get('barcode_selling_code_map', $defaultMap),
         ];
 
+        $hiddenSecretKeys = [
+            'barcode_show_cost_code',
+            'barcode_cost_code_map',
+            'barcode_enable_selling_secret_code',
+            'barcode_selling_code_map',
+        ];
+
+        if (! $canManageSecretCodes) {
+            foreach ($hiddenSecretKeys as $hiddenKey) {
+                unset($presetSettings[$hiddenKey]);
+            }
+        }
+
         $presetName = trim((string) $request->input('barcode_preset_name', ''));
         if ($presetName !== '') {
-
             $presets = (array) Setting::get('barcode_presets', []);
             $updated = false;
             foreach ($presets as $idx => $preset) {
                 if (($preset['name'] ?? '') === $presetName) {
+                    if (! $canManageSecretCodes) {
+                        foreach ($hiddenSecretKeys as $hiddenKey) {
+                            if (array_key_exists($hiddenKey, $preset['settings'] ?? [])) {
+                                $presetSettings[$hiddenKey] = $preset['settings'][$hiddenKey];
+                            }
+                        }
+                    }
+
                     $presets[$idx]['settings'] = $presetSettings;
                     $updated = true;
                     break;
                 }
             }
-            if (!$updated) {
+            if (! $updated) {
                 $presets[] = [
                     'name' => $presetName,
                     'settings' => $presetSettings,
@@ -337,6 +404,14 @@ class SettingController extends Controller
             $updatedDefaultPreset = false;
             foreach ($presets as $idx => $preset) {
                 if (($preset['name'] ?? '') === $selectedDefaultPreset) {
+                    if (! $canManageSecretCodes) {
+                        foreach ($hiddenSecretKeys as $hiddenKey) {
+                            if (array_key_exists($hiddenKey, $preset['settings'] ?? [])) {
+                                $presetSettings[$hiddenKey] = $preset['settings'][$hiddenKey];
+                            }
+                        }
+                    }
+
                     $presets[$idx]['settings'] = $presetSettings;
                     $updatedDefaultPreset = true;
                     break;
@@ -349,17 +424,24 @@ class SettingController extends Controller
 
         unset($validated['barcode_preset_name'], $validated['barcode_cost_code'], $validated['barcode_selling_code']);
 
+        $canManageChequeSettings = $request->user()?->hasPermission('cheque_payments.settings') ?? false;
+
         foreach ($validated as $key => $value) {
-            if ($key === 'shop_logo') { continue; }
-            
+            if ($key === 'shop_logo') {
+                continue;
+            }
+            if (str_starts_with($key, 'pos_cheque_') && ! $canManageChequeSettings) {
+                continue;
+            }
+
             $type = 'text';
             $group = 'business';
-            
+
             // Categorize settings
             if (in_array($key, ['low_stock_warning', 'invoice_show_logo', 'quotation_show_logo'])) {
                 $type = 'boolean';
             }
-            
+
             if (in_array($key, ['currency', 'currency_position', 'decimal_places', 'date_format', 'time_format', 'timezone', 'language', 'items_per_page', 'low_stock_warning', 'vat_enabled', 'vat_rate'])) {
                 $group = 'general';
             } elseif (in_array($key, ['invoice_prefix', 'invoice_paper_size', 'invoice_show_logo', 'invoice_footer_text', 'invoice_terms'])) {
@@ -372,11 +454,15 @@ class SettingController extends Controller
                 $group = 'barcode';
             }
 
-            if (in_array($key, ['low_stock_warning', 'invoice_show_logo', 'quotation_show_logo', 'vat_enabled', 'pos_card_fee_enabled', 'pos_card_fee_record_expense', 'barcode_show_cost_code', 'barcode_enable_selling_secret_code'])) {
+            if (! $canManageSecretCodes && in_array($key, ['barcode_show_cost_code', 'barcode_cost_code_map', 'barcode_enable_selling_secret_code', 'barcode_selling_code_map'], true)) {
+                continue;
+            }
+
+            if (in_array($key, ['low_stock_warning', 'invoice_show_logo', 'quotation_show_logo', 'vat_enabled', 'use_price_wise_stock', 'show_cost_price_in_pos_popup', 'pos_card_fee_enabled', 'pos_card_fee_record_expense', 'pos_cheque_reminders_enabled', 'pos_cheque_auto_pass_enabled', 'barcode_show_cost_code', 'barcode_enable_selling_secret_code'])) {
                 $type = 'boolean';
             }
 
-            if (in_array($key, ['vat_rate', 'pos_card_fee_rate'])) {
+            if (in_array($key, ['vat_rate', 'pos_card_fee_rate', 'pos_cheque_reminder_days_before', 'pos_cheque_auto_pass_days_after'])) {
                 $type = 'number';
             }
 
@@ -387,7 +473,7 @@ class SettingController extends Controller
             if (is_array($value)) {
                 $type = 'json';
             }
-            
+
             Setting::set($key, $value, $type, $group);
         }
 
@@ -398,7 +484,9 @@ class SettingController extends Controller
             // Also copy to public/logos to avoid storage:link dependency
             $src = Storage::disk('public')->path($path);
             $destDir = public_path('logos');
-            if (!is_dir($destDir)) { @mkdir($destDir, 0755, true); }
+            if (! is_dir($destDir)) {
+                @mkdir($destDir, 0755, true);
+            }
             $dest = $destDir.'/'.basename($path);
             @copy($src, $dest);
 

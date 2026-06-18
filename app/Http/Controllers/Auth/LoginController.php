@@ -3,11 +3,11 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
+use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
-use App\Models\ActivityLog;
-use App\Models\Setting;
 
 class LoginController extends Controller
 {
@@ -15,7 +15,7 @@ class LoginController extends Controller
     {
         $businessName = Setting::get('shop_name', config('app.name', 'Vehicle POS'));
         $tagline = Setting::get('shop_tagline', 'Auto Parts Management System');
-        
+
         return view('auth.login', compact('businessName', 'tagline'));
     }
 
@@ -52,7 +52,12 @@ class LoginController extends Controller
             // Log the login activity
             ActivityLog::log('login', 'User logged in successfully');
 
-            return redirect()->intended(route('dashboard'));
+            $user = Auth::user();
+            if ($user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
+                return redirect()->route('fun.dashboard');
+            }
+
+            return redirect()->route('dashboard');
         }
 
         return back()->withErrors([

@@ -19,34 +19,264 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use App\Models\Setting;
 use App\Support\SecretPos;
+use App\Services\DashboardVisibilityService;
+use App\Services\PrivacyModeService;
 
 class ReportController extends Controller
 {
+    public function __construct()
+    {
+        // Share stores globally with all report views
+        \Illuminate\Support\Facades\View::composer('reports.*', function ($view) {
+            $view->with('stores', \App\Models\Store::where('is_active', true)->orderBy('name')->get());
+        });
+    }
+
+    private function shouldRoundPriceDisplay(array $controls): bool
+    {
+        return (float) ($controls['price_visible_percentage'] ?? 100) < 100;
+    }
+
+    private function visibilityControls(Request $request): array
+    {
+        return DashboardVisibilityService::configForUser($request->user());
+    }
+
+    private function priceValue(float|int $value, array $controls): float
+    {
+        if (!empty($controls['hide_price_wise_data'])) {
+            return 0.0;
+        }
+
+        return DashboardVisibilityService::maskByPercentage((float) $value, (float) ($controls['price_visible_percentage'] ?? 100));
+    }
+
+    private function qtyValue(float|int $value, array $controls): float
+    {
+        if (!empty($controls['hide_qty_wise_data'])) {
+            return 0.0;
+        }
+
+        return DashboardVisibilityService::maskByPercentage((float) $value, (float) ($controls['qty_visible_percentage'] ?? 100));
+    }
+
+    private function stockValue(float|int $value, array $controls): float
+    {
+        if (!empty($controls['hide_actual_stock_quantity']) || !empty($controls['hide_qty_wise_data'])) {
+            return 0.0;
+        }
+
+        return DashboardVisibilityService::maskByPercentage((float) $value, (float) ($controls['stock_visible_percentage'] ?? 100));
+    }
+
+    private function inventoryQtyPercentage(array $controls): float
+    {
+        $qtyPct = (float) ($controls['qty_visible_percentage'] ?? 100);
+        $stockPct = (float) ($controls['stock_visible_percentage'] ?? 100);
+
+        return max(0.0, min(100.0, min($qtyPct, $stockPct)));
+    }
+
+    private function inventoryQtyValue(float|int $value, array $controls): float
+    {
+        if (!empty($controls['hide_qty_wise_data'])) {
+            return 0.0;
+        }
+
+        return DashboardVisibilityService::maskByPercentage((float) $value, $this->inventoryQtyPercentage($controls));
+    }
+
+    private function inventoryAmountValue(float|int $value, array $controls): float
+    {
+        $stockAdjusted = DashboardVisibilityService::maskByPercentage((float) $value, $this->inventoryQtyPercentage($controls));
+
+        return $this->priceValue($stockAdjusted, $controls);
+    }
+
+    private function maskCurrencyForControls(float|int $value, array $controls, bool $forceHide = false): string
+    {
+        if (\App\Services\PrivacyModeService::isActiveForUser(auth()->user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
+            return \App\Services\PrivacyModeService::maskAmount((float) $value);
+        }
+
+        if ($forceHide || !empty($controls['hide_price_wise_data'])) {
+            return '—';
+        }
+
+        $masked = $this->priceValue((float) $value, $controls);
+        $roundToWhole = $this->shouldRoundPriceDisplay($controls);
+
+        return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
+    }
+
+    private function maskQtyForControls(float|int $value, array $controls, bool $forceHide = false): string
+    {
+        if ($forceHide || !empty($controls['hide_qty_wise_data'])) {
+            return '—';
+        }
+
+        return number_format(round($this->qtyValue((float) $value, $controls)), 0);
+    }
+
+    private function maskInventoryQtyForControls(float|int $value, array $controls, bool $forceHide = false): string
+    {
+        if ($forceHide || !empty($controls['hide_qty_wise_data'])) {
+            return '—';
+        }
+
+        return number_format(round($this->inventoryQtyValue((float) $value, $controls)), 0);
+    }
+
+    private function maskInventoryAmountForControls(float|int $value, array $controls, bool $forceHide = false): string
+    {
+        if (\App\Services\PrivacyModeService::isActiveForUser(auth()->user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
+            return \App\Services\PrivacyModeService::maskAmount((float) $value);
+        }
+
+        if ($forceHide || !empty($controls['hide_stock_values']) || !empty($controls['hide_price_wise_data'])) {
+            return '—';
+        }
+
+        $masked = $this->inventoryAmountValue((float) $value, $controls);
+        $roundToWhole = $this->shouldRoundPriceDisplay($controls)
+            || $this->inventoryQtyPercentage($controls) < 100;
+
+        return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
+    }
+
+    private function ensureReportsVisible(array $controls): void
+    {
+        if (!empty($controls['hide_reports'])) {
+            abort(404);
+        }
+    }
+
+    private function resolveCategoryFilterIds(?int $mainCategoryId, ?int $subCategoryId): ?array
+    {
+        if ($subCategoryId) {
+            return [$subCategoryId];
+        }
+
+        if ($mainCategoryId) {
+            $childIds = \App\Models\Category::query()
+                ->where('parent_id', $mainCategoryId)
+                ->pluck('id')
+                ->all();
+
+            return array_values(array_unique(array_merge([$mainCategoryId], $childIds)));
+        }
+
+        return null;
+    }
+
+    private function hiddenProductIds(Request $request): array
+    {
+        return DashboardVisibilityService::hiddenProductIdsForUser($request->user());
+    }
+
+    private function applyHiddenRecordsToSalesQuery($query, Request $request)
+    {
+        $hiddenSaleIds = DashboardVisibilityService::hiddenSaleIdsForUser($request->user());
+        $hiddenCustomerIds = DashboardVisibilityService::hiddenCustomerIdsForUser($request->user());
+
+        if (!empty($hiddenSaleIds)) {
+            $query->whereNotIn('id', $hiddenSaleIds);
+        }
+
+        if (!empty($hiddenCustomerIds)) {
+            $query->where(function ($customerQuery) use ($hiddenCustomerIds) {
+                $customerQuery->whereNull('customer_id')
+                    ->orWhereNotIn('customer_id', $hiddenCustomerIds);
+            });
+        }
+
+        return $query;
+    }
+
+    private function applyHiddenRecordsToPurchaseQuery($query, Request $request)
+    {
+        $hiddenSupplierIds = DashboardVisibilityService::hiddenSupplierIdsForUser($request->user());
+
+        if (!empty($hiddenSupplierIds)) {
+            $query->whereNotIn('supplier_id', $hiddenSupplierIds);
+        }
+
+        return $query;
+    }
+
+    private function applyHiddenProductsToSalesQuery($query, array $hiddenProductIds)
+    {
+        if (empty($hiddenProductIds)) {
+            return $query;
+        }
+
+        return $query->whereDoesntHave('items', fn ($q) => $q->whereIn('product_id', $hiddenProductIds));
+    }
+
+    private function applyHiddenProductsToPurchaseQuery($query, array $hiddenProductIds)
+    {
+        if (empty($hiddenProductIds)) {
+            return $query;
+        }
+
+        return $query->whereDoesntHave('items', fn ($q) => $q->whereIn('product_id', $hiddenProductIds));
+    }
+
     /**
      * Sales report.
      */
     public function sales(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         [$from, $to] = $this->dateRange($request);
-        $categoryId = $request->input('category_id');
+        $categoryId = $request->filled('category_id') ? (int) $request->input('category_id') : null;
+        $subcategoryId = $request->filled('subcategory_id') ? (int) $request->input('subcategory_id') : null;
+        $categoryIds = $this->resolveCategoryFilterIds($categoryId, $subcategoryId);
+
         $query = Sale::with(['customer', 'items.product.category'])
             ->when($from, fn($q) => $q->whereDate('sale_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('sale_date', '<=', $to))
-            ->when($categoryId, function ($q) use ($categoryId) {
-                $q->whereHas('items.product', fn($pq) => $pq->where('category_id', $categoryId));
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
+            ->when(!empty($categoryIds), function ($q) use ($categoryIds) {
+                $q->whereHas('items.product', function ($pq) use ($categoryIds) {
+                    $pq->where(function ($outer) use ($categoryIds) {
+                        $outer->whereIn('category_id', $categoryIds)
+                            ->orWhereHas('categories', fn($cq) => $cq->whereIn('categories.id', $categoryIds));
+                    });
+                });
             })
             ->orderBy('sale_date', 'desc');
 
+        $query = $this->applyHiddenProductsToSalesQuery($query, $hiddenProductIds);
+        $query = $this->applyHiddenRecordsToSalesQuery($query, $request);
+        $query = SecretPos::excludeHiddenSaleRanges($query, 'total_amount');
+
         $sales = $query->get();
-        $visible = $sales->reject(fn($s) => \App\Support\SecretPos::isHidden((float) $s->total_amount));
+        $visible = $sales;
 
         $summary = [
             'total_sales' => $visible->sum('total_amount'),
             'total_paid' => $visible->sum('paid_amount'),
             'total_due' => $visible->sum('due_amount'),
             'count' => $visible->count(),
-            'filtered_category' => $categoryId ? optional(\App\Models\Category::find($categoryId))->name : null,
+            'filtered_category' => $subcategoryId
+                ? optional(\App\Models\Category::find($subcategoryId))->name
+                : ($categoryId ? optional(\App\Models\Category::find($categoryId))->name : null),
         ];
+
+        if (!empty($controls['hide_total_sales'])) {
+            $summary['total_sales'] = 0;
+        }
+        if (!empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) {
+            $summary['total_paid'] = 0;
+            $summary['total_due'] = 0;
+        }
+        if (!empty($controls['hide_invoice_details'])) {
+            $summary['count'] = 0;
+        }
 
         $dailyMap = [];
         foreach ($visible as $s) {
@@ -59,24 +289,43 @@ class ReportController extends Controller
             $dailyMap[$key]['total'] += (float) $s->total_amount;
         }
         $daily = collect(array_values($dailyMap));
+        $sales = $visible->values();
+        if (PrivacyModeService::isActiveForUser($request->user()) && PrivacyModeService::shouldMaskForCurrentPage()) {
+            PrivacyModeService::applyDailyInvoiceLabels($sales);
+        }
 
-        $categories = \App\Models\Category::orderBy('name')->get();
-        return view('reports.sales', compact('sales', 'summary', 'daily', 'from', 'to', 'categories', 'categoryId'));
+        $categories = \App\Models\Category::whereNull('parent_id')->orderBy('name')->get(['id', 'name']);
+        return view('reports.sales', compact('sales', 'summary', 'daily', 'from', 'to', 'categories', 'categoryId', 'subcategoryId', 'controls'));
     }
 
     public function salesPdf(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         [$from, $to] = $this->dateRange($request);
-        $categoryId = $request->input('category_id');
+        $categoryId = $request->filled('category_id') ? (int) $request->input('category_id') : null;
+        $subcategoryId = $request->filled('subcategory_id') ? (int) $request->input('subcategory_id') : null;
+        $categoryIds = $this->resolveCategoryFilterIds($categoryId, $subcategoryId);
+
         $sales = Sale::with(['customer'])
             ->when($from, fn($q) => $q->whereDate('sale_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('sale_date', '<=', $to))
-            ->when($categoryId, function ($q) use ($categoryId) {
-                $q->whereHas('items.product', fn($pq) => $pq->where('category_id', $categoryId));
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
+            ->when(!empty($categoryIds), function ($q) use ($categoryIds) {
+                $q->whereHas('items.product', function ($pq) use ($categoryIds) {
+                    $pq->where(function ($outer) use ($categoryIds) {
+                        $outer->whereIn('category_id', $categoryIds)
+                            ->orWhereHas('categories', fn($cq) => $cq->whereIn('categories.id', $categoryIds));
+                    });
+                });
             })
             ->orderBy('sale_date', 'desc')
-            ->get();
-        $visible = $sales->reject(fn($s) => \App\Support\SecretPos::isHidden((float) $s->total_amount));
+            ->when(!empty($hiddenProductIds), fn ($q) => $q->whereDoesntHave('items', fn ($sq) => $sq->whereIn('product_id', $hiddenProductIds)));
+        $sales = $this->applyHiddenRecordsToSalesQuery($sales, $request);
+        $sales = SecretPos::excludeHiddenSaleRanges($sales, 'total_amount')->get();
+        $visible = $sales;
         $summary = [
             'total_sales' => $visible->sum('total_amount'),
             'total_paid' => $visible->sum('paid_amount'),
@@ -84,31 +333,67 @@ class ReportController extends Controller
             'count' => $visible->count(),
         ];
 
-        $pdf = Pdf::loadView('reports.pdf.sales', compact('sales','summary','from','to'))->setPaper('a4', 'portrait');
+        if (!empty($controls['hide_total_sales'])) {
+            $summary['total_sales'] = 0;
+        }
+        if (!empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) {
+            $summary['total_paid'] = 0;
+            $summary['total_due'] = 0;
+        }
+        if (!empty($controls['hide_invoice_details'])) {
+            $summary['count'] = 0;
+        }
+
+        $sales = $visible->values();
+        if (PrivacyModeService::isActiveForUser($request->user()) && PrivacyModeService::shouldMaskForCurrentPage()) {
+            PrivacyModeService::applyDailyInvoiceLabels($sales);
+        }
+        $pdf = Pdf::loadView('reports.pdf.sales', compact('sales','summary','from','to','controls'))->setPaper('a4', 'portrait');
         return $pdf->download('sales-report.pdf');
     }
 
     public function salesCsv(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         [$from, $to] = $this->dateRange($request);
-        $categoryId = $request->input('category_id');
+        $categoryId = $request->filled('category_id') ? (int) $request->input('category_id') : null;
+        $subcategoryId = $request->filled('subcategory_id') ? (int) $request->input('subcategory_id') : null;
+        $categoryIds = $this->resolveCategoryFilterIds($categoryId, $subcategoryId);
+
         $sales = Sale::with(['customer'])
             ->when($from, fn($q) => $q->whereDate('sale_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('sale_date', '<=', $to))
-            ->when($categoryId, function ($q) use ($categoryId) {
-                $q->whereHas('items.product', fn($pq) => $pq->where('category_id', $categoryId));
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
+            ->when(!empty($categoryIds), function ($q) use ($categoryIds) {
+                $q->whereHas('items.product', function ($pq) use ($categoryIds) {
+                    $pq->where(function ($outer) use ($categoryIds) {
+                        $outer->whereIn('category_id', $categoryIds)
+                            ->orWhereHas('categories', fn($cq) => $cq->whereIn('categories.id', $categoryIds));
+                    });
+                });
             })
             ->orderBy('sale_date', 'desc')
-            ->get();
+            ->when(!empty($hiddenProductIds), fn ($q) => $q->whereDoesntHave('items', fn ($sq) => $sq->whereIn('product_id', $hiddenProductIds)));
+        $sales = $this->applyHiddenRecordsToSalesQuery($sales, $request);
+        $sales = SecretPos::excludeHiddenSaleRanges($sales, 'total_amount')->get();
+        if (PrivacyModeService::isActiveForUser($request->user()) && PrivacyModeService::shouldMaskForCurrentPage()) {
+            PrivacyModeService::applyDailyInvoiceLabels($sales);
+        }
+
         $rows = [['Date','Invoice','Customer','Total','Paid','Due','Status']];
         foreach ($sales as $s) {
+            $hideInvoice = !empty($controls['hide_invoice_details']);
+            $hidePayments = !empty($controls['hide_supplier_payments']) || $hideInvoice;
             $rows[] = [
                 optional($s->sale_date)->toDateString(),
-                $s->sale_no,
-                $s->customer?->name ?? 'Walk-in',
-                \App\Support\SecretPos::maskForSale((float) $s->total_amount, (float) $s->total_amount),
-                \App\Support\SecretPos::maskForSale((float) $s->total_amount, (float) $s->paid_amount),
-                \App\Support\SecretPos::maskForSale((float) $s->total_amount, (float) $s->due_amount),
+                $hideInvoice ? 'HIDDEN' : PrivacyModeService::displayInvoiceNumber($s),
+                !empty($controls['hide_supplier_names']) ? 'Hidden' : ($s->customer?->name ?? 'Walk-in'),
+                $this->maskCurrencyForControls((float) $s->total_amount, $controls, $hideInvoice),
+                $this->maskCurrencyForControls((float) $s->paid_amount, $controls, $hidePayments),
+                $this->maskCurrencyForControls((float) $s->due_amount, $controls, $hidePayments),
                 $s->payment_status,
             ];
         }
@@ -124,15 +409,31 @@ class ReportController extends Controller
      */
     public function purchase(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         [$from, $to] = $this->dateRange($request);
-        $categoryId = $request->input('category_id');
+        $categoryId = $request->filled('category_id') ? (int) $request->input('category_id') : null;
+        $subcategoryId = $request->filled('subcategory_id') ? (int) $request->input('subcategory_id') : null;
+        $categoryIds = $this->resolveCategoryFilterIds($categoryId, $subcategoryId);
+
         $query = Purchase::with(['supplier', 'items.product.category'])
             ->when($from, fn($q) => $q->whereDate('purchase_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('purchase_date', '<=', $to))
-            ->when($categoryId, function ($q) use ($categoryId) {
-                $q->whereHas('items.product', fn($pq) => $pq->where('category_id', $categoryId));
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
+            ->when(!empty($categoryIds), function ($q) use ($categoryIds) {
+                $q->whereHas('items.product', function ($pq) use ($categoryIds) {
+                    $pq->where(function ($outer) use ($categoryIds) {
+                        $outer->whereIn('category_id', $categoryIds)
+                            ->orWhereHas('categories', fn($cq) => $cq->whereIn('categories.id', $categoryIds));
+                    });
+                });
             })
             ->orderBy('purchase_date', 'desc');
+
+        $query = $this->applyHiddenProductsToPurchaseQuery($query, $hiddenProductIds);
+        $query = $this->applyHiddenRecordsToPurchaseQuery($query, $request);
 
         $query = SecretPos::excludeHiddenPurchaseRanges($query, 'total_amount');
 
@@ -145,21 +446,47 @@ class ReportController extends Controller
             'count' => $purchases->count(),
         ];
 
-        $categories = \App\Models\Category::orderBy('name')->get();
-        return view('reports.purchase', compact('purchases', 'summary', 'from', 'to', 'categories', 'categoryId'));
+        if (!empty($controls['hide_total_purchase'])) {
+            $summary['total_purchases'] = 0;
+        }
+        if (!empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) {
+            $summary['total_paid'] = 0;
+            $summary['total_due'] = 0;
+        }
+        if (!empty($controls['hide_invoice_details'])) {
+            $summary['count'] = 0;
+        }
+
+        $categories = \App\Models\Category::whereNull('parent_id')->orderBy('name')->get(['id', 'name']);
+        return view('reports.purchase', compact('purchases', 'summary', 'from', 'to', 'categories', 'categoryId', 'subcategoryId', 'controls'));
     }
 
     public function purchasePdf(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         [$from, $to] = $this->dateRange($request);
-        $categoryId = $request->input('category_id');
+        $categoryId = $request->filled('category_id') ? (int) $request->input('category_id') : null;
+        $subcategoryId = $request->filled('subcategory_id') ? (int) $request->input('subcategory_id') : null;
+        $categoryIds = $this->resolveCategoryFilterIds($categoryId, $subcategoryId);
+
         $query = Purchase::with(['supplier'])
             ->when($from, fn($q) => $q->whereDate('purchase_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('purchase_date', '<=', $to))
-            ->when($categoryId, function ($q) use ($categoryId) {
-                $q->whereHas('items.product', fn($pq) => $pq->where('category_id', $categoryId));
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
+            ->when(!empty($categoryIds), function ($q) use ($categoryIds) {
+                $q->whereHas('items.product', function ($pq) use ($categoryIds) {
+                    $pq->where(function ($outer) use ($categoryIds) {
+                        $outer->whereIn('category_id', $categoryIds)
+                            ->orWhereHas('categories', fn($cq) => $cq->whereIn('categories.id', $categoryIds));
+                    });
+                });
             })
             ->orderBy('purchase_date', 'desc');
+        $query = $this->applyHiddenProductsToPurchaseQuery($query, $hiddenProductIds);
+        $query = $this->applyHiddenRecordsToPurchaseQuery($query, $request);
         $query = SecretPos::excludeHiddenPurchaseRanges($query, 'total_amount');
         $purchases = $query->get();
         $summary = [
@@ -168,32 +495,61 @@ class ReportController extends Controller
             'total_due' => $purchases->sum('due_amount'),
             'count' => $purchases->count(),
         ];
-        $pdf = Pdf::loadView('reports.pdf.purchase', compact('purchases','summary','from','to'))->setPaper('a4', 'portrait');
+
+        if (!empty($controls['hide_total_purchase'])) {
+            $summary['total_purchases'] = 0;
+        }
+        if (!empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) {
+            $summary['total_paid'] = 0;
+            $summary['total_due'] = 0;
+        }
+        if (!empty($controls['hide_invoice_details'])) {
+            $summary['count'] = 0;
+        }
+
+        $pdf = Pdf::loadView('reports.pdf.purchase', compact('purchases','summary','from','to','controls'))->setPaper('a4', 'portrait');
         return $pdf->download('purchase-report.pdf');
     }
 
     public function purchaseCsv(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         [$from, $to] = $this->dateRange($request);
-        $categoryId = $request->input('category_id');
+        $categoryId = $request->filled('category_id') ? (int) $request->input('category_id') : null;
+        $subcategoryId = $request->filled('subcategory_id') ? (int) $request->input('subcategory_id') : null;
+        $categoryIds = $this->resolveCategoryFilterIds($categoryId, $subcategoryId);
+
         $query = Purchase::with(['supplier'])
             ->when($from, fn($q) => $q->whereDate('purchase_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('purchase_date', '<=', $to))
-            ->when($categoryId, function ($q) use ($categoryId) {
-                $q->whereHas('items.product', fn($pq) => $pq->where('category_id', $categoryId));
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
+            ->when(!empty($categoryIds), function ($q) use ($categoryIds) {
+                $q->whereHas('items.product', function ($pq) use ($categoryIds) {
+                    $pq->where(function ($outer) use ($categoryIds) {
+                        $outer->whereIn('category_id', $categoryIds)
+                            ->orWhereHas('categories', fn($cq) => $cq->whereIn('categories.id', $categoryIds));
+                    });
+                });
             })
             ->orderBy('purchase_date', 'desc');
+        $query = $this->applyHiddenProductsToPurchaseQuery($query, $hiddenProductIds);
+        $query = $this->applyHiddenRecordsToPurchaseQuery($query, $request);
         $query = SecretPos::excludeHiddenPurchaseRanges($query, 'total_amount');
         $purchases = $query->get();
         $rows = [['Date','PO #','Supplier','Total','Paid','Due','Status']];
         foreach ($purchases as $p) {
+            $hideInvoice = !empty($controls['hide_invoice_details']);
+            $hidePayments = !empty($controls['hide_supplier_payments']) || $hideInvoice;
             $rows[] = [
                 optional($p->purchase_date)->toDateString(),
-                $p->purchase_no,
-                $p->supplier?->name ?? 'N/A',
-                number_format($p->total_amount,2),
-                number_format($p->paid_amount,2),
-                number_format($p->due_amount,2),
+                $hideInvoice ? 'HIDDEN' : $p->purchase_no,
+                !empty($controls['hide_supplier_names']) ? 'Hidden' : ($p->supplier?->name ?? 'N/A'),
+                $this->maskCurrencyForControls((float) $p->total_amount, $controls, !empty($controls['hide_total_purchase']) || $hideInvoice),
+                $this->maskCurrencyForControls((float) $p->paid_amount, $controls, $hidePayments),
+                $this->maskCurrencyForControls((float) $p->due_amount, $controls, $hidePayments),
                 $p->payment_status,
             ];
         }
@@ -209,9 +565,13 @@ class ReportController extends Controller
      */
     public function expense(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+
         [$from, $to] = $this->dateRange($request);
         $query = Expense::with(['category'])->when($from, fn($q) => $q->whereDate('expense_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('expense_date', '<=', $to))
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
             ->orderBy('expense_date', 'desc');
 
         $expenses = $query->get();
@@ -221,6 +581,16 @@ class ReportController extends Controller
             'count' => $expenses->count(),
         ];
 
+        if (!empty($controls['hide_price_wise_data']) || !empty($controls['hide_widgets'])) {
+            $summary['total_expense'] = 0;
+        }
+
+        if (!empty($controls['hide_tables'])) {
+            $expenses = collect();
+            $byCategory = collect();
+            return view('reports.expense', compact('expenses', 'summary', 'byCategory', 'from', 'to', 'controls'));
+        }
+
         $byCategory = $expenses->groupBy(fn($e) => $e->category?->name ?? 'Uncategorized')->map(function ($group) {
             return [
                 'category' => $group->first()->category?->name ?? 'Uncategorized',
@@ -229,27 +599,38 @@ class ReportController extends Controller
             ];
         })->sortByDesc('total')->values();
 
-        return view('reports.expense', compact('expenses', 'summary', 'byCategory', 'from', 'to'));
+        return view('reports.expense', compact('expenses', 'summary', 'byCategory', 'from', 'to', 'controls'));
     }
 
     public function expensePdf(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+
         [$from, $to] = $this->dateRange($request);
         $expenses = Expense::with('category')
             ->when($from, fn($q) => $q->whereDate('expense_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('expense_date', '<=', $to))
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
             ->orderBy('expense_date','desc')->get();
         $summary = [ 'total_expense' => $expenses->sum('amount'), 'count' => $expenses->count() ];
-        $pdf = Pdf::loadView('reports.pdf.expense', compact('expenses','summary','from','to'))->setPaper('a4');
+        if (!empty($controls['hide_price_wise_data']) || !empty($controls['hide_widgets'])) {
+            $summary['total_expense'] = 0;
+        }
+        $pdf = Pdf::loadView('reports.pdf.expense', compact('expenses','summary','from','to','controls'))->setPaper('a4');
         return $pdf->download('expense-report.pdf');
     }
 
     public function expenseCsv(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+
         [$from, $to] = $this->dateRange($request);
         $expenses = Expense::with('category')
             ->when($from, fn($q) => $q->whereDate('expense_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('expense_date', '<=', $to))
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
             ->orderBy('expense_date','desc')->get();
         $rows = [['Date','Category','Description','Amount']];
         foreach ($expenses as $e) {
@@ -257,7 +638,7 @@ class ReportController extends Controller
                 optional($e->expense_date)->toDateString(),
                 $e->category?->name ?? 'Uncategorized',
                 $e->description,
-                number_format((float) $e->amount,2),
+                $this->maskCurrencyForControls((float) $e->amount, $controls),
             ];
         }
         $csv = fopen('php://temp','r+'); foreach ($rows as $r) { fputcsv($csv,$r); } rewind($csv);
@@ -272,50 +653,90 @@ class ReportController extends Controller
      */
     public function stock(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         $selectedCategoryId = $request->filled('category_id') ? (int) $request->input('category_id') : null;
+        $selectedSubcategoryId = $request->filled('subcategory_id') ? (int) $request->input('subcategory_id') : null;
+        $categoryIds = $this->resolveCategoryFilterIds($selectedCategoryId, $selectedSubcategoryId);
         $selectedBrandId = $request->filled('brand_id') ? (int) $request->input('brand_id') : null;
         $lowStockOnly = $request->boolean('low_stock');
         $search = $request->filled('search') ? trim((string) $request->input('search')) : null;
 
-        $products = $this->stockBaseQuery($selectedCategoryId, $selectedBrandId, $lowStockOnly, $search)->get();
-        $items = $this->mapStockItems($products);
+        // Lightweight query for summary totals across ALL matching products
+        $allProducts = $this->stockBaseQuery($categoryIds, $selectedBrandId, $lowStockOnly, $search, $hiddenProductIds, request('store_id'))
+            ->get(['id','name','cost_price','selling_price','stock_quantity','alert_quantity']);
 
-        $totalCostValue = (float) $products->sum(fn($p) => (float) ($p->stock_quantity ?? 0) * (float) ($p->cost_price ?? 0));
-        $totalSellingValue = (float) $products->sum(fn($p) => (float) ($p->stock_quantity ?? 0) * (float) ($p->selling_price ?? 0));
-        $expectedProfit = $totalSellingValue - $totalCostValue;
+        $totalCostValue    = (float) $allProducts->sum(fn($p) => max(0, (float)($p->stock_quantity ?? 0)) * (float)($p->cost_price ?? 0));
+        $totalSellingValue = (float) $allProducts->sum(fn($p) => max(0, (float)($p->stock_quantity ?? 0)) * (float)($p->selling_price ?? 0));
+        $expectedProfit    = $totalSellingValue - $totalCostValue;
+        $lowStockCount     = $allProducts->filter(fn($p) => (float)($p->stock_quantity ?? 0) <= (float)($p->alert_quantity ?? 0))->count();
 
         $summary = [
-            'total_products' => $products->count(),
-            'low_stock' => $items->where('low_stock', true)->count(),
-            'total_stock' => $products->sum('stock_quantity'),
-            'total_cost_value' => $totalCostValue,
-            'total_selling_value' => $totalSellingValue,
-            'expected_profit' => $expectedProfit,
+            'total_products'     => $allProducts->count(),
+            'low_stock'          => $lowStockCount,
+            'total_stock'        => $allProducts->sum('stock_quantity'),
+            'total_cost_value'   => $totalCostValue,
+            'total_selling_value'=> $totalSellingValue,
+            'expected_profit'    => $expectedProfit,
         ];
 
-        $categories = \App\Models\Category::orderBy('name')->get(['id', 'name']);
+        if (!empty($controls['hide_stock_values'])) {
+            $summary['total_cost_value'] = 0;
+            $summary['total_selling_value'] = 0;
+            $summary['expected_profit'] = 0;
+        }
+        if (!empty($controls['hide_actual_stock_count']) || !empty($controls['hide_actual_stock_quantity'])) {
+            $summary['total_stock'] = 0;
+            $summary['low_stock'] = 0;
+        }
+
+        // Paginated query (100 per page) for the table display
+        $paginator = $this->stockBaseQuery($categoryIds, $selectedBrandId, $lowStockOnly, $search, $hiddenProductIds, request('store_id'))
+            ->paginate(100)
+            ->withQueryString();
+
+        $pageProducts = $paginator->getCollection();
+        $pageTotalCost = (float) $pageProducts->sum(fn($p) => max(0, (float) ($p->stock_quantity ?? 0)) * (float) ($p->cost_price ?? 0));
+        $pageTotalSelling = (float) $pageProducts->sum(fn($p) => max(0, (float) ($p->stock_quantity ?? 0)) * (float) ($p->selling_price ?? 0));
+
+        $items = $this->mapStockItems($paginator->getCollection());
+
+        $categories = \App\Models\Category::whereNull('parent_id')->orderBy('name')->get(['id', 'name']);
         $brands = \App\Models\Brand::orderBy('name')->get(['id', 'name']);
 
         return view('reports.stock', compact(
             'items',
+            'paginator',
+            'pageTotalCost',
+            'pageTotalSelling',
             'summary',
             'categories',
             'brands',
             'selectedCategoryId',
+            'selectedSubcategoryId',
             'selectedBrandId',
             'lowStockOnly',
-            'search'
+            'search',
+            'controls'
         ));
     }
 
     public function stockPdf(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         $selectedCategoryId = $request->filled('category_id') ? (int) $request->input('category_id') : null;
+        $selectedSubcategoryId = $request->filled('subcategory_id') ? (int) $request->input('subcategory_id') : null;
+        $categoryIds = $this->resolveCategoryFilterIds($selectedCategoryId, $selectedSubcategoryId);
         $selectedBrandId = $request->filled('brand_id') ? (int) $request->input('brand_id') : null;
         $lowStockOnly = $request->boolean('low_stock');
         $search = $request->filled('search') ? trim((string) $request->input('search')) : null;
 
-        $products = $this->stockBaseQuery($selectedCategoryId, $selectedBrandId, $lowStockOnly, $search)->get();
+        $products = $this->stockBaseQuery($categoryIds, $selectedBrandId, $lowStockOnly, $search, $hiddenProductIds, request('store_id'))->get();
         $items = $products->map(function ($p) {
             $purchasedQty = $p->purchaseItems->sum('quantity');
             $soldQty = $p->saleItems->sum('quantity');
@@ -345,29 +766,51 @@ class ReportController extends Controller
             'total_selling_value' => $totalSellingValue,
             'expected_profit' => $expectedProfit,
         ];
-        $pdf = Pdf::loadView('reports.pdf.stock', compact('items','summary'))->setPaper('a4', 'portrait');
+
+        if (!empty($controls['hide_stock_values'])) {
+            $summary['total_cost_value'] = 0;
+            $summary['total_selling_value'] = 0;
+            $summary['expected_profit'] = 0;
+        }
+        if (!empty($controls['hide_actual_stock_count']) || !empty($controls['hide_actual_stock_quantity'])) {
+            $summary['total_stock'] = 0;
+            $summary['low_stock'] = 0;
+        }
+
+        $pdf = Pdf::loadView('reports.pdf.stock', compact('items','summary','controls'))->setPaper('a4', 'portrait');
         return $pdf->download('stock-report.pdf');
     }
 
     public function stockCsv(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         $selectedCategoryId = $request->filled('category_id') ? (int) $request->input('category_id') : null;
+        $selectedSubcategoryId = $request->filled('subcategory_id') ? (int) $request->input('subcategory_id') : null;
+        $categoryIds = $this->resolveCategoryFilterIds($selectedCategoryId, $selectedSubcategoryId);
         $selectedBrandId = $request->filled('brand_id') ? (int) $request->input('brand_id') : null;
         $lowStockOnly = $request->boolean('low_stock');
         $search = $request->filled('search') ? trim((string) $request->input('search')) : null;
 
-        $products = $this->stockBaseQuery($selectedCategoryId, $selectedBrandId, $lowStockOnly, $search)->get();
-        $rows = [['Product','Category','Cost Price','Selling Price','Purchased Qty','Sold Qty','Current Stock','Status']];
+        $products = $this->stockBaseQuery($categoryIds, $selectedBrandId, $lowStockOnly, $search, $hiddenProductIds, request('store_id'))->get();
+        $rows = [['Product','Category','Cost Price','Selling Price','Purchased Qty','Sold Qty','Current Stock','Total Cost','Total Selling','Status']];
         foreach ($products as $p) {
             $isLowStock = (float) ($p->stock_quantity ?? 0) <= (float) ($p->alert_quantity ?? 0);
+            $stock = max(0, (int) ($p->stock_quantity ?? 0));
+            $lineCost    = (float) ($p->cost_price ?? 0) * $stock;
+            $lineSelling = (float) ($p->selling_price ?? 0) * $stock;
             $rows[] = [
-                $p->name,
+                !empty($controls['hide_product_wise_data']) ? 'Hidden Product' : $p->name,
                 $p->categories->pluck('name')->join(', '),
-                number_format((float) ($p->cost_price ?? 0), 2),
-                number_format((float) ($p->selling_price ?? 0), 2),
-                $p->purchaseItems->sum('quantity'),
-                $p->saleItems->sum('quantity'),
-                $p->stock_quantity,
+                $this->maskCurrencyForControls((float) ($p->cost_price ?? 0), $controls, !empty($controls['hide_actual_purchase_price']) || !empty($controls['hide_actual_stock_price'])),
+                $this->maskCurrencyForControls((float) ($p->selling_price ?? 0), $controls, !empty($controls['hide_actual_stock_price'])),
+                $this->maskInventoryQtyForControls((float) $p->purchaseItems->sum('quantity'), $controls, !empty($controls['hide_qty_wise_data'])),
+                $this->maskInventoryQtyForControls((float) $p->saleItems->sum('quantity'), $controls, !empty($controls['hide_qty_wise_data'])),
+                $this->maskInventoryQtyForControls((float) $p->stock_quantity, $controls, !empty($controls['hide_actual_stock_quantity']) || !empty($controls['hide_qty_wise_data'])),
+                $this->maskInventoryAmountForControls((float) $lineCost, $controls, !empty($controls['hide_actual_stock_price']) || !empty($controls['hide_stock_values'])),
+                $this->maskInventoryAmountForControls((float) $lineSelling, $controls, !empty($controls['hide_actual_stock_price']) || !empty($controls['hide_stock_values'])),
                 $isLowStock ? 'Low' : 'OK',
             ];
         }
@@ -378,9 +821,29 @@ class ReportController extends Controller
         ]);
     }
 
-    private function stockBaseQuery(?int $categoryId, ?int $brandId, bool $lowStockOnly, ?string $search = null)
+    private function stockBaseQuery(
+        ?array $categoryIds,
+        ?int $brandId,
+        bool $lowStockOnly,
+        ?string $search = null,
+        array $hiddenProductIds = [],
+        ?int $storeId = null
+    )
     {
         $query = Product::with(['category', 'categories', 'brand', 'brands', 'unit', 'saleItems', 'purchaseItems']);
+        if ($storeId) {
+            $query->with(['storeStocks' => function($q) use ($storeId) {
+                $q->where('store_id', $storeId);
+            }]);
+            // We join or filter later, but if we need to show only products in this store:
+            $query->whereHas('storeStocks', function($q) use ($storeId) {
+                $q->where('store_id', $storeId)->where('quantity', '>', 0);
+            });
+        }
+
+        if (!empty($hiddenProductIds)) {
+            $query->whereNotIn('id', $hiddenProductIds);
+        }
 
         if ($search !== null && $search !== '') {
             $query->where(function ($q) use ($search) {
@@ -389,10 +852,10 @@ class ReportController extends Controller
             });
         }
 
-        if ($categoryId) {
-            $query->where(function ($q) use ($categoryId) {
-                $q->where('category_id', $categoryId)
-                  ->orWhereHas('categories', fn($cq) => $cq->whereKey($categoryId));
+        if (!empty($categoryIds)) {
+            $query->where(function ($q) use ($categoryIds) {
+                $q->whereIn('category_id', $categoryIds)
+                    ->orWhereHas('categories', fn($cq) => $cq->whereIn('categories.id', $categoryIds));
             });
         }
 
@@ -430,11 +893,19 @@ class ReportController extends Controller
      */
     public function profitLoss(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         [$from, $to] = $this->dateRange($request);
         $sales = Sale::when($from, fn($q) => $q->whereDate('sale_date', '>=', $from))
-            ->when($to, fn($q) => $q->whereDate('sale_date', '<=', $to))->get();
+            ->when($to, fn($q) => $q->whereDate('sale_date', '<=', $to))
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
+            ->when(!empty($hiddenProductIds), fn ($q) => $q->whereDoesntHave('items', fn ($sq) => $sq->whereIn('product_id', $hiddenProductIds)));
+        $sales = $this->applyHiddenRecordsToSalesQuery($sales, $request);
+        $sales = SecretPos::excludeHiddenSaleRanges($sales, 'total_amount')->get();
 
-        $visible = $sales->reject(fn($s) => \App\Support\SecretPos::isHidden((float) $s->total_amount));
+        $visible = $sales;
         $salesRevenue = $visible->sum('total_amount');
 
         $saleItemIds = $visible->pluck('id');
@@ -448,7 +919,8 @@ class ReportController extends Controller
         $grossProfit = $salesRevenue - $cogs;
 
         $expenses = Expense::when($from, fn($q) => $q->whereDate('expense_date', '>=', $from))
-            ->when($to, fn($q) => $q->whereDate('expense_date', '<=', $to))->get();
+            ->when($to, fn($q) => $q->whereDate('expense_date', '<=', $to))
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))->get();
         $expenseTotal = $expenses->sum('amount');
         $netProfit = $grossProfit - $expenseTotal;
 
@@ -460,15 +932,23 @@ class ReportController extends Controller
             'net_profit' => $netProfit,
         ];
 
-        return view('reports.profit-loss', compact('summary', 'from', 'to'));
+        return view('reports.profit-loss', compact('summary', 'from', 'to', 'controls'));
     }
 
     public function profitLossPdf(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         [$from, $to] = $this->dateRange($request);
         $sales = Sale::when($from, fn($q) => $q->whereDate('sale_date', '>=', $from))
-            ->when($to, fn($q) => $q->whereDate('sale_date', '<=', $to))->get();
-        $visible = $sales->reject(fn($s) => \App\Support\SecretPos::isHidden((float) $s->total_amount));
+            ->when($to, fn($q) => $q->whereDate('sale_date', '<=', $to))
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
+            ->when(!empty($hiddenProductIds), fn ($q) => $q->whereDoesntHave('items', fn ($sq) => $sq->whereIn('product_id', $hiddenProductIds)));
+        $sales = $this->applyHiddenRecordsToSalesQuery($sales, $request);
+        $sales = SecretPos::excludeHiddenSaleRanges($sales, 'total_amount')->get();
+        $visible = $sales;
         $salesRevenue = $visible->sum('total_amount');
         $saleItems = SaleItem::with('product')->whereIn('sale_id', $visible->pluck('id'))->get();
         $returnedAgg = $this->returnedAggForSaleItemIds($saleItems->pluck('id')->all());
@@ -479,20 +959,29 @@ class ReportController extends Controller
         });
         $grossProfit = $salesRevenue - $cogs;
         $expenses = Expense::when($from, fn($q) => $q->whereDate('expense_date', '>=', $from))
-            ->when($to, fn($q) => $q->whereDate('expense_date', '<=', $to))->get();
+            ->when($to, fn($q) => $q->whereDate('expense_date', '<=', $to))
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))->get();
         $expenseTotal = $expenses->sum('amount');
         $netProfit = $grossProfit - $expenseTotal;
         $summary = compact('salesRevenue','cogs','grossProfit','expenseTotal','netProfit');
-        $pdf = Pdf::loadView('reports.pdf.profit-loss', compact('summary','from','to'))->setPaper('a4');
+        $pdf = Pdf::loadView('reports.pdf.profit-loss', compact('summary','from','to','controls'))->setPaper('a4');
         return $pdf->download('profit-loss-report.pdf');
     }
 
     public function profitLossCsv(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         [$from, $to] = $this->dateRange($request);
         $sales = Sale::when($from, fn($q) => $q->whereDate('sale_date', '>=', $from))
-            ->when($to, fn($q) => $q->whereDate('sale_date', '<=', $to))->get();
-        $visible = $sales->reject(fn($s) => \App\Support\SecretPos::isHidden((float) $s->total_amount));
+            ->when($to, fn($q) => $q->whereDate('sale_date', '<=', $to))
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
+            ->when(!empty($hiddenProductIds), fn ($q) => $q->whereDoesntHave('items', fn ($sq) => $sq->whereIn('product_id', $hiddenProductIds)));
+        $sales = $this->applyHiddenRecordsToSalesQuery($sales, $request);
+        $sales = SecretPos::excludeHiddenSaleRanges($sales, 'total_amount')->get();
+        $visible = $sales;
         $salesRevenue = $visible->sum('total_amount');
         $saleItems = SaleItem::with('product')->whereIn('sale_id', $visible->pluck('id'))->get();
         $returnedAgg = $this->returnedAggForSaleItemIds($saleItems->pluck('id')->all());
@@ -503,16 +992,17 @@ class ReportController extends Controller
         });
         $grossProfit = $salesRevenue - $cogs;
         $expenses = Expense::when($from, fn($q) => $q->whereDate('expense_date', '>=', $from))
-            ->when($to, fn($q) => $q->whereDate('expense_date', '<=', $to))->get();
+            ->when($to, fn($q) => $q->whereDate('expense_date', '<=', $to))
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))->get();
         $expenseTotal = $expenses->sum('amount');
         $netProfit = $grossProfit - $expenseTotal;
         $rows = [
             ['Metric','Value'],
-            ['Sales Revenue', number_format($salesRevenue,2)],
-            ['COGS', number_format($cogs,2)],
-            ['Gross Profit', number_format($grossProfit,2)],
-            ['Expenses', number_format($expenseTotal,2)],
-            ['Net Profit', number_format($netProfit,2)],
+            ['Sales Revenue', $this->maskCurrencyForControls((float) $salesRevenue, $controls, !empty($controls['hide_total_sales']))],
+            ['COGS', $this->maskCurrencyForControls((float) $cogs, $controls)],
+            ['Gross Profit', $this->maskCurrencyForControls((float) $grossProfit, $controls)],
+            ['Expenses', $this->maskCurrencyForControls((float) $expenseTotal, $controls)],
+            ['Net Profit', $this->maskCurrencyForControls((float) $netProfit, $controls)],
         ];
         $csv = fopen('php://temp','r+'); foreach ($rows as $r) { fputcsv($csv,$r); } rewind($csv);
         return response(stream_get_contents($csv), 200, [
@@ -526,16 +1016,24 @@ class ReportController extends Controller
      */
     public function trending(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         [$from, $to] = $this->dateRange($request);
-        $itemsQuery = SaleItem::with('product')
-            ->when($from || $to, function ($q) use ($from, $to) {
-                $q->whereHas('sale', function ($sq) use ($from, $to) {
+        $itemsQuery = SaleItem::with('product', 'sale')
+            ->whereHas('sale', fn ($saleQuery) => $this->applyHiddenRecordsToSalesQuery($saleQuery, $request))
+            ->when($from || $to, function ($q) use ($from, $to, $request) {
+                $q->whereHas('sale', function ($sq) use ($from, $to, $request) {
+                    $this->applyHiddenRecordsToSalesQuery($sq, $request);
                     $sq->when($from, fn($qq) => $qq->whereDate('sale_date', '>=', $from))
                         ->when($to, fn($qq) => $qq->whereDate('sale_date', '<=', $to));
                 });
-            });
+            })
+            ->when(!empty($hiddenProductIds), fn ($q) => $q->whereNotIn('product_id', $hiddenProductIds));
 
         $items = $itemsQuery->get();
+        $items = $items->reject(fn($i) => SecretPos::isHidden((float) ($i->sale?->total_amount ?? 0)));
         $returnedAgg = $this->returnedAggForSaleItemIds($items->pluck('id')->all());
         $returnedQty = $returnedAgg['qty'];
         $returnedTotal = $returnedAgg['total'];
@@ -554,7 +1052,7 @@ class ReportController extends Controller
             ];
         })->sortByDesc('quantity')->values()->take(15);
 
-        return view('reports.trending', compact('top', 'from', 'to'));
+        return view('reports.trending', compact('top', 'from', 'to', 'controls'));
     }
 
     protected function returnedAggForSaleItemIds(array $saleItemIds): array
@@ -598,25 +1096,33 @@ class ReportController extends Controller
      */
     public function vat(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         [$from, $to] = $this->dateRange($request);
         $rate = (float) (Setting::get('vat_rate', 0));
         $enabled = (bool) (Setting::get('vat_enabled', false));
 
         $sales = Sale::when($from, fn($q) => $q->whereDate('sale_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('sale_date', '<=', $to))
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
+            ->when(!empty($hiddenProductIds), fn ($q) => $q->whereDoesntHave('items', fn ($sq) => $sq->whereIn('product_id', $hiddenProductIds)))
             ->orderBy('sale_date', 'desc')
-            ->get(['id','sale_date','total_amount']);
-        $visible = $sales->reject(fn($s) => \App\Support\SecretPos::isHidden((float) $s->total_amount));
+            ;
+        $sales = $this->applyHiddenRecordsToSalesQuery($sales, $request);
+        $sales = SecretPos::excludeHiddenSaleRanges($sales, 'total_amount')->get(['id','sale_date','total_amount']);
+        $visible = $sales;
         $totalFinal = $visible->sum('total_amount');
         $vatExclusive = $enabled ? ($totalFinal * ($rate / 100)) : 0; // if price stored exclusive of VAT added
         $vatInclusive = $enabled ? ($totalFinal * ($rate / (100 + $rate))) : 0; // if price stored inclusive
 
         $dailyTemp = [];
-        foreach ($visible as $s) {
-            $key = $s->sale_date ? $s->sale_date->toDateString() : null;
+        foreach ($visible as $saleEntry) {
+            $key = $saleEntry->sale_date ? $saleEntry->sale_date->toDateString() : null;
             if (!$key) { continue; }
             if (!isset($dailyTemp[$key])) { $dailyTemp[$key] = 0.0; }
-            $dailyTemp[$key] += (float) $s->total_amount;
+            $dailyTemp[$key] += (float) $saleEntry->total_amount;
         }
         $daily = collect(array_map(function ($date, $final) use ($enabled, $rate) {
             return [
@@ -636,7 +1142,7 @@ class ReportController extends Controller
             'count' => $visible->count(),
         ];
 
-        return view('reports.vat', compact('summary', 'daily', 'from', 'to'));
+        return view('reports.vat', compact('summary', 'daily', 'from', 'to', 'controls'));
     }
 
     /**
@@ -644,13 +1150,41 @@ class ReportController extends Controller
      */
     public function receive(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+        $hiddenCustomerIds = DashboardVisibilityService::hiddenCustomerIdsForUser($request->user());
+        $hiddenSaleIds = DashboardVisibilityService::hiddenSaleIdsForUser($request->user());
+
         [$from, $to] = $this->dateRange($request);
         $query = Payment::with(['customer', 'sale'])
             ->where(function ($q) {
                 $q->whereNotNull('sale_id')->orWhereNotNull('customer_id');
             })
+            ->when(!empty($hiddenCustomerIds), function ($q) use ($hiddenCustomerIds) {
+                $q->where(function ($customerQuery) use ($hiddenCustomerIds) {
+                    $customerQuery->whereNull('customer_id')
+                        ->orWhereNotIn('customer_id', $hiddenCustomerIds);
+                });
+            })
+            ->when(!empty($hiddenSaleIds), function ($q) use ($hiddenSaleIds) {
+                $q->where(function ($saleQuery) use ($hiddenSaleIds) {
+                    $saleQuery->whereNull('sale_id')
+                        ->orWhereNotIn('sale_id', $hiddenSaleIds);
+                });
+            })
+            ->where(function ($q) use ($hiddenProductIds) {
+                $q->whereNull('sale_id')
+                    ->orWhereHas('sale', function ($sq) use ($hiddenProductIds) {
+                        SecretPos::excludeHiddenSaleRanges($sq, 'total_amount');
+                        if (!empty($hiddenProductIds)) {
+                            $sq->whereDoesntHave('items', fn ($iq) => $iq->whereIn('product_id', $hiddenProductIds));
+                        }
+                    });
+            })
             ->when($from, fn($q) => $q->whereDate('payment_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('payment_date', '<=', $to))
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
             ->orderBy('payment_date', 'desc');
 
         $payments = $query->get();
@@ -668,7 +1202,7 @@ class ReportController extends Controller
                 'count' => $g->count(),
             ])->values();
 
-        return view('reports.receive', compact('payments', 'summary', 'daily', 'from', 'to'));
+        return view('reports.receive', compact('payments', 'summary', 'daily', 'from', 'to', 'controls'));
     }
 
     /**
@@ -676,17 +1210,34 @@ class ReportController extends Controller
      */
     public function debit(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+        $hiddenSupplierIds = DashboardVisibilityService::hiddenSupplierIdsForUser($request->user());
+
         [$from, $to] = $this->dateRange($request);
         $query = Payment::with(['supplier', 'purchase'])
             ->where(function ($q) {
                 $q->whereNotNull('purchase_id')->orWhereNotNull('supplier_id');
             })
-            ->where(function ($q) {
+            ->when(!empty($hiddenSupplierIds), function ($q) use ($hiddenSupplierIds) {
+                $q->where(function ($supplierQuery) use ($hiddenSupplierIds) {
+                    $supplierQuery->whereNull('supplier_id')
+                        ->orWhereNotIn('supplier_id', $hiddenSupplierIds);
+                });
+            })
+            ->where(function ($q) use ($hiddenProductIds) {
                 $q->whereNull('purchase_id')
-                ->orWhereHas('purchase', fn ($pq) => SecretPos::excludeHiddenPurchaseRanges($pq, 'total_amount'));
+                ->orWhereHas('purchase', function ($pq) use ($hiddenProductIds) {
+                    SecretPos::excludeHiddenPurchaseRanges($pq, 'total_amount');
+                    if (!empty($hiddenProductIds)) {
+                        $pq->whereDoesntHave('items', fn ($iq) => $iq->whereIn('product_id', $hiddenProductIds));
+                    }
+                });
             })
             ->when($from, fn($q) => $q->whereDate('payment_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('payment_date', '<=', $to))
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
             ->orderBy('payment_date', 'desc');
 
         $payments = $query->get();
@@ -704,28 +1255,35 @@ class ReportController extends Controller
                 'count' => $g->count(),
             ])->values();
 
-        return view('reports.debit', compact('payments', 'summary', 'daily', 'from', 'to'));
+        return view('reports.debit', compact('payments', 'summary', 'daily', 'from', 'to', 'controls'));
     }
 
     /** PDF exports */
     public function vatPdf(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         [$from, $to] = $this->dateRange($request);
         $rate = (float) (Setting::get('vat_rate', 0));
         $enabled = (bool) (Setting::get('vat_enabled', false));
         $sales = Sale::when($from, fn($q) => $q->whereDate('sale_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('sale_date', '<=', $to))
-            ->get(['id','sale_date','total_amount']);
-        $visible = $sales->reject(fn($s) => \App\Support\SecretPos::isHidden((float) $s->total_amount));
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
+            ->when(!empty($hiddenProductIds), fn ($q) => $q->whereDoesntHave('items', fn ($sq) => $sq->whereIn('product_id', $hiddenProductIds)));
+        $sales = SecretPos::excludeHiddenSaleRanges($sales, 'total_amount')->get(['id','sale_date','total_amount']);
+        $visible = $sales;
         $totalFinal = $visible->sum('total_amount');
         $vatExclusive = $enabled ? ($totalFinal * ($rate / 100)) : 0;
         $vatInclusive = $enabled ? ($totalFinal * ($rate / (100 + $rate))) : 0;
         $dailyTemp = [];
-        foreach ($visible as $s) {
-            $key = $s->sale_date ? $s->sale_date->toDateString() : null;
+        foreach ($visible as $saleEntry) {
+            $saleDate = data_get($saleEntry, 'sale_date');
+            $key = $saleDate ? $saleDate->toDateString() : null;
             if (!$key) { continue; }
             if (!isset($dailyTemp[$key])) { $dailyTemp[$key] = 0.0; }
-            $dailyTemp[$key] += (float) $s->total_amount;
+            $dailyTemp[$key] += (float) data_get($saleEntry, 'total_amount', 0);
         }
         $daily = collect(array_map(function ($date, $final) use ($enabled, $rate) {
             return [
@@ -736,31 +1294,43 @@ class ReportController extends Controller
             ];
         }, array_keys($dailyTemp), array_values($dailyTemp)));
         $summary = compact('enabled','rate','totalFinal','vatExclusive','vatInclusive');
-        $pdf = Pdf::loadView('reports.pdf.vat', compact('summary','daily','from','to'))->setPaper('a4');
+        $pdf = Pdf::loadView('reports.pdf.vat', compact('summary','daily','from','to','controls'))->setPaper('a4');
         return $pdf->download('vat-report.pdf');
     }
 
     public function vatCsv(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         [$from, $to] = $this->dateRange($request);
         $rate = (float) (Setting::get('vat_rate', 0));
         $enabled = (bool) (Setting::get('vat_enabled', false));
         $sales = Sale::when($from, fn($q) => $q->whereDate('sale_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('sale_date', '<=', $to))
-            ->get(['id','sale_date','total_amount']);
-        $visible = $sales->reject(fn($s) => \App\Support\SecretPos::isHidden((float) $s->total_amount));
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
+            ->when(!empty($hiddenProductIds), fn ($q) => $q->whereDoesntHave('items', fn ($sq) => $sq->whereIn('product_id', $hiddenProductIds)));
+        $sales = SecretPos::excludeHiddenSaleRanges($sales, 'total_amount')->get(['id','sale_date','total_amount']);
+        $visible = $sales;
         $rows = [ ['Date','Sales Total','VAT (Exclusive)','VAT (Inclusive)'] ];
         $byDate = [];
-        foreach ($visible as $s) {
-            $key = $s->sale_date ? $s->sale_date->toDateString() : null;
+        foreach ($visible as $saleEntry) {
+            $saleDate = data_get($saleEntry, 'sale_date');
+            $key = $saleDate ? $saleDate->toDateString() : null;
             if (!$key) { continue; }
             if (!isset($byDate[$key])) { $byDate[$key] = 0.0; }
-            $byDate[$key] += (float) $s->total_amount;
+            $byDate[$key] += (float) data_get($saleEntry, 'total_amount', 0);
         }
         foreach ($byDate as $date => $final) {
             $ex = $enabled ? ($final * ($rate / 100)) : 0;
             $inc = $enabled ? ($final * ($rate / (100 + $rate))) : 0;
-            $rows[] = [$date, number_format($final, 2), number_format($ex, 2), number_format($inc, 2)];
+            $rows[] = [
+                $date,
+                $this->maskCurrencyForControls((float) $final, $controls, !empty($controls['hide_total_sales'])),
+                $this->maskCurrencyForControls((float) $ex, $controls),
+                $this->maskCurrencyForControls((float) $inc, $controls),
+            ];
         }
         $csv = fopen('php://temp', 'r+');
         foreach ($rows as $r) { fputcsv($csv, $r); }
@@ -773,12 +1343,17 @@ class ReportController extends Controller
 
     public function vatDayDetails(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         $date = $request->query('date');
         if (!$date) { return response()->json(['error' => 'date required'], 422); }
         $rate = (float) (Setting::get('vat_rate', 0));
         $enabled = (bool) (Setting::get('vat_enabled', false));
         $items = SaleItem::with('product','sale')
             ->whereHas('sale', fn($q) => $q->whereDate('sale_date', $date))
+            ->when(!empty($hiddenProductIds), fn ($q) => $q->whereNotIn('product_id', $hiddenProductIds))
             ->get()
             ->reject(fn($i) => \App\Support\SecretPos::isHidden((float) ($i->sale?->total_amount ?? 0)));
         $lines = $items->map(function ($i) use ($rate, $enabled) {
@@ -795,27 +1370,56 @@ class ReportController extends Controller
                 'vat_inclusive' => round((float) $vatInclusive, 2),
             ];
         });
+
+        $hideTotalSales = !empty($controls['hide_total_sales']);
+        $maskedLines = $lines->map(function ($line) use ($controls, $hideTotalSales) {
+            return [
+                'product' => $line['product'],
+                'invoice' => !empty($controls['hide_invoice_details']) ? 'HIDDEN' : $line['invoice'],
+                'quantity' => $this->qtyValue((float) $line['quantity'], $controls),
+                'unit_price' => $this->priceValue((float) $line['unit_price'], $controls),
+                'line_total' => $this->priceValue((float) $line['line_total'], $controls),
+                'vat_exclusive' => $this->priceValue((float) $line['vat_exclusive'], $controls),
+                'vat_inclusive' => $this->priceValue((float) $line['vat_inclusive'], $controls),
+                'quantity_display' => $this->maskQtyForControls((float) $line['quantity'], $controls),
+                'unit_price_display' => $this->maskCurrencyForControls((float) $line['unit_price'], $controls),
+                'line_total_display' => $this->maskCurrencyForControls((float) $line['line_total'], $controls, $hideTotalSales),
+                'vat_exclusive_display' => $this->maskCurrencyForControls((float) $line['vat_exclusive'], $controls),
+                'vat_inclusive_display' => $this->maskCurrencyForControls((float) $line['vat_inclusive'], $controls),
+            ];
+        });
+
+        $totals = [
+            'line_total' => $this->priceValue((float) $lines->sum('line_total'), $controls),
+            'vat_exclusive' => $this->priceValue((float) $lines->sum('vat_exclusive'), $controls),
+            'vat_inclusive' => $this->priceValue((float) $lines->sum('vat_inclusive'), $controls),
+            'line_total_display' => $this->maskCurrencyForControls((float) $lines->sum('line_total'), $controls, $hideTotalSales),
+            'vat_exclusive_display' => $this->maskCurrencyForControls((float) $lines->sum('vat_exclusive'), $controls),
+            'vat_inclusive_display' => $this->maskCurrencyForControls((float) $lines->sum('vat_inclusive'), $controls),
+        ];
+
         return response()->json([
             'date' => $date,
             'rate' => $rate,
             'enabled' => $enabled,
-            'items' => $lines,
-            'totals' => [
-                'line_total' => $lines->sum('line_total'),
-                'vat_exclusive' => $lines->sum('vat_exclusive'),
-                'vat_inclusive' => $lines->sum('vat_inclusive'),
-            ]
+            'items' => $maskedLines,
+            'totals' => $totals,
         ]);
     }
 
     public function vatDayPdf(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         $date = $request->query('date');
         if (!$date) { abort(422, 'date required'); }
         $rate = (float) (Setting::get('vat_rate', 0));
         $enabled = (bool) (Setting::get('vat_enabled', false));
         $items = SaleItem::with('product','sale')
             ->whereHas('sale', fn($q) => $q->whereDate('sale_date', $date))
+            ->when(!empty($hiddenProductIds), fn ($q) => $q->whereNotIn('product_id', $hiddenProductIds))
             ->get()
             ->reject(fn($i) => \App\Support\SecretPos::isHidden((float) ($i->sale?->total_amount ?? 0)));
         $lines = $items->map(function ($i) use ($rate, $enabled) {
@@ -837,39 +1441,83 @@ class ReportController extends Controller
             'vat_exclusive' => $lines->sum('vat_exclusive'),
             'vat_inclusive' => $lines->sum('vat_inclusive'),
         ];
-        $pdf = Pdf::loadView('reports.pdf.vat-day', compact('date','rate','enabled','lines','totals'))
+        $pdf = Pdf::loadView('reports.pdf.vat-day', compact('date','rate','enabled','lines','totals','controls'))
             ->setPaper('a4');
         return $pdf->download('vat-day-'.$date.'.pdf');
     }
 
     public function receivePdf(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+        $hiddenCustomerIds = DashboardVisibilityService::hiddenCustomerIdsForUser($request->user());
+        $hiddenSaleIds = DashboardVisibilityService::hiddenSaleIdsForUser($request->user());
+
         [$from, $to] = $this->dateRange($request);
         $payments = Payment::with(['customer','sale'])
             ->where(function ($q) { $q->whereNotNull('sale_id')->orWhereNotNull('customer_id'); })
+            ->when(!empty($hiddenCustomerIds), fn ($q) => $q->where(fn ($cq) => $cq->whereNull('customer_id')->orWhereNotIn('customer_id', $hiddenCustomerIds)))
+            ->when(!empty($hiddenSaleIds), fn ($q) => $q->where(fn ($sq) => $sq->whereNull('sale_id')->orWhereNotIn('sale_id', $hiddenSaleIds)))
+            ->where(function ($q) use ($hiddenProductIds) {
+                $q->whereNull('sale_id')
+                    ->orWhereHas('sale', function ($sq) use ($hiddenProductIds) {
+                        SecretPos::excludeHiddenSaleRanges($sq, 'total_amount');
+                        if (!empty($hiddenProductIds)) {
+                            $sq->whereDoesntHave('items', fn ($iq) => $iq->whereIn('product_id', $hiddenProductIds));
+                        }
+                    });
+            })
             ->when($from, fn($q) => $q->whereDate('payment_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('payment_date', '<=', $to))
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
             ->orderBy('payment_date','desc')->get();
         $summary = [
             'total_received' => $payments->sum('amount'),
             'count' => $payments->count(),
             'by_method' => $payments->groupBy('payment_method')->map(fn($g) => $g->sum('amount')),
         ];
-        $pdf = Pdf::loadView('reports.pdf.receive', compact('payments','summary','from','to'))->setPaper('a4');
+        $pdf = Pdf::loadView('reports.pdf.receive', compact('payments','summary','from','to','controls'))->setPaper('a4');
         return $pdf->download('receive-report.pdf');
     }
 
     public function receiveCsv(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+        $hiddenCustomerIds = DashboardVisibilityService::hiddenCustomerIdsForUser($request->user());
+        $hiddenSaleIds = DashboardVisibilityService::hiddenSaleIdsForUser($request->user());
+
         [$from, $to] = $this->dateRange($request);
         $payments = Payment::with(['customer','sale'])
             ->where(function ($q) { $q->whereNotNull('sale_id')->orWhereNotNull('customer_id'); })
+            ->when(!empty($hiddenCustomerIds), fn ($q) => $q->where(fn ($cq) => $cq->whereNull('customer_id')->orWhereNotIn('customer_id', $hiddenCustomerIds)))
+            ->when(!empty($hiddenSaleIds), fn ($q) => $q->where(fn ($sq) => $sq->whereNull('sale_id')->orWhereNotIn('sale_id', $hiddenSaleIds)))
+            ->where(function ($q) use ($hiddenProductIds) {
+                $q->whereNull('sale_id')
+                    ->orWhereHas('sale', function ($sq) use ($hiddenProductIds) {
+                        SecretPos::excludeHiddenSaleRanges($sq, 'total_amount');
+                        if (!empty($hiddenProductIds)) {
+                            $sq->whereDoesntHave('items', fn ($iq) => $iq->whereIn('product_id', $hiddenProductIds));
+                        }
+                    });
+            })
             ->when($from, fn($q) => $q->whereDate('payment_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('payment_date', '<=', $to))
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
             ->orderBy('payment_date','desc')->get();
         $rows = [['Date','Customer','Sale','Method','Amount']];
         foreach ($payments as $p) {
-            $rows[] = [optional($p->payment_date)->toDateString(), $p->customer?->name, $p->sale?->invoice_no, $p->payment_method, number_format((float) $p->amount, 2)];
+            $hideInvoice = !empty($controls['hide_invoice_details']);
+            $hidePaymentAmount = !empty($controls['hide_supplier_payments']) || $hideInvoice;
+            $rows[] = [
+                optional($p->payment_date)->toDateString(),
+                !empty($controls['hide_supplier_names']) ? 'Hidden' : ($p->customer?->name ?? '-'),
+                $hideInvoice ? 'HIDDEN' : ($p->sale?->invoice_no ?? '-'),
+                $p->payment_method,
+                $this->maskCurrencyForControls((float) $p->amount, $controls, $hidePaymentAmount),
+            ];
         }
         $csv = fopen('php://temp','r+'); foreach ($rows as $r) { fputcsv($csv,$r); } rewind($csv);
         return response(stream_get_contents($csv), 200, [
@@ -880,40 +1528,72 @@ class ReportController extends Controller
 
     public function debitPdf(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+        $hiddenSupplierIds = DashboardVisibilityService::hiddenSupplierIdsForUser($request->user());
+
         [$from, $to] = $this->dateRange($request);
         $payments = Payment::with(['supplier','purchase'])
             ->where(function ($q) { $q->whereNotNull('purchase_id')->orWhereNotNull('supplier_id'); })
-            ->where(function ($q) {
+            ->when(!empty($hiddenSupplierIds), fn ($q) => $q->where(fn ($sq) => $sq->whereNull('supplier_id')->orWhereNotIn('supplier_id', $hiddenSupplierIds)))
+            ->where(function ($q) use ($hiddenProductIds) {
                 $q->whereNull('purchase_id')
-                ->orWhereHas('purchase', fn ($pq) => SecretPos::excludeHiddenPurchaseRanges($pq, 'total_amount'));
+                ->orWhereHas('purchase', function ($pq) use ($hiddenProductIds) {
+                    SecretPos::excludeHiddenPurchaseRanges($pq, 'total_amount');
+                    if (!empty($hiddenProductIds)) {
+                        $pq->whereDoesntHave('items', fn ($iq) => $iq->whereIn('product_id', $hiddenProductIds));
+                    }
+                });
             })
             ->when($from, fn($q) => $q->whereDate('payment_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('payment_date', '<=', $to))
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
             ->orderBy('payment_date','desc')->get();
         $summary = [
             'total_debit' => $payments->sum('amount'),
             'count' => $payments->count(),
             'by_method' => $payments->groupBy('payment_method')->map(fn($g) => $g->sum('amount')),
         ];
-        $pdf = Pdf::loadView('reports.pdf.debit', compact('payments','summary','from','to'))->setPaper('a4');
+        $pdf = Pdf::loadView('reports.pdf.debit', compact('payments','summary','from','to','controls'))->setPaper('a4');
         return $pdf->download('debit-report.pdf');
     }
 
     public function debitCsv(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+        $hiddenSupplierIds = DashboardVisibilityService::hiddenSupplierIdsForUser($request->user());
+
         [$from, $to] = $this->dateRange($request);
         $payments = Payment::with(['supplier','purchase'])
             ->where(function ($q) { $q->whereNotNull('purchase_id')->orWhereNotNull('supplier_id'); })
-            ->where(function ($q) {
+            ->when(!empty($hiddenSupplierIds), fn ($q) => $q->where(fn ($sq) => $sq->whereNull('supplier_id')->orWhereNotIn('supplier_id', $hiddenSupplierIds)))
+            ->where(function ($q) use ($hiddenProductIds) {
                 $q->whereNull('purchase_id')
-                ->orWhereHas('purchase', fn ($pq) => SecretPos::excludeHiddenPurchaseRanges($pq, 'total_amount'));
+                ->orWhereHas('purchase', function ($pq) use ($hiddenProductIds) {
+                    SecretPos::excludeHiddenPurchaseRanges($pq, 'total_amount');
+                    if (!empty($hiddenProductIds)) {
+                        $pq->whereDoesntHave('items', fn ($iq) => $iq->whereIn('product_id', $hiddenProductIds));
+                    }
+                });
             })
             ->when($from, fn($q) => $q->whereDate('payment_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('payment_date', '<=', $to))
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
             ->orderBy('payment_date','desc')->get();
         $rows = [['Date','Supplier','Purchase','Method','Amount']];
         foreach ($payments as $p) {
-            $rows[] = [optional($p->payment_date)->toDateString(), $p->supplier?->name, $p->purchase?->reference_no, $p->payment_method, number_format((float) $p->amount, 2)];
+            $hideInvoice = !empty($controls['hide_invoice_details']);
+            $hidePaymentAmount = !empty($controls['hide_supplier_payments']) || $hideInvoice;
+            $rows[] = [
+                optional($p->payment_date)->toDateString(),
+                !empty($controls['hide_supplier_names']) ? 'Hidden' : ($p->supplier?->name ?? '-'),
+                $hideInvoice ? 'HIDDEN' : ($p->purchase?->reference_no ?? '-'),
+                $p->payment_method,
+                $this->maskCurrencyForControls((float) $p->amount, $controls, $hidePaymentAmount),
+            ];
         }
         $csv = fopen('php://temp','r+'); foreach ($rows as $r) { fputcsv($csv,$r); } rewind($csv);
         return response(stream_get_contents($csv), 200, [
@@ -927,11 +1607,23 @@ class ReportController extends Controller
      */
     public function customerDue(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+                $hiddenProductIds = $this->hiddenProductIds($request);
+        $hiddenCustomerIds = DashboardVisibilityService::hiddenCustomerIdsForUser($request->user());
+
         [$from, $to] = $this->dateRange($request);
-        $customers = Customer::with(['sales' => function ($q) use ($from, $to) {
+                $customers = Customer::query()
+                    ->when(!empty($hiddenCustomerIds), fn ($q) => $q->whereNotIn('id', $hiddenCustomerIds))
+                    ->with(['sales' => function ($q) use ($from, $to, $hiddenProductIds, $request) {
             $q->where('due_amount', '>', 0)
               ->when($from, fn($qq) => $qq->whereDate('sale_date', '>=', $from))
-              ->when($to, fn($qq) => $qq->whereDate('sale_date', '<=', $to));
+                            ->when($to, fn($qq) => $qq->whereDate('sale_date', '<=', $to));
+                        $this->applyHiddenRecordsToSalesQuery($q, $request);
+                        SecretPos::excludeHiddenSaleRanges($q, 'total_amount');
+                        if (!empty($hiddenProductIds)) {
+                                $q->whereDoesntHave('items', fn ($sq) => $sq->whereIn('product_id', $hiddenProductIds));
+                        }
         }])->get();
         $items = $customers->map(function ($c) {
             $due = $c->sales->sum('due_amount');
@@ -947,16 +1639,28 @@ class ReportController extends Controller
             'customers' => $items->count(),
         ];
 
-        return view('reports.customer-due', compact('items','summary','from','to'));
+        return view('reports.customer-due', compact('items','summary','from','to','controls'));
     }
 
     public function customerDuePdf(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+                $hiddenProductIds = $this->hiddenProductIds($request);
+        $hiddenCustomerIds = DashboardVisibilityService::hiddenCustomerIdsForUser($request->user());
+
         [$from, $to] = $this->dateRange($request);
-        $customers = Customer::with(['sales' => function ($q) use ($from, $to) {
+                $customers = Customer::query()
+                    ->when(!empty($hiddenCustomerIds), fn ($q) => $q->whereNotIn('id', $hiddenCustomerIds))
+                    ->with(['sales' => function ($q) use ($from, $to, $hiddenProductIds, $request) {
             $q->where('due_amount', '>', 0)
               ->when($from, fn($qq) => $qq->whereDate('sale_date', '>=', $from))
-              ->when($to, fn($qq) => $qq->whereDate('sale_date', '<=', $to));
+                            ->when($to, fn($qq) => $qq->whereDate('sale_date', '<=', $to));
+                        $this->applyHiddenRecordsToSalesQuery($q, $request);
+                        SecretPos::excludeHiddenSaleRanges($q, 'total_amount');
+                        if (!empty($hiddenProductIds)) {
+                                $q->whereDoesntHave('items', fn ($sq) => $sq->whereIn('product_id', $hiddenProductIds));
+                        }
         }])->get();
         $items = $customers->map(function ($c) {
             $due = $c->sales->sum('due_amount');
@@ -969,20 +1673,41 @@ class ReportController extends Controller
         })->filter(fn($row) => $row['due'] > 0)->sortByDesc('due');
 
         $summary = [ 'total_due' => $items->sum('due'), 'customers' => $items->count() ];
-        $pdf = Pdf::loadView('reports.pdf.customer-due', compact('items','summary','from','to'))->setPaper('a4');
+        $pdf = Pdf::loadView('reports.pdf.customer-due', compact('items','summary','from','to','controls'))->setPaper('a4');
         return $pdf->download('customer-due-report.pdf');
     }
 
     public function customerDueCsv(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+                $hiddenProductIds = $this->hiddenProductIds($request);
+        $hiddenCustomerIds = DashboardVisibilityService::hiddenCustomerIdsForUser($request->user());
+
         [$from, $to] = $this->dateRange($request);
-        $customers = Customer::with(['sales' => function ($q) use ($from, $to) {
+                $customers = Customer::query()
+                    ->when(!empty($hiddenCustomerIds), fn ($q) => $q->whereNotIn('id', $hiddenCustomerIds))
+                    ->with(['sales' => function ($q) use ($from, $to, $hiddenProductIds, $request) {
             $q->where('due_amount', '>', 0)
               ->when($from, fn($qq) => $qq->whereDate('sale_date', '>=', $from))
-              ->when($to, fn($qq) => $qq->whereDate('sale_date', '<=', $to));
+                            ->when($to, fn($qq) => $qq->whereDate('sale_date', '<=', $to));
+                        $this->applyHiddenRecordsToSalesQuery($q, $request);
+                        SecretPos::excludeHiddenSaleRanges($q, 'total_amount');
+                        if (!empty($hiddenProductIds)) {
+                                $q->whereDoesntHave('items', fn ($sq) => $sq->whereIn('product_id', $hiddenProductIds));
+                        }
         }])->get();
-        $items = $customers->map(function ($c) {
-            return [ $c->name, $c->phone, $c->sales->count(), number_format($c->sales->sum('due_amount'), 2) ];
+        $items = $customers->map(function ($c) use ($controls) {
+            return [
+                !empty($controls['hide_supplier_names']) ? 'Hidden' : $c->name,
+                $c->phone,
+                $c->sales->count(),
+                $this->maskCurrencyForControls(
+                    (float) $c->sales->sum('due_amount'),
+                    $controls,
+                    !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])
+                ),
+            ];
         });
         $rows = [['Customer','Phone','Invoices','Due']];
         foreach ($items as $r) { $rows[] = $r; }
@@ -998,15 +1723,22 @@ class ReportController extends Controller
      */
     public function dueBills(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         [$from, $to] = $this->dateRange($request);
         $sales = Sale::with(['customer'])
             ->where('due_amount', '>', 0)
             ->when($from, fn($q) => $q->whereDate('sale_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('sale_date', '<=', $to))
-            ->orderBy('sale_date', 'desc')
-            ->get();
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
+            ->when(!empty($hiddenProductIds), fn ($q) => $q->whereDoesntHave('items', fn ($sq) => $sq->whereIn('product_id', $hiddenProductIds)))
+            ->orderBy('sale_date', 'desc');
 
-        $visible = $sales->reject(fn($s) => \App\Support\SecretPos::isHidden((float) $s->total_amount));
+        $sales = SecretPos::excludeHiddenSaleRanges($sales, 'total_amount')->get();
+
+        $visible = $sales;
         $summary = [
             'total_due' => $visible->sum('due_amount'),
             'total_paid' => $visible->sum('paid_amount'),
@@ -1014,20 +1746,31 @@ class ReportController extends Controller
             'count' => $visible->count(),
         ];
 
-        return view('reports.due-bills', compact('sales','summary','from','to'));
+        $sales = $visible->values();
+        if (PrivacyModeService::isActiveForUser($request->user()) && PrivacyModeService::shouldMaskForCurrentPage()) {
+            PrivacyModeService::applyDailyInvoiceLabels($sales);
+        }
+        return view('reports.due-bills', compact('sales','summary','from','to','controls'));
     }
 
     public function dueBillsPdf(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         [$from, $to] = $this->dateRange($request);
         $sales = Sale::with(['customer'])
             ->where('due_amount', '>', 0)
             ->when($from, fn($q) => $q->whereDate('sale_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('sale_date', '<=', $to))
-            ->orderBy('sale_date', 'desc')
-            ->get();
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
+            ->when(!empty($hiddenProductIds), fn ($q) => $q->whereDoesntHave('items', fn ($sq) => $sq->whereIn('product_id', $hiddenProductIds)))
+            ->orderBy('sale_date', 'desc');
 
-        $visible = $sales->reject(fn($s) => \App\Support\SecretPos::isHidden((float) $s->total_amount));
+        $sales = SecretPos::excludeHiddenSaleRanges($sales, 'total_amount')->get();
+
+        $visible = $sales;
         $summary = [
             'total_due' => $visible->sum('due_amount'),
             'total_paid' => $visible->sum('paid_amount'),
@@ -1035,30 +1778,47 @@ class ReportController extends Controller
             'count' => $visible->count(),
         ];
 
-        $pdf = Pdf::loadView('reports.pdf.due-bills', compact('sales','summary','from','to'))
+        $sales = $visible->values();
+        if (PrivacyModeService::isActiveForUser($request->user()) && PrivacyModeService::shouldMaskForCurrentPage()) {
+            PrivacyModeService::applyDailyInvoiceLabels($sales);
+        }
+        $pdf = Pdf::loadView('reports.pdf.due-bills', compact('sales','summary','from','to','controls'))
             ->setPaper('a4', 'portrait');
         return $pdf->download('due-bills-report.pdf');
     }
 
     public function dueBillsCsv(Request $request)
     {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $hiddenProductIds = $this->hiddenProductIds($request);
+
         [$from, $to] = $this->dateRange($request);
         $sales = Sale::with(['customer'])
             ->where('due_amount', '>', 0)
             ->when($from, fn($q) => $q->whereDate('sale_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('sale_date', '<=', $to))
-            ->orderBy('sale_date', 'desc')
-            ->get();
+            ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
+            ->when(!empty($hiddenProductIds), fn ($q) => $q->whereDoesntHave('items', fn ($sq) => $sq->whereIn('product_id', $hiddenProductIds)))
+            ->orderBy('sale_date', 'desc');
+
+        $sales = SecretPos::excludeHiddenSaleRanges($sales, 'total_amount')->get();
+
+        if (PrivacyModeService::isActiveForUser($request->user()) && PrivacyModeService::shouldMaskForCurrentPage()) {
+            PrivacyModeService::applyDailyInvoiceLabels($sales);
+        }
 
         $rows = [['Date','Invoice','Customer','Total','Paid','Due','Status']];
         foreach ($sales as $s) {
+            $hideInvoice = !empty($controls['hide_invoice_details']);
+            $hidePayments = !empty($controls['hide_supplier_payments']) || $hideInvoice;
             $rows[] = [
                 optional($s->sale_date)->toDateString(),
-                $s->sale_no,
-                $s->customer?->name ?? 'Walk-in',
-                \App\Support\SecretPos::maskForSale((float) $s->total_amount, (float) $s->total_amount),
-                \App\Support\SecretPos::maskForSale((float) $s->total_amount, (float) $s->paid_amount),
-                \App\Support\SecretPos::maskForSale((float) $s->total_amount, (float) $s->due_amount),
+                $hideInvoice ? 'HIDDEN' : PrivacyModeService::displayInvoiceNumber($s),
+                !empty($controls['hide_supplier_names']) ? 'Hidden' : ($s->customer?->name ?? 'Walk-in'),
+                $this->maskCurrencyForControls((float) $s->total_amount, $controls, !empty($controls['hide_total_sales']) || $hideInvoice),
+                $this->maskCurrencyForControls((float) $s->paid_amount, $controls, $hidePayments),
+                $this->maskCurrencyForControls((float) $s->due_amount, $controls, $hidePayments),
                 $s->payment_status,
             ];
         }
@@ -1195,5 +1955,49 @@ class ReportController extends Controller
         }
         Setting::set('fx_usd_lkr', (string) $val, 'text', 'general');
         return back()->with('success', 'Manual USD→LKR rate saved.');
+    }
+
+    public function neverSold(Request $request)
+    {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $stores = \App\Models\Store::where('is_active', true)->orderBy('name')->get();
+        
+        $query = \App\Models\Product::with(['category', 'brand'])
+            ->whereDoesntHave('saleItems', function($q) use ($request) {
+                if ($request->filled('store_id')) {
+                    $q->whereHas('sale', function($sq) use ($request) {
+                        $sq->where('store_id', $request->input('store_id'));
+                    });
+                }
+            });
+            
+        $products = $query->paginate(50)->withQueryString();
+        
+        return view('reports.unsold', compact('products', 'controls'));
+    }
+
+    public function unsoldRecently(Request $request)
+    {
+        $controls = $this->visibilityControls($request);
+        $this->ensureReportsVisible($controls);
+        $stores = \App\Models\Store::where('is_active', true)->orderBy('name')->get();
+        
+        $months = $request->input('months', 3);
+        $date = \Carbon\Carbon::now()->subMonths($months);
+        
+        $query = \App\Models\Product::with(['category', 'brand'])
+            ->whereDoesntHave('saleItems', function($q) use ($request, $date) {
+                $q->whereHas('sale', function($sq) use ($request, $date) {
+                    $sq->where('sale_date', '>=', $date);
+                    if ($request->filled('store_id')) {
+                        $sq->where('store_id', $request->input('store_id'));
+                    }
+                });
+            });
+            
+        $products = $query->paginate(50)->withQueryString();
+        
+        return view('reports.unsold', compact('products', 'controls', 'months'));
     }
 }

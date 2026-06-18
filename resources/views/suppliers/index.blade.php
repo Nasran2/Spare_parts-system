@@ -4,6 +4,9 @@
 @section('page-title', 'Supplier Management')
 
 @section('content')
+@php
+    $controls = is_array($controls ?? null) ? $controls : [];
+@endphp
 <div class="space-y-6">
     @if(session('success'))
         <div class="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg">
@@ -40,8 +43,8 @@
                         <i class="fas fa-truck text-blue-600 text-xl"></i>
                     </div>
                     <div>
-                        <h3 class="font-bold text-gray-800">{{ $supplier->name }}</h3>
-                        <p class="text-xs text-gray-500">{{ $supplier->company_name ?? 'Individual' }}</p>
+                        <h3 class="font-bold text-gray-800">{{ !empty($controls['hide_supplier_names']) ? 'Hidden Supplier' : $supplier->name }}</h3>
+                        <p class="text-xs text-gray-500">{{ !empty($controls['hide_supplier_names']) ? 'Hidden' : ($supplier->company_name ?? 'Individual') }}</p>
                     </div>
                 </div>
                 @if($supplier->is_active)
@@ -54,15 +57,15 @@
             <div class="space-y-2 text-sm">
                 <div class="flex items-center text-gray-600">
                     <i class="fas fa-phone w-5 text-blue-600"></i>
-                    <span>{{ $supplier->phone ?? 'N/A' }}</span>
+                    <span>{{ !empty($controls['hide_supplier_names']) ? 'Hidden' : ($supplier->phone ?? 'N/A') }}</span>
                 </div>
                 <div class="flex items-center text-gray-600">
                     <i class="fas fa-envelope w-5 text-blue-600"></i>
-                    <span class="truncate">{{ $supplier->email ?? 'N/A' }}</span>
+                    <span class="truncate">{{ !empty($controls['hide_supplier_names']) ? 'Hidden' : ($supplier->email ?? 'N/A') }}</span>
                 </div>
                 <div class="flex items-start text-gray-600">
                     <i class="fas fa-map-marker-alt w-5 text-blue-600 mt-1"></i>
-                    <span class="flex-1">{{ $supplier->address ?? 'No address' }}</span>
+                    <span class="flex-1">{{ !empty($controls['hide_supplier_names']) ? 'Hidden' : ($supplier->address ?? 'No address') }}</span>
                 </div>
             </div>
 

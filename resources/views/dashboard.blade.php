@@ -6,9 +6,28 @@
 @section('content')
 <div class="space-y-6">
     @php
+        $dashboardControls = is_array($dashboardControls ?? null) ? $dashboardControls : [];
+        $priceVisiblePct = (float) ($dashboardControls['price_visible_percentage'] ?? 100);
+        $profitVisiblePct = (float) ($dashboardControls['profit_visible_percentage'] ?? 100);
+        $qtyVisiblePct = (float) ($dashboardControls['qty_visible_percentage'] ?? 100);
+        $stockVisiblePct = (float) ($dashboardControls['stock_visible_percentage'] ?? 100);
+
+        $applyPct = function ($value, $pct) {
+            $pct = max(0, min(100, (float) $pct));
+            return (float) $value * ($pct / 100);
+        };
+
         // Secret POS: ranges to hide amounts
         $secretRanges = \App\Models\Setting::get('secretpos.hidden_ranges', []);
-        $maskAmount = function($amount) use ($secretRanges) {
+        $maskAmount = function($amount) use ($secretRanges, $dashboardControls, $priceVisiblePct, $applyPct) {
+            if (\App\Services\PrivacyModeService::isActiveForUser(auth()->user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
+                return \App\Services\PrivacyModeService::maskAmount((float) $amount);
+            }
+
+            if (!empty($dashboardControls['hide_price_wise_data'])) {
+                return '—';
+            }
+
             foreach ((array)$secretRanges as $r) {
                 $min = (int)($r['min'] ?? 0);
                 $max = (int)($r['max'] ?? PHP_INT_MAX);
@@ -17,7 +36,34 @@
                     return '—';
                 }
             }
-            return number_format($amount, 2);
+
+            $masked = $applyPct((float) $amount, $priceVisiblePct);
+            $roundToWhole = $priceVisiblePct < 100;
+
+            return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
+        };
+        $maskProfitAmount = function($amount) use ($secretRanges, $dashboardControls, $profitVisiblePct, $applyPct) {
+            if (\App\Services\PrivacyModeService::isActiveForUser(auth()->user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
+                return \App\Services\PrivacyModeService::maskAmount((float) $amount);
+            }
+
+            if (!empty($dashboardControls['hide_profit_loss'])) {
+                return '—';
+            }
+
+            foreach ((array)$secretRanges as $r) {
+                $min = (int)($r['min'] ?? 0);
+                $max = (int)($r['max'] ?? PHP_INT_MAX);
+                $hide = (bool)($r['hide'] ?? false);
+                if ($hide && $amount >= $min && $amount <= $max) {
+                    return '—';
+                }
+            }
+
+            $masked = $applyPct((float) $amount, $profitVisiblePct);
+            $roundToWhole = $profitVisiblePct < 100;
+
+            return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
         };
     @endphp
     
@@ -66,14 +112,16 @@
     </div>
 
     <!-- KPI Cards -->
+    @if(empty($dashboardControls['hide_dashboard_cards']))
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         
         <!-- Total Sales -->
+        @if(empty($dashboardControls['hide_total_sales']))
         <div class="stat-card bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-gray-600 mb-1">Total Sales</p>
-                    <h3 class="text-2xl md:text-3xl font-bold text-gray-800">{{ $currency }} {{ number_format($totalSales ?? 0, 2) }}</h3>
+                    <h3 class="text-2xl md:text-3xl font-bold text-gray-800">{{ $currency }} {{ $maskAmount($totalSales ?? 0) }}</h3>
                     <p class="text-xs {{ $salesChangePercent >= 0 ? 'text-green-600' : 'text-red-600' }} mt-2">
                         <i class="fas fa-arrow-{{ $salesChangePercent >= 0 ? 'up' : 'down' }} mr-1"></i> {{ abs($salesChangePercent) }}% {{ $salesChangePercent >= 0 ? 'increase' : 'decrease' }} from last period
                     </p>
@@ -83,13 +131,15 @@
                 </div>
             </div>
         </div>
+        @endif
 
         <!-- Total Purchase -->
+        @if(empty($dashboardControls['hide_total_purchase']))
         <div class="stat-card bg-white rounded-xl shadow-md p-6 border-l-4 border-orange-500">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-gray-600 mb-1">Total Purchase</p>
-                    <h3 class="text-2xl md:text-3xl font-bold text-gray-800">{{ $currency }} {{ number_format($totalPurchase ?? 0, 2) }}</h3>
+                    <h3 class="text-2xl md:text-3xl font-bold text-gray-800">{{ $currency }} {{ $maskAmount($totalPurchase ?? 0) }}</h3>
                     <p class="text-xs {{ $purchaseChangePercent >= 0 ? 'text-orange-600' : 'text-green-600' }} mt-2">
                         <i class="fas fa-arrow-{{ $purchaseChangePercent >= 0 ? 'up' : 'down' }} mr-1"></i> {{ abs($purchaseChangePercent) }}% {{ $purchaseChangePercent >= 0 ? 'increase' : 'decrease' }} from last period
                     </p>
@@ -99,13 +149,15 @@
                 </div>
             </div>
         </div>
+        @endif
 
         <!-- Net Profit -->
+        @if(empty($dashboardControls['hide_profit_loss']))
         <div class="stat-card bg-white rounded-xl shadow-md p-6 border-l-4 border-green-500">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-gray-600 mb-1">Net Profit</p>
-                    <h3 class="text-2xl md:text-3xl font-bold text-gray-800">{{ $currency }} {{ number_format($netProfit ?? 0, 2) }}</h3>
+                    <h3 class="text-2xl md:text-3xl font-bold text-gray-800">{{ $currency }} {{ $maskProfitAmount($netProfit ?? 0) }}</h3>
                     <p class="text-xs {{ $profitChangePercent >= 0 ? 'text-green-600' : 'text-red-600' }} mt-2">
                         <i class="fas fa-arrow-{{ $profitChangePercent >= 0 ? 'up' : 'down' }} mr-1"></i> {{ abs($profitChangePercent) }}% {{ $profitChangePercent >= 0 ? 'increase' : 'decrease' }} from last period
                     </p>
@@ -115,13 +167,15 @@
                 </div>
             </div>
         </div>
+        @endif
 
         <!-- Invoice Due -->
+        @if(empty($dashboardControls['hide_invoice_details']))
         <div class="stat-card bg-white rounded-xl shadow-md p-6 border-l-4 border-red-500">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-gray-600 mb-1">Invoice Due</p>
-                    <h3 class="text-2xl md:text-3xl font-bold text-gray-800">{{ $currency }} {{ number_format($invoiceDue ?? 0, 2) }}</h3>
+                    <h3 class="text-2xl md:text-3xl font-bold text-gray-800">{{ $currency }} {{ $maskAmount($invoiceDue ?? 0) }}</h3>
                     <p class="text-xs text-red-600 mt-2">
                         <i class="fas fa-exclamation-triangle mr-1"></i> {{ $dueInvoiceCount ?? 0 }} invoices
                     </p>
@@ -131,9 +185,12 @@
                 </div>
             </div>
         </div>
+        @endif
     </div>
+    @endif
 
     <!-- Secondary Stats -->
+    @if(empty($dashboardControls['hide_widgets']))
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
         
         <!-- Total Expenses -->
@@ -141,7 +198,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-gray-600 mb-1">Total Expenses</p>
-                    <h3 class="text-2xl font-bold text-gray-800">{{ $currency }} {{ number_format($totalExpenses ?? 0, 2) }}</h3>
+                    <h3 class="text-2xl font-bold text-gray-800">{{ $currency }} {{ $maskAmount($totalExpenses ?? 0) }}</h3>
                 </div>
                 <div class="w-12 h-12 gradient-purple rounded-full flex items-center justify-center">
                     <i class="fas fa-wallet text-white text-xl"></i>
@@ -167,7 +224,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-gray-600 mb-1">Low Stock Items</p>
-                    <h3 class="text-2xl font-bold text-gray-800">{{ number_format($lowStockItems ?? 0) }}</h3>
+                    <h3 class="text-2xl font-bold text-gray-800">{{ !empty($dashboardControls['hide_actual_stock_count']) ? '—' : number_format($applyPct(($lowStockItems ?? 0), $qtyVisiblePct)) }}</h3>
                 </div>
                 <div class="w-12 h-12 bg-red-500 rounded-full flex items-center justify-center">
                     <i class="fas fa-exclamation-triangle text-white text-xl"></i>
@@ -175,8 +232,73 @@
             </div>
         </div>
     </div>
+    @endif
+
+    @if(($chequeReminders ?? collect())->count() > 0)
+    <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-indigo-500">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-bold text-gray-800">
+                <i class="fas fa-money-check-alt text-indigo-600 mr-2"></i>
+                Cheque Payment Reminders
+            </h3>
+            <span class="text-xs font-semibold text-indigo-700 bg-indigo-50 px-3 py-1 rounded-full">{{ ($chequeReminders ?? collect())->count() }} pending</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-gray-200">
+                        <th class="text-left py-3 px-2 text-gray-600 font-semibold">Date</th>
+                        <th class="text-left py-3 px-2 text-gray-600 font-semibold">Cheque No</th>
+                        <th class="text-left py-3 px-2 text-gray-600 font-semibold">Customer</th>
+                        <th class="text-right py-3 px-2 text-gray-600 font-semibold">Amount</th>
+                        <th class="text-right py-3 px-2 text-gray-600 font-semibold">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($chequeReminders as $cheque)
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        <td class="py-3 px-2">
+                            <div class="font-semibold text-gray-800">{{ $cheque->cheque_date?->format('Y-m-d') }}</div>
+                            <div class="text-xs {{ $cheque->cheque_date?->isPast() ? 'text-red-600' : 'text-gray-500' }}">
+                                {{ $cheque->cheque_date?->diffForHumans() }}
+                            </div>
+                        </td>
+                        <td class="py-3 px-2 text-gray-700">
+                            <div class="font-semibold">{{ $cheque->cheque_number }}</div>
+                            <div class="text-xs text-gray-500">{{ $cheque->bank_name ?: 'Bank not set' }}</div>
+                        </td>
+                        <td class="py-3 px-2 text-gray-600">{{ $cheque->customer->name ?? 'Customer' }}</td>
+                        <td class="py-3 px-2 text-right font-semibold text-gray-800">{{ $currency }} {{ $maskAmount($cheque->amount) }}</td>
+                        <td class="py-3 px-2">
+                            @if($canManageChequePayments ?? false)
+                            <div class="flex items-center justify-end gap-2">
+                                <form method="POST" action="{{ route('cheque-payments.pass', $cheque) }}" class="js-cheque-action-form" data-action-label="pass" data-cheque-date="{{ $cheque->cheque_date?->format('Y-m-d') }}">
+                                    @csrf
+                                    <button class="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-xs font-semibold">
+                                        <i class="fas fa-check mr-1"></i>Pass
+                                    </button>
+                                </form>
+                                <form method="POST" action="{{ route('cheque-payments.return', $cheque) }}" class="js-cheque-action-form" data-action-label="return" data-cheque-date="{{ $cheque->cheque_date?->format('Y-m-d') }}">
+                                    @csrf
+                                    <button class="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-xs font-semibold">
+                                        <i class="fas fa-undo mr-1"></i>Return
+                                    </button>
+                                </form>
+                            </div>
+                            @else
+                            <span class="block text-right text-xs text-gray-500">View only</span>
+                            @endif
+                        </td>
+                    </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    </div>
+    @endif
 
     <!-- Charts Row -->
+    @if(empty($dashboardControls['hide_charts']))
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         <!-- Top Selling Products -->
@@ -204,7 +326,7 @@
                         </div>
                     </div>
                     <div class="text-right">
-                        <p class="font-bold text-gray-800">{{ $product->sold_quantity }} sold</p>
+                        <p class="font-bold text-gray-800">{{ !empty($dashboardControls['hide_qty_wise_data']) ? '—' : number_format(round($applyPct($product->sold_quantity, $qtyVisiblePct)), 0) }} sold</p>
                         <p class="text-xs text-green-600">{{ $currency }} {{ $maskAmount($product->total_sales) }}</p>
                     </div>
                 </div>
@@ -217,8 +339,10 @@
             </div>
         </div>
     </div>
+    @endif
 
     <!-- Recent Transactions & Low Stock Alerts -->
+    @if(empty($dashboardControls['hide_tables']))
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         <!-- Recent Sales -->
@@ -247,8 +371,8 @@
                         @forelse($safeRecentSales as $sale)
                         <tr class="border-b border-gray-100 hover:bg-gray-50">
                             <td class="py-3 px-2 font-medium text-gray-800">{{ $sale->sale_no }}</td>
-                            <td class="py-3 px-2 text-gray-600">{{ $sale->customer->name ?? 'Walk-in' }}</td>
-                            <td class="py-3 px-2 text-right font-semibold text-gray-800">{{ $currency }} {{ $maskAmount($sale->total_amount) }}</td>
+                            <td class="py-3 px-2 text-gray-600">{{ !empty($dashboardControls['hide_supplier_names']) ? 'Hidden' : ($sale->customer->name ?? 'Walk-in') }}</td>
+                            <td class="py-3 px-2 text-right font-semibold text-gray-800">{{ !empty($dashboardControls['hide_invoice_details']) ? '—' : ($currency . ' ' . $maskAmount($sale->total_amount)) }}</td>
                             <td class="py-3 px-2 text-center">
                                 @if($sale->payment_status === 'paid')
                                     <span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">Paid</span>
@@ -292,12 +416,12 @@
                             <i class="fas fa-box text-red-600"></i>
                         </div>
                         <div>
-                            <p class="font-semibold text-gray-800">{{ $product->name }}</p>
+                            <p class="font-semibold text-gray-800">{{ !empty($dashboardControls['hide_product_wise_data']) ? 'Hidden Product' : $product->name }}</p>
                             <p class="text-xs text-gray-500">{{ $product->categories->pluck('name')->join(', ') ?: 'Uncategorized' }}</p>
                         </div>
                     </div>
                     <div class="text-right">
-                        <p class="font-bold text-red-600">{{ $product->stock_quantity }} left</p>
+                        <p class="font-bold text-red-600">{{ !empty($dashboardControls['hide_actual_stock_quantity']) ? '—' : number_format(round($applyPct($product->stock_quantity, $stockVisiblePct)), 0) }} left</p>
                         <p class="text-xs text-gray-500">Alert: {{ $product->alert_quantity }}</p>
                     </div>
                 </div>
@@ -310,8 +434,10 @@
             </div>
         </div>
     </div>
+    @endif
 
     <!-- Quick Actions -->
+    @if(empty($dashboardControls['hide_widgets']))
     <div class="bg-white rounded-xl shadow-md p-6">
         <h3 class="text-lg font-bold text-gray-800 mb-4">
             <i class="fas fa-bolt text-yellow-500 mr-2"></i>
@@ -342,6 +468,33 @@
                 <i class="fas fa-truck text-3xl mb-2"></i>
                 <span class="text-sm font-medium">Add Supplier</span>
             </a>
+        </div>
+    </div>
+    @endif
+</div>
+
+<div id="cheque-confirm-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 px-4">
+    <div class="w-full max-w-md rounded-xl bg-white shadow-2xl">
+        <div class="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+            <div>
+                <h3 class="text-lg font-bold text-gray-900">Confirm Early Cheque Action</h3>
+                <p class="text-xs text-gray-500 mt-1">The cheque date has not arrived yet.</p>
+            </div>
+            <button type="button" id="cheque-confirm-close" class="h-9 w-9 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="px-5 py-4">
+            <div class="flex items-start gap-3 rounded-lg bg-amber-50 border border-amber-200 p-3">
+                <div class="mt-0.5 h-9 w-9 shrink-0 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <p id="cheque-confirm-message" class="text-sm leading-6 text-amber-900"></p>
+            </div>
+        </div>
+        <div class="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-4">
+            <button type="button" id="cheque-confirm-cancel" class="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 font-semibold">Cancel</button>
+            <button type="button" id="cheque-confirm-submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 font-semibold">Confirm</button>
         </div>
     </div>
 </div>
@@ -439,6 +592,64 @@
         } else {
             setActive('today');
         }
+
+        const chequeConfirmModal = document.getElementById('cheque-confirm-modal');
+        const chequeConfirmMessage = document.getElementById('cheque-confirm-message');
+        const chequeConfirmSubmit = document.getElementById('cheque-confirm-submit');
+        const chequeConfirmClose = document.getElementById('cheque-confirm-close');
+        const chequeConfirmCancel = document.getElementById('cheque-confirm-cancel');
+        let pendingChequeForm = null;
+
+        function closeChequeConfirmModal() {
+            chequeConfirmModal?.classList.add('hidden');
+            chequeConfirmModal?.classList.remove('flex');
+            pendingChequeForm = null;
+        }
+
+        [chequeConfirmClose, chequeConfirmCancel].forEach((button) => {
+            button?.addEventListener('click', closeChequeConfirmModal);
+        });
+
+        chequeConfirmModal?.addEventListener('click', (event) => {
+            if (event.target === chequeConfirmModal) {
+                closeChequeConfirmModal();
+            }
+        });
+
+        chequeConfirmSubmit?.addEventListener('click', () => {
+            if (!pendingChequeForm) return;
+            pendingChequeForm.dataset.confirmed = '1';
+            pendingChequeForm.submit();
+        });
+
+        document.querySelectorAll('.js-cheque-action-form').forEach((form) => {
+            form.addEventListener('submit', (event) => {
+                if (form.dataset.confirmed === '1') return;
+
+                const chequeDate = form.dataset.chequeDate || '';
+                const action = form.dataset.actionLabel || 'process';
+                if (!chequeDate) return;
+
+                const todayDate = new Date();
+                todayDate.setHours(0, 0, 0, 0);
+                const chequeDateObj = new Date(chequeDate + 'T00:00:00');
+
+                if (chequeDateObj > todayDate) {
+                    event.preventDefault();
+                    pendingChequeForm = form;
+                    if (chequeConfirmMessage) {
+                        chequeConfirmMessage.textContent = `This cheque date is ${chequeDate}. Do you really want to ${action} it before the cheque date?`;
+                    }
+                    chequeConfirmSubmit.textContent = action === 'return' ? 'Confirm Return' : 'Confirm Pass';
+                    chequeConfirmSubmit.classList.toggle('bg-red-600', action === 'return');
+                    chequeConfirmSubmit.classList.toggle('hover:bg-red-700', action === 'return');
+                    chequeConfirmSubmit.classList.toggle('bg-indigo-600', action !== 'return');
+                    chequeConfirmSubmit.classList.toggle('hover:bg-indigo-700', action !== 'return');
+                    chequeConfirmModal?.classList.remove('hidden');
+                    chequeConfirmModal?.classList.add('flex');
+                }
+            });
+        });
     })();
 </script>
 @endsection

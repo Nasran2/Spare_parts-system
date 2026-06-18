@@ -4,6 +4,26 @@
 @section('page-title', 'Purchase Management')
 
 @section('content')
+@php
+    $controls = is_array($controls ?? null) ? $controls : [];
+    $priceVisiblePct = (float) ($controls['price_visible_percentage'] ?? 100);
+    $applyPct = function ($value, $pct) {
+        $pct = max(0, min(100, (float) $pct));
+        return (float) $value * ($pct / 100);
+    };
+    $maskMoney = function ($value, $forceHide = false) use ($controls, $priceVisiblePct, $applyPct) {
+        if ($forceHide || !empty($controls['hide_price_wise_data'])) {
+            return '—';
+        }
+
+        $masked = $applyPct((float) $value, $priceVisiblePct);
+
+        $roundToWhole = $priceVisiblePct < 100;
+
+
+        return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
+    };
+@endphp
 <div class="space-y-6">
     
     <!-- Header Actions -->
@@ -50,7 +70,7 @@
                             <span class="text-sm text-gray-600">{{ optional($purchase->purchase_date)->format('M d, Y') }}</span>
                         </td>
                         <td class="px-6 py-4 text-right">
-                            <span class="font-semibold text-gray-800">${{ number_format($purchase->total_amount ?? 0, 2) }}</span>
+                            <span class="font-semibold text-gray-800">${{ $maskMoney(($purchase->total_amount ?? 0), !empty($controls['hide_total_purchase']) || !empty($controls['hide_invoice_details'])) }}</span>
                         </td>
                         <td class="px-6 py-4 text-center">
                             @if($purchase->payment_status === 'paid')

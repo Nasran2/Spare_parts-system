@@ -75,17 +75,31 @@
                     @php
                         $selectedCategories = old('categories', $product->categories->pluck('id')->toArray());
                         if(empty($selectedCategories)) $selectedCategories = [null];
+                        $mainCategories = ($categories ?? collect())->whereNull('parent_id')->sortBy('name');
                     @endphp
                     @foreach($selectedCategories as $selectedCategory)
+                    @php
+                        $selectedCategoryModel = $selectedCategory ? ($categories ?? collect())->firstWhere('id', (int) $selectedCategory) : null;
+                        $selectedMainId = $selectedCategoryModel ? ($selectedCategoryModel->parent_id ?: $selectedCategoryModel->id) : null;
+                        $selectedChildId = ($selectedCategoryModel && $selectedCategoryModel->parent_id) ? $selectedCategoryModel->id : null;
+                    @endphp
                     <div class="flex gap-2 category-row">
-                        <select name="categories[]" class="category-select flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                            <option value="">Select Category</option>
-                            @foreach($categories as $category)
-                                <option value="{{ $category->id }}" {{ $selectedCategory == $category->id ? 'selected' : '' }}>
-                                    {{ $category->name }}
-                                </option>
-                            @endforeach
-                        </select>
+                        <div class="flex-1 space-y-2">
+                            <select class="category-parent-select w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" data-selected-main-id="{{ $selectedMainId ?? '' }}">
+                                <option value="">Select Main Category</option>
+                                @foreach($mainCategories as $category)
+                                    <option value="{{ $category->id }}" {{ (string) $selectedMainId === (string) $category->id ? 'selected' : '' }}>
+                                        {{ $category->name }} ({{ (int) ($category->products_count ?? 0) }})
+                                    </option>
+                                @endforeach
+                            </select>
+
+                            <select class="category-child-select w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 hidden" data-selected-child-id="{{ $selectedChildId ?? '' }}">
+                                <option value="">Select Sub Category (optional)</option>
+                            </select>
+
+                            <input type="hidden" name="categories[]" class="category-final" value="{{ $selectedCategory ?? '' }}">
+                        </div>
                         <button type="button" onclick="removeRow(this)" class="px-3 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition remove-btn {{ count($selectedCategories) > 1 ? '' : 'hidden' }}">
                             <i class="fas fa-trash"></i>
                         </button>
@@ -321,6 +335,95 @@
                 @enderror
             </div>
 
+            <!-- Store Stock Distribution -->
+            <div class="md:col-span-2">
+                <div class="border border-green-200 rounded-xl overflow-hidden bg-green-50">
+                    <div class="bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-3 flex items-center justify-between">
+                        <div class="flex items-center text-white">
+                            <i class="fas fa-store mr-2"></i>
+                            <span class="font-semibold text-sm">Store Stock & Availability</span>
+                        </div>
+                        <span class="text-xs text-green-100">Set stock per store. Exclude stores where this product shouldn't appear.</span>
+                    </div>
+                    <div class="p-4 space-y-3">
+                        @forelse($stores as $store)
+                        @php
+                            $isDefault = $store->is_default;
+                            $dbStock = $product->storeStocks->where('store_id', $store->id)->first()?->quantity;
+                            if ($dbStock !== null) {
+                                $dbStock = (float) $dbStock;
+                            }
+                            $oldStoreStock = old("store_stock.{$store->id}", $dbStock ?? ($isDefault ? old('stock_quantity', $product->stock_quantity) : ''));
+                            $isExcluded = in_array($store->id, old('excluded_stores', $product->excludedStores->pluck('id')->toArray()));
+                        @endphp
+                        <div class="flex items-center gap-3 p-3 rounded-lg border bg-white {{ $isDefault ? 'border-green-400 ring-1 ring-green-300' : 'border-gray-200' }} {{ $isExcluded ? 'opacity-50 bg-red-50' : '' }}" id="store-row-{{ $store->id }}">
+                            <!-- Store Info -->
+                            <div class="flex-shrink-0 w-40">
+                                <div class="flex items-center gap-1">
+                                    @if($isDefault)
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-800">
+                                            <i class="fas fa-star mr-1 text-yellow-500"></i>Main
+                                        </span>
+                                    @endif
+                                    <span class="text-sm font-semibold text-gray-700">{{ $store->name }}</span>
+                                </div>
+                                @if($store->address)
+                                <p class="text-xs text-gray-400 mt-0.5 truncate">{{ $store->address }}</p>
+                                @endif
+                            </div>
+
+                            <!-- Stock Qty Input -->
+                            <div class="flex-1">
+                                <label class="block text-xs font-semibold text-gray-500 mb-1">Stock Qty</label>
+                                <input
+                                    type="number"
+                                    name="store_stock[{{ $store->id }}]"
+                                    id="store_stock_{{ $store->id }}"
+                                    value="{{ $oldStoreStock }}"
+                                    min="0"
+                                    step="1"
+                                    placeholder="{{ $isDefault ? 'Auto-filled from Stock Quantity' : '0' }}"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 text-sm store-stock-input {{ $isDefault ? 'border-green-300 bg-green-50' : '' }}"
+                                    data-store-id="{{ $store->id }}"
+                                    {{ $isExcluded ? 'disabled' : '' }}
+                                >
+                            </div>
+
+                            <!-- Exclude Toggle -->
+                            <div class="flex-shrink-0 text-center">
+                                <label class="block text-xs font-semibold text-gray-500 mb-1">Exclude</label>
+                                <label class="relative inline-flex items-center cursor-pointer mt-1">
+                                    <input
+                                        type="checkbox"
+                                        name="excluded_stores[]"
+                                        value="{{ $store->id }}"
+                                        id="exclude_store_{{ $store->id }}"
+                                        {{ $isExcluded ? 'checked' : '' }}
+                                        class="sr-only peer"
+                                        onchange="toggleStoreExclusion({{ $store->id }}, this.checked)"
+                                        {{ $isDefault ? 'data-is-main=1' : '' }}
+                                    >
+                                    <div class="w-10 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-500"></div>
+                                </label>
+                            </div>
+
+                            <!-- Status Badge -->
+                            <div class="flex-shrink-0 w-20 text-center">
+                                <span id="store-status-{{ $store->id }}" class="text-xs font-semibold px-2 py-1 rounded-full {{ $isExcluded ? 'bg-red-100 text-red-700' : ($isDefault ? 'bg-green-100 text-green-700' : 'bg-blue-50 text-blue-600') }}">
+                                    {{ $isExcluded ? 'Excluded' : ($isDefault ? 'Main Store' : 'Active') }}
+                                </span>
+                            </div>
+                        </div>
+                        @empty
+                        <p class="text-sm text-gray-500 text-center py-4">No active stores found. <a href="{{ route('inventory-stores.index') }}" class="text-blue-600 hover:underline">Manage Stores</a></p>
+                        @endforelse
+                    </div>
+                    <div class="bg-green-50 border-t border-green-200 px-4 py-2">
+                        <p class="text-xs text-gray-500"><i class="fas fa-info-circle text-green-600 mr-1"></i>The <strong>Main Store ⭐</strong> stock is auto-filled from the Stock Quantity field above. Toggle <strong>Exclude</strong> to hide a product from a specific store.</p>
+                    </div>
+                </div>
+            </div>
+
             <!-- Alert Quantity -->
             <div>
                 <label for="alert_quantity" class="block text-sm font-semibold text-gray-700 mb-2">
@@ -421,6 +524,122 @@
         </div>
     </form>
 
+    @if(auth()->user()?->hasPermission('view_product_prices'))
+    <div class="bg-white rounded-xl shadow-md p-6">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-5">
+            <div>
+                <h3 class="text-lg font-semibold text-gray-800">
+                    <i class="fas fa-tags text-purple-600 mr-2"></i>Price Options
+                </h3>
+                <p class="text-sm text-gray-600">Manage different cost, selling price, and stock balances for this product.</p>
+            </div>
+            @if(auth()->user()?->hasPermission('create_product_prices'))
+            <button type="button" onclick="document.getElementById('add-price-panel').classList.toggle('hidden')" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition">
+                <i class="fas fa-plus mr-2"></i>Add New Price
+            </button>
+            @endif
+        </div>
+
+        @if($errors->any())
+            <div class="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+                {{ $errors->first() }}
+            </div>
+        @endif
+
+        @if(auth()->user()?->hasPermission('create_product_prices'))
+        <div id="add-price-panel" class="hidden mb-6 rounded-xl border border-purple-100 bg-purple-50/40 p-4">
+            <form action="{{ route('product-prices.store') }}" method="POST" class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+                @csrf
+                <input type="hidden" name="product_id" value="{{ $product->id }}">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Cost Price</label>
+                    <input type="number" step="0.01" min="0" name="cost_price" value="{{ old('cost_price', $product->cost_price) }}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Selling Price</label>
+                    <input type="number" step="0.01" min="0" name="selling_price" value="{{ old('selling_price', $product->selling_price) }}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Stock Qty</label>
+                    <input type="number" step="0.001" min="0" name="stock_qty" value="{{ old('stock_qty', 0) }}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500">
+                </div>
+                <label class="inline-flex items-center gap-2 text-sm text-gray-700 pb-2">
+                    <input type="checkbox" name="is_default" value="1" class="rounded text-purple-600">
+                    Default
+                </label>
+                <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                    Save Price
+                </button>
+            </form>
+        </div>
+        @endif
+
+        <div class="overflow-x-auto">
+            <table class="w-full border-collapse">
+                <thead class="bg-gray-50 text-gray-700">
+                    <tr>
+                        <th class="px-3 py-2 border text-left text-sm">Cost Price</th>
+                        <th class="px-3 py-2 border text-left text-sm">Selling Price</th>
+                        <th class="px-3 py-2 border text-left text-sm">Stock Qty</th>
+                        <th class="px-3 py-2 border text-left text-sm">Status</th>
+                        <th class="px-3 py-2 border text-left text-sm">Default</th>
+                        <th class="px-3 py-2 border text-right text-sm">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse($product->prices as $price)
+                    <tr class="{{ $price->status !== 'active' ? 'bg-gray-50 text-gray-400' : 'bg-white' }}">
+                        <form action="{{ route('product-prices.update', $price) }}" method="POST">
+                            @csrf
+                            @method('PUT')
+                            <td class="px-3 py-2 border">
+                                <input type="number" step="0.01" min="0" name="cost_price" value="{{ $price->cost_price }}" class="w-32 px-2 py-1 border rounded-lg" {{ auth()->user()?->hasPermission('edit_product_prices') ? '' : 'readonly' }}>
+                            </td>
+                            <td class="px-3 py-2 border">
+                                <input type="number" step="0.01" min="0" name="selling_price" value="{{ $price->selling_price }}" class="w-32 px-2 py-1 border rounded-lg" {{ auth()->user()?->hasPermission('edit_product_prices') ? '' : 'readonly' }}>
+                            </td>
+                            <td class="px-3 py-2 border">
+                                <input type="number" step="0.001" min="0" name="stock_qty" value="{{ $price->stock_qty }}" class="w-28 px-2 py-1 border rounded-lg" {{ auth()->user()?->hasPermission('edit_product_prices') ? '' : 'readonly' }}>
+                            </td>
+                            <td class="px-3 py-2 border">
+                                <select name="status" class="px-2 py-1 border rounded-lg" {{ auth()->user()?->hasPermission('edit_product_prices') ? '' : 'disabled' }}>
+                                    <option value="active" {{ $price->status === 'active' ? 'selected' : '' }}>Active</option>
+                                    <option value="inactive" {{ $price->status === 'inactive' ? 'selected' : '' }}>Inactive</option>
+                                </select>
+                            </td>
+                            <td class="px-3 py-2 border">
+                                <label class="inline-flex items-center gap-2">
+                                    <input type="checkbox" name="is_default" value="1" class="rounded text-purple-600" {{ $price->is_default ? 'checked' : '' }} {{ auth()->user()?->hasPermission('edit_product_prices') ? '' : 'disabled' }}>
+                                    @if($price->is_default)
+                                        <span class="px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 text-xs font-semibold">Default</span>
+                                    @endif
+                                </label>
+                            </td>
+                            <td class="px-3 py-2 border text-right whitespace-nowrap">
+                                @if(auth()->user()?->hasPermission('edit_product_prices'))
+                                    <button type="submit" class="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">Edit</button>
+                                @endif
+                        </form>
+                                @if(auth()->user()?->hasPermission('delete_product_prices'))
+                                    <form action="{{ route('product-prices.destroy', $price) }}" method="POST" class="inline" onsubmit="return confirm('Remove this price option? Used sale prices will be made inactive instead of deleted.');">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 text-sm">Delete</button>
+                                    </form>
+                                @endif
+                            </td>
+                    </tr>
+                    @empty
+                    <tr>
+                        <td colspan="6" class="px-3 py-8 text-center text-gray-500 border">No price options yet.</td>
+                    </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    </div>
+    @endif
+
 </div>
 
 <!-- Category Modal -->
@@ -438,6 +657,16 @@
                 <label class="block text-sm font-semibold text-gray-700 mb-2">Category Name *</label>
                 <input type="text" id="category_name" name="name" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" required>
                 <p id="category_error" class="text-red-500 text-xs mt-1 hidden"></p>
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Parent Category (optional)</label>
+                <select id="category_parent_id" name="parent_id" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <option value="">None (Main Category)</option>
+                    @foreach($mainCategories as $parent)
+                        <option value="{{ $parent->id }}">{{ $parent->name }}</option>
+                    @endforeach
+                </select>
+                <p class="text-xs text-gray-500 mt-1">Select a parent to create a sub-category.</p>
             </div>
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-2">Description</label>
@@ -488,19 +717,88 @@
 </div>
 
 <script>
+// ===== Store Stock Logic =====
+const defaultStoreId = {{ $defaultStore ? $defaultStore->id : 'null' }};
+
+function toggleStoreExclusion(storeId, excluded) {
+    const input = document.getElementById('store_stock_' + storeId);
+    const row = document.getElementById('store-row-' + storeId);
+    const status = document.getElementById('store-status-' + storeId);
+    const excludeCheckbox = document.getElementById('exclude_store_' + storeId);
+
+    // Prevent excluding the main store
+    if (excluded && storeId === defaultStoreId) {
+        excludeCheckbox.checked = false;
+        showToast('error', 'Cannot exclude the main store');
+        return;
+    }
+
+    if (input) {
+        input.disabled = excluded;
+        if (excluded) {
+            input.value = '';
+        }
+    }
+    if (row) {
+        row.classList.toggle('opacity-50', excluded);
+        row.classList.toggle('bg-red-50', excluded);
+    }
+    if (status) {
+        if (excluded) {
+            status.className = 'text-xs font-semibold px-2 py-1 rounded-full bg-red-100 text-red-700';
+            status.textContent = 'Excluded';
+        } else {
+            const isMain = storeId === defaultStoreId;
+            status.className = 'text-xs font-semibold px-2 py-1 rounded-full ' + (isMain ? 'bg-green-100 text-green-700' : 'bg-blue-50 text-blue-600');
+            status.textContent = isMain ? 'Main Store' : 'Active';
+        }
+    }
+}
+
+// Sync main stock_quantity field → default store input
+document.addEventListener('DOMContentLoaded', function() {
+    const mainStockInput = document.getElementById('stock_quantity');
+    if (mainStockInput && defaultStoreId) {
+        const defaultStoreInput = document.getElementById('store_stock_' + defaultStoreId);
+        if (defaultStoreInput) {
+            // Live sync
+            mainStockInput.addEventListener('input', function() {
+                if (defaultStoreInput && !defaultStoreInput.disabled) {
+                    defaultStoreInput.value = this.value;
+                }
+            });
+        }
+    }
+});
+// ===== End Store Stock Logic =====
+
 // Dynamic Row Functions
 function addCategoryRow() {
     const wrapper = document.getElementById('categories-wrapper');
     const firstRow = wrapper.querySelector('.category-row');
     const newRow = firstRow.cloneNode(true);
-    
+
+    newRow.removeAttribute('data-wired');
+
+    const parentSelect = newRow.querySelector('.category-parent-select');
+    const childSelect = newRow.querySelector('.category-child-select');
+    const finalInput = newRow.querySelector('.category-final');
+
     // Reset selection
-    newRow.querySelector('select').value = "";
+    if (parentSelect) parentSelect.value = '';
+    if (childSelect) {
+        childSelect.innerHTML = '<option value="">Select Sub Category (optional)</option>';
+        childSelect.value = '';
+        childSelect.classList.add('hidden');
+        childSelect.dataset.selectedChildId = '';
+    }
+    if (finalInput) finalInput.value = '';
     
     // Show remove button
     newRow.querySelector('.remove-btn').classList.remove('hidden');
     
     wrapper.appendChild(newRow);
+    wireCategoryRow(newRow);
     updateRemoveButtons('categories-wrapper');
 }
 
@@ -558,6 +856,8 @@ function openCategoryModal() {
     document.getElementById('categoryModal').classList.remove('hidden');
     document.getElementById('category_name').value = '';
     document.getElementById('category_description').value = '';
+    const parentSelect = document.getElementById('category_parent_id');
+    if (parentSelect) parentSelect.value = '';
     document.getElementById('category_error').classList.add('hidden');
 }
 
@@ -582,24 +882,42 @@ document.getElementById('categoryForm').addEventListener('submit', async functio
         const data = await response.json();
         
         if (data.success) {
-            // Add to all dropdowns
-            const selects = document.querySelectorAll('.category-select');
-            selects.forEach(select => {
-                const option = new Option(data.category.name, data.category.id, false, false);
-                select.add(option);
-            });
-            
-            // Select in the last dropdown (or create new row if last is occupied)
+            // If it's a MAIN category, add it to all parent dropdowns
+            if (!data.category.parent_id) {
+                const parentSelects = document.querySelectorAll('.category-parent-select');
+                parentSelects.forEach(select => {
+                    const option = new Option(data.category.name, data.category.id, false, false);
+                    select.add(option);
+                });
+            }
+
+            // Pick a row to place this new category
             const wrapper = document.getElementById('categories-wrapper');
             const lastRow = wrapper.lastElementChild;
-            const lastSelect = lastRow.querySelector('select');
-            
-            if (lastSelect.value) {
+            const lastParent = lastRow?.querySelector('.category-parent-select');
+            const needsNewRow = !!(lastParent && lastParent.value);
+
+            if (needsNewRow) {
                 addCategoryRow();
-                const newLastSelect = wrapper.lastElementChild.querySelector('select');
-                newLastSelect.value = data.category.id;
+            }
+
+            const targetRow = wrapper.lastElementChild;
+            const targetParent = targetRow.querySelector('.category-parent-select');
+            const targetChild = targetRow.querySelector('.category-child-select');
+            const targetFinal = targetRow.querySelector('.category-final');
+
+            if (!data.category.parent_id) {
+                if (targetParent) targetParent.value = String(data.category.id);
+                if (targetChild) {
+                    targetChild.innerHTML = '<option value="">Select Sub Category (optional)</option>';
+                    targetChild.value = '';
+                    targetChild.classList.add('hidden');
+                }
+                if (targetFinal) targetFinal.value = String(data.category.id);
             } else {
-                lastSelect.value = data.category.id;
+                if (targetParent) targetParent.value = String(data.category.parent_id);
+                if (targetChild) targetChild.dataset.selectedChildId = String(data.category.id);
+                await loadSubcategoriesForRow(targetRow, String(data.category.id));
             }
             
             closeCategoryModal();
@@ -613,6 +931,84 @@ document.getElementById('categoryForm').addEventListener('submit', async functio
         document.getElementById('category_error').classList.remove('hidden');
     }
 });
+
+async function fetchSubcategories(parentId) {
+    const resp = await fetch(`{{ url('categories') }}/${parentId}/children`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    });
+    const data = await resp.json();
+    return Array.isArray(data.children) ? data.children : [];
+}
+
+async function loadSubcategoriesForRow(row, preferredChildId = null) {
+    const parentSelect = row.querySelector('.category-parent-select');
+    const childSelect = row.querySelector('.category-child-select');
+    const finalInput = row.querySelector('.category-final');
+    if (!parentSelect || !childSelect || !finalInput) return;
+
+    const parentId = (parentSelect.value || '').trim();
+    childSelect.innerHTML = '<option value="">Select Sub Category (optional)</option>';
+    childSelect.value = '';
+    childSelect.classList.add('hidden');
+
+    if (!parentId) {
+        finalInput.value = '';
+        return;
+    }
+
+    let children = [];
+    try {
+        children = await fetchSubcategories(parentId);
+    } catch (e) {
+        children = [];
+    }
+
+    if (!children.length) {
+        finalInput.value = parentId;
+        childSelect.classList.add('hidden');
+        return;
+    }
+
+    children.forEach(child => {
+        const label = `${child.name} (${Number(child.products_count || 0)})`;
+        const opt = new Option(label, child.id, false, false);
+        childSelect.add(opt);
+    });
+    childSelect.classList.remove('hidden');
+
+    const selectedChildId = preferredChildId || childSelect.dataset.selectedChildId || '';
+    if (selectedChildId) {
+        childSelect.value = String(selectedChildId);
+    }
+
+    finalInput.value = childSelect.value ? String(childSelect.value) : parentId;
+}
+
+function wireCategoryRow(row) {
+    const parentSelect = row.querySelector('.category-parent-select');
+    const childSelect = row.querySelector('.category-child-select');
+    const finalInput = row.querySelector('.category-final');
+    if (!parentSelect || !childSelect || !finalInput) return;
+
+    if (row.dataset.wired === 'true') return;
+    row.dataset.wired = 'true';
+
+    parentSelect.addEventListener('change', async () => {
+        childSelect.dataset.selectedChildId = '';
+        await loadSubcategoriesForRow(row);
+    });
+
+    childSelect.addEventListener('change', () => {
+        const parentId = (parentSelect.value || '').trim();
+        finalInput.value = childSelect.value ? String(childSelect.value) : parentId;
+    });
+
+    if (parentSelect.value) {
+        loadSubcategoriesForRow(row);
+    }
+}
+
+document.querySelectorAll('#categories-wrapper .category-row').forEach(wireCategoryRow);
 
 // Brand Modal Functions
 function openBrandModal() {

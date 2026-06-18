@@ -16,6 +16,29 @@
     </style>
 </head>
 <body>
+    @php
+        $controls = \App\Services\DashboardVisibilityService::configForUser(auth()->user());
+        $priceVisiblePct = (float) ($controls['price_visible_percentage'] ?? 100);
+        $applyPct = function ($value, $pct) {
+            $pct = max(0, min(100, (float) $pct));
+            return (float) $value * ($pct / 100);
+        };
+        $maskMoney = function ($value, $forceHide = false) use ($controls, $priceVisiblePct, $applyPct) {
+        if (\App\Services\PrivacyModeService::isActiveForUser(auth()->user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
+            return \App\Services\PrivacyModeService::maskAmount((float) $value);
+        }
+            if ($forceHide || !empty($controls['hide_price_wise_data'])) {
+                return '—';
+            }
+
+            $masked = $applyPct((float) $value, $priceVisiblePct);
+
+            $roundToWhole = $priceVisiblePct < 100;
+
+
+            return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
+        };
+    @endphp
     <?php $name = \App\Models\Setting::get('shop_name') ?? \App\Models\Setting::get('business_name');
           $addr = \App\Models\Setting::get('shop_address') ?? \App\Models\Setting::get('business_address');
           $phone = \App\Models\Setting::get('shop_phone') ?? \App\Models\Setting::get('business_phone'); ?>
@@ -42,11 +65,11 @@
         @forelse($sales as $s)
             <tr>
                 <td>{{ $s->sale_date?->toDateString() }}</td>
-                <td>{{ $s->sale_no }}</td>
+                <td>{{ !empty($controls['hide_invoice_details']) ? 'HIDDEN' : \App\Services\PrivacyModeService::displayInvoiceNumber($s) }}</td>
                 <td>{{ $s->customer?->name ?? 'Walk-in' }}</td>
-                <td class="right">{{ \App\Support\SecretPos::maskForSale($s->total_amount, $s->total_amount) }}</td>
-                <td class="right">{{ \App\Support\SecretPos::maskForSale($s->total_amount, $s->paid_amount) }}</td>
-                <td class="right">{{ \App\Support\SecretPos::maskForSale($s->total_amount, $s->due_amount) }}</td>
+                <td class="right">{{ $maskMoney($s->total_amount, !empty($controls['hide_invoice_details']) || !empty($controls['hide_total_sales'])) }}</td>
+                <td class="right">{{ $maskMoney($s->paid_amount, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
+                <td class="right">{{ $maskMoney($s->due_amount, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
                 <td>{{ ucfirst($s->payment_status) }}</td>
             </tr>
         @empty
@@ -56,11 +79,11 @@
     </table>
 
     <div class="summary">
-        <strong>Total Amount:</strong> {{ \App\Support\SecretPos::mask($summary['total_amount']) }}
+        <strong>Total Amount:</strong> {{ $maskMoney($summary['total_amount'], !empty($controls['hide_invoice_details']) || !empty($controls['hide_total_sales'])) }}
         &nbsp; | &nbsp;
-        <strong>Total Paid:</strong> {{ number_format($summary['total_paid'],2) }}
+        <strong>Total Paid:</strong> {{ $maskMoney($summary['total_paid'], !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}
         &nbsp; | &nbsp;
-        <strong>Total Due:</strong> {{ number_format($summary['total_due'],2) }}
+        <strong>Total Due:</strong> {{ $maskMoney($summary['total_due'], !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}
         &nbsp; | &nbsp;
         <strong>Bills:</strong> {{ $summary['count'] }}
     </div>

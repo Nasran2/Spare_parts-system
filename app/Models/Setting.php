@@ -19,14 +19,14 @@ class Setting extends Model
     public static function get($key, $default = null)
     {
         $setting = static::where('key', $key)->first();
-        
-        if (!$setting) {
+
+        if (! $setting) {
             return $default;
         }
 
         return match ($setting->type) {
             'boolean' => (bool) $setting->value,
-            'number' => (int) $setting->value,
+            'number' => is_numeric($setting->value) ? (float) $setting->value : $default,
             'json' => json_decode($setting->value, true),
             default => $setting->value,
         };

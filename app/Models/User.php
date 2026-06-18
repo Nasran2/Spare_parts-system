@@ -56,9 +56,33 @@ class User extends Authenticatable
         return $this->belongsTo(Role::class);
     }
 
+    public function stores()
+    {
+        return $this->belongsToMany(Store::class);
+    }
+
+    public function hasStoreAccess($storeId): bool
+    {
+        if ($this->hasRole(['Admin', 'Super Admin'])) {
+            return true;
+        }
+        return $this->stores()->where('store_id', $storeId)->exists();
+    }
+
     public function hasPermission($permission)
     {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
         return $this->role && $this->role->hasPermission($permission);
+    }
+
+    public function isSuperAdmin(): bool
+    {
+        $roleName = strtolower(trim((string) ($this->role?->name ?? '')));
+
+        return in_array($roleName, ['super admin', 'superadmin', 'super_admin'], true);
     }
 
     public function sales()

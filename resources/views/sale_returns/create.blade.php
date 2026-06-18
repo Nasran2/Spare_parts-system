@@ -4,6 +4,42 @@
 @section('page-title', 'Create Sale Return')
 
 @section('content')
+@php
+    $controls = \App\Services\DashboardVisibilityService::configForUser(auth()->user());
+    $priceVisiblePct = (float) ($controls['price_visible_percentage'] ?? 100);
+    $qtyVisiblePct = (float) ($controls['qty_visible_percentage'] ?? 100);
+    $stockVisiblePct = (float) ($controls['stock_visible_percentage'] ?? 100);
+    $applyPct = function ($value, $pct) {
+        $pct = max(0, min(100, (float) $pct));
+        return (float) $value * ($pct / 100);
+    };
+    $maskMoney = function ($value, $forceHide = false) use ($controls, $priceVisiblePct, $applyPct) {
+        if ($forceHide || !empty($controls['hide_price_wise_data'])) {
+            return '—';
+        }
+
+        $masked = $applyPct((float) $value, $priceVisiblePct);
+
+        $roundToWhole = $priceVisiblePct < 100;
+
+
+        return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
+    };
+    $maskQty = function ($value, $forceHide = false) use ($controls, $qtyVisiblePct, $applyPct) {
+        if ($forceHide || !empty($controls['hide_qty_wise_data'])) {
+            return '—';
+        }
+
+        return number_format(round($applyPct((float) $value, $qtyVisiblePct)), 0);
+    };
+    $maskStockQty = function ($value, $forceHide = false) use ($controls, $stockVisiblePct, $applyPct) {
+        if ($forceHide || !empty($controls['hide_qty_wise_data']) || !empty($controls['hide_actual_stock_quantity'])) {
+            return '—';
+        }
+
+        return number_format(round($applyPct((float) $value, $stockVisiblePct)), 0);
+    };
+@endphp
 <div class="space-y-6">
     
     <!-- Step 1: Select Sale -->
@@ -79,7 +115,7 @@
                         <td class="p-3">{{ $s->sale_no }}</td>
                         <td class="p-3">{{ $s->sale_date->format('Y-m-d') }}</td>
                         <td class="p-3">{{ $s->customer->name ?? 'Walk-in' }}</td>
-                        <td class="p-3">{{ number_format($s->total_amount, 2) }}</td>
+                        <td class="p-3">{{ $maskMoney($s->total_amount, !empty($controls['hide_total_sales']) || !empty($controls['hide_invoice_details'])) }}</td>
                         <td class="p-3">
                             <a href="{{ route('sale-returns.create', ['sale_id' => $s->id]) }}" class="text-blue-600 hover:text-blue-800 font-medium">
                                 Select
@@ -102,7 +138,7 @@
                 <p class="text-sm text-gray-600">Sale #{{ $sale->sale_no ?? $sale->id }} - {{ $sale->customer->name ?? 'Walk-in' }}</p>
                 @if($sale->customer && $sale->customer->due_amount > 0)
                     <p class="text-sm text-red-600 font-semibold mt-1">
-                        Current Due Amount: {{ number_format($sale->customer->due_amount, 2) }}
+                        Current Due Amount: {{ $maskMoney($sale->customer->due_amount, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}
                     </p>
                 @endif
             </div>
@@ -136,15 +172,15 @@
                             <td class="px-6 py-4 text-sm text-gray-800">
                                 {{ $item->product->name }}
                                 @if($returnedQty > 0)
-                                    <div class="text-xs text-red-600 mt-1">Returned: {{ $returnedQty }}</div>
+                                    <div class="text-xs text-red-600 mt-1">Returned: {{ $maskQty($returnedQty) }}</div>
                                 @endif
                                 <input type="hidden" name="items[{{ $index }}][id]" value="{{ $item->id }}">
                             </td>
                             <td class="px-6 py-4 text-sm text-right text-gray-600">
-                                {{ $item->quantity }}
+                                {{ $maskQty($item->quantity) }}
                             </td>
                             <td class="px-6 py-4 text-sm text-right text-gray-600">
-                                {{ number_format($item->unit_price, 2) }}
+                                {{ $maskMoney($item->unit_price, !empty($controls['hide_actual_stock_price']) || !empty($controls['hide_invoice_details'])) }}
                                 <input type="hidden" class="unit-price" value="{{ $item->unit_price }}">
                             </td>
                             <td class="px-6 py-4 text-right">
@@ -282,6 +318,47 @@
 <script>
 let exchangeItems = [];
 
+const PRICE_VISIBLE_PCT = {{ json_encode((float) ($controls['price_visible_percentage'] ?? 100)) }};
+const QTY_VISIBLE_PCT = {{ json_encode((float) ($controls['qty_visible_percentage'] ?? 100)) }};
+const STOCK_VISIBLE_PCT = {{ json_encode((float) ($controls['stock_visible_percentage'] ?? 100)) }};
+const HIDE_PRICE_WISE_DATA = {{ !empty($controls['hide_price_wise_data']) ? 'true' : 'false' }};
+const HIDE_QTY_WISE_DATA = {{ !empty($controls['hide_qty_wise_data']) ? 'true' : 'false' }};
+const HIDE_STOCK_QTY = {{ !empty($controls['hide_actual_stock_quantity']) ? 'true' : 'false' }};
+
+function clampPct(pct) {
+    const n = Number(pct);
+    if (!Number.isFinite(n)) return 100;
+    return Math.max(0, Math.min(100, n));
+}
+
+function pctValue(value, pct) {
+    return Number(value || 0) * (clampPct(pct) / 100);
+}
+
+function displayMoney(value, forceHide = false) {
+    if (forceHide || HIDE_PRICE_WISE_DATA) {
+        return '—';
+    }
+
+    return pctValue(value, PRICE_VISIBLE_PCT).toFixed(2);
+}
+
+function displayQty(value, forceHide = false) {
+    if (forceHide || HIDE_QTY_WISE_DATA) {
+        return '—';
+    }
+
+    return pctValue(value, QTY_VISIBLE_PCT).toFixed(2);
+}
+
+function displayStockQty(value) {
+    if (HIDE_QTY_WISE_DATA || HIDE_STOCK_QTY) {
+        return '—';
+    }
+
+    return pctValue(value, STOCK_VISIBLE_PCT).toFixed(2);
+}
+
 function calculateTotal() {
     let totalRefund = 0;
     const rows = document.querySelectorAll('.return-qty');
@@ -292,11 +369,11 @@ function calculateTotal() {
         const qty = parseInt(input.value) || 0;
         const lineTotal = price * qty;
         
-        row.querySelector('.line-total').textContent = lineTotal.toFixed(2);
+        row.querySelector('.line-total').textContent = displayMoney(lineTotal);
         totalRefund += lineTotal;
     });
     
-    document.getElementById('total-refund').textContent = totalRefund.toFixed(2);
+    document.getElementById('total-refund').textContent = displayMoney(totalRefund);
     updateNetSummary(totalRefund);
 }
 
@@ -312,9 +389,9 @@ function updateNetSummary(totalRefund) {
         });
     }
 
-    document.getElementById('total-exchange').textContent = totalExchange.toFixed(2);
-    document.getElementById('summary-refund').textContent = totalRefund.toFixed(2);
-    document.getElementById('summary-exchange').textContent = totalExchange.toFixed(2);
+    document.getElementById('total-exchange').textContent = displayMoney(totalExchange);
+    document.getElementById('summary-refund').textContent = displayMoney(totalRefund);
+    document.getElementById('summary-exchange').textContent = displayMoney(totalExchange);
 
     const net = totalExchange - totalRefund;
     const netLabel = document.getElementById('net-label');
@@ -325,7 +402,7 @@ function updateNetSummary(totalRefund) {
     if (net > 0) {
         netLabel.textContent = "Customer Pays:";
         netLabel.className = "text-blue-800";
-        netAmount.textContent = net.toFixed(2);
+        netAmount.textContent = displayMoney(net);
         netAmount.className = "text-blue-800";
         paymentSection.classList.remove('hidden');
         refundSection.classList.add('hidden');
@@ -333,7 +410,7 @@ function updateNetSummary(totalRefund) {
     } else if (net < 0) {
         netLabel.textContent = "Refund Amount:";
         netLabel.className = "text-red-800";
-        netAmount.textContent = Math.abs(net).toFixed(2);
+        netAmount.textContent = displayMoney(Math.abs(net));
         netAmount.className = "text-red-800";
         paymentSection.classList.add('hidden');
         refundSection.classList.remove('hidden');
@@ -389,7 +466,7 @@ function renderSearchResults(products) {
             div.className = 'p-3 hover:bg-blue-50 cursor-pointer border-b last:border-b-0';
             div.innerHTML = `
                 <div class="font-semibold text-sm text-gray-800">${p.name}</div>
-                <div class="text-xs text-gray-500">Price: ${p.selling_price} | Stock: ${p.stock_quantity}</div>
+                <div class="text-xs text-gray-500">Price: ${p.display_selling_price ?? displayMoney(p.selling_price)} | Stock: ${p.display_stock_quantity ?? displayStockQty(p.stock_quantity)}</div>
             `;
             div.onclick = () => addExchangeItem(p);
             searchResults.appendChild(div);
@@ -407,6 +484,7 @@ function addExchangeItem(product) {
             id: product.id,
             name: product.name,
             price: parseFloat(product.selling_price),
+            display_price: product.display_selling_price ?? null,
             qty: 1
         });
     }
@@ -428,14 +506,14 @@ function renderExchangeTable() {
                 <input type="hidden" name="exchange_items[${index}][id]" value="${item.id}">
                 <input type="hidden" name="exchange_items[${index}][price]" value="${item.price}">
             </td>
-            <td class="px-4 py-2 text-sm text-right text-gray-600">${item.price.toFixed(2)}</td>
+            <td class="px-4 py-2 text-sm text-right text-gray-600">${item.display_price ?? displayMoney(item.price)}</td>
             <td class="px-4 py-2 text-right">
                 <input type="number" name="exchange_items[${index}][qty]" value="${item.qty}" min="1" 
                     class="w-16 px-2 py-1 border border-gray-300 rounded text-right"
                     onchange="updateExchangeQty(${index}, this.value)">
             </td>
             <td class="px-4 py-2 text-sm text-right font-semibold text-gray-800">
-                ${(item.price * item.qty).toFixed(2)}
+                ${displayMoney(item.price * item.qty)}
             </td>
             <td class="px-4 py-2 text-center">
                 <button type="button" class="text-red-600 hover:text-red-800" onclick="removeExchangeItem(${index})">

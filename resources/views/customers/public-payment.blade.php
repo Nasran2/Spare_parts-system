@@ -3,17 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Payment - Invoice #{{ str_pad($sale->id, 6, '0', STR_PAD_LEFT) }}</title>
+    <title>Payment - Invoice #{{ $displayInvoiceNo ?? 'INV-01' }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body class="bg-gray-100">
+    @php
+        $controls = is_array($controls ?? null) ? $controls : [];
+        $priceVisiblePct = (float) ($controls['customer_visible_percentage'] ?? 100);
+        $applyPct = function ($value, $pct) {
+            $pct = max(0, min(100, (float) $pct));
+            return (float) $value * ($pct / 100);
+        };
+        $maskMoney = function ($value, $forceHide = false) use ($controls, $priceVisiblePct, $applyPct) {
+            if ($forceHide || !empty($controls['hide_price_wise_data'])) {
+                return '—';
+            }
+
+            $raw = (float) $value;
+            $masked = $applyPct(abs($raw), $priceVisiblePct);
+            $roundToWhole = $priceVisiblePct < 100;
+
+            if ($roundToWhole) {
+                $masked = round($masked);
+            }
+
+            if ($priceVisiblePct < 100 && abs($raw) > 0 && $masked <= 0) {
+                $masked = 1;
+            }
+
+            if ($raw < 0) {
+                $masked *= -1;
+            }
+
+            return number_format($masked, $roundToWhole ? 0 : 2);
+        };
+        $displayInvoiceNo = $displayInvoiceNo ?? 'INV-01';
+        $hidePayments = !empty($controls['hide_supplier_payments']);
+        $hideTotal = !empty($controls['hide_total_sales']);
+    @endphp
     <div class="max-w-2xl mx-auto p-6">
         <div class="bg-white rounded-lg shadow-lg p-8">
             <div class="text-center mb-8">
                 <h1 class="text-3xl font-bold text-gray-800 mb-2">{{ $businessName }}</h1>
                 <h2 class="text-xl font-semibold text-gray-700">Payment</h2>
-                <p class="text-gray-600">Invoice #{{ str_pad($sale->id, 6, '0', STR_PAD_LEFT) }}</p>
+                <p class="text-gray-600">Invoice {{ $displayInvoiceNo }}</p>
             </div>
 
             <!-- Customer Info -->
@@ -30,15 +64,15 @@
             <div class="space-y-3 mb-6">
                 <div class="flex justify-between py-2 border-b border-gray-200">
                     <span class="text-gray-600">Total Amount:</span>
-                    <span class="font-semibold text-gray-800">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->total_amount, $currency) }}</span>
+                    <span class="font-semibold text-gray-800">{{ trim($currency) }} {{ $maskMoney($sale->total_amount, $hideTotal) }}</span>
                 </div>
                 <div class="flex justify-between py-2 border-b border-gray-200">
                     <span class="text-gray-600">Paid Amount:</span>
-                    <span class="font-semibold text-green-600">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->paid_amount, $currency) }}</span>
+                    <span class="font-semibold text-green-600">{{ trim($currency) }} {{ $maskMoney($sale->paid_amount, $hidePayments) }}</span>
                 </div>
                 <div class="flex justify-between py-3 border-b-2 border-gray-300">
                     <span class="text-lg font-semibold text-gray-800">Due Amount:</span>
-                    <span class="text-xl font-bold text-red-600">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->due_amount, $currency) }}</span>
+                    <span class="text-xl font-bold text-red-600">{{ trim($currency) }} {{ $maskMoney($sale->due_amount, $hidePayments) }}</span>
                 </div>
             </div>
 

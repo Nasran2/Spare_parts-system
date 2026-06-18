@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use Illuminate\Foundation\AliasLoader;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use Maatwebsite\Excel\ExcelServiceProvider;
 use Maatwebsite\Excel\Facades\Excel;
@@ -23,6 +24,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Schema::defaultStringLength(191);
+
         // Share currency symbol with all views so Blade templates can use $currency
         // Share global settings-derived values with all views
         try {

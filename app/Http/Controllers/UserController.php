@@ -2,19 +2,59 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\User;
 use App\Models\Role;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
+    private function canSeeSuperAdmin(): bool
+    {
+        return auth()->user()?->isSuperAdmin() === true;
+    }
+
+    private function visibleRolesQuery()
+    {
+        $query = Role::query();
+
+        if (! $this->canSeeSuperAdmin()) {
+            $query->whereNotIn('name', ['Super Admin', 'superadmin', 'super_admin']);
+        }
+
+        return $query;
+    }
+
+    private function visibleUsersQuery()
+    {
+        $query = User::query();
+
+        if (! $this->canSeeSuperAdmin()) {
+            $query->whereDoesntHave('role', function ($roleQuery) {
+                $roleQuery->whereIn('name', ['Super Admin', 'superadmin', 'super_admin']);
+            });
+        }
+
+        return $query;
+    }
+
+    private function abortIfHiddenSuperAdminUser(User $user): void
+    {
+        $user->loadMissing('role');
+
+        if (! $this->canSeeSuperAdmin() && $user->isSuperAdmin()) {
+            abort(404);
+        }
+    }
+
     /**
      * Display a listing of the resource.
      */
     public function index()
     {
-        $users = User::with('role')->get();
+        $users = $this->visibleUsersQuery()->with('role')->get();
+
         return view('users.index', compact('users'));
     }
 
@@ -23,8 +63,10 @@ class UserController extends Controller
      */
     public function create()
     {
-        $roles = Role::where('is_active', true)->get();
-        return view('users.create', compact('roles'));
+        $roles = $this->visibleRolesQuery()->where('is_active', true)->get();
+        $stores = \App\Models\Store::where('is_active', true)->get();
+
+        return view('users.create', compact('roles', 'stores'));
     }
 
     /**
@@ -38,14 +80,28 @@ class UserController extends Controller
             'email' => 'required|email|unique:users,email',
             'password' => 'required|min:6|confirmed',
             'phone' => 'nullable|string|max:20',
-            'role_id' => 'required|exists:roles,id',
+            'role_id' => [
+                'required',
+                Rule::exists('roles', 'id')->where(function ($query) {
+                    $query->where('is_active', true);
+                    if (! $this->canSeeSuperAdmin()) {
+                        $query->whereNotIn('name', ['Super Admin', 'superadmin', 'super_admin']);
+                    }
+                }),
+            ],
             'is_active' => 'boolean',
+            'stores' => 'nullable|array',
+            'stores.*' => 'exists:stores,id',
         ]);
 
         $validated['password'] = Hash::make($validated['password']);
         $validated['is_active'] = $request->has('is_active');
 
-        User::create($validated);
+        $user = User::create($validated);
+        
+        if ($request->has('stores')) {
+            $user->stores()->sync($request->stores);
+        }
 
         return redirect()->route('users.index')
             ->with('success', 'User created successfully!');
@@ -57,6 +113,8 @@ class UserController extends Controller
     public function show(string $id)
     {
         $user = User::with('role')->findOrFail($id);
+        $this->abortIfHiddenSuperAdminUser($user);
+
         return view('users.show', compact('user'));
     }
 
@@ -65,9 +123,14 @@ class UserController extends Controller
      */
     public function edit(string $id)
     {
-        $user = User::findOrFail($id);
-        $roles = Role::where('is_active', true)->get();
-        return view('users.edit', compact('user', 'roles'));
+        $user = User::with('role')->findOrFail($id);
+        $this->abortIfHiddenSuperAdminUser($user);
+
+        $roles = $this->visibleRolesQuery()->where('is_active', true)->get();
+        $stores = \App\Models\Store::where('is_active', true)->get();
+        $userStores = $user->stores->pluck('id')->toArray();
+
+        return view('users.edit', compact('user', 'roles', 'stores', 'userStores'));
     }
 
     /**
@@ -75,19 +138,30 @@ class UserController extends Controller
      */
     public function update(Request $request, string $id)
     {
-        $user = User::findOrFail($id);
+        $user = User::with('role')->findOrFail($id);
+        $this->abortIfHiddenSuperAdminUser($user);
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'username' => 'required|string|max:255|unique:users,username,' . $id,
-            'email' => 'required|email|unique:users,email,' . $id,
+            'username' => 'required|string|max:255|unique:users,username,'.$id,
+            'email' => 'required|email|unique:users,email,'.$id,
             'password' => 'nullable|min:6|confirmed',
             'phone' => 'nullable|string|max:20',
-            'role_id' => 'required|exists:roles,id',
+            'role_id' => [
+                'required',
+                Rule::exists('roles', 'id')->where(function ($query) {
+                    $query->where('is_active', true);
+                    if (! $this->canSeeSuperAdmin()) {
+                        $query->whereNotIn('name', ['Super Admin', 'superadmin', 'super_admin']);
+                    }
+                }),
+            ],
             'is_active' => 'boolean',
+            'stores' => 'nullable|array',
+            'stores.*' => 'exists:stores,id',
         ]);
 
-        if (!empty($validated['password'])) {
+        if (! empty($validated['password'])) {
             $validated['password'] = Hash::make($validated['password']);
         } else {
             unset($validated['password']);
@@ -96,6 +170,12 @@ class UserController extends Controller
         $validated['is_active'] = $request->has('is_active');
 
         $user->update($validated);
+        
+        if ($request->has('stores')) {
+            $user->stores()->sync($request->stores);
+        } else {
+            $user->stores()->sync([]);
+        }
 
         return redirect()->route('users.index')
             ->with('success', 'User updated successfully!');
@@ -106,8 +186,9 @@ class UserController extends Controller
      */
     public function destroy(string $id)
     {
-        $user = User::findOrFail($id);
-        
+        $user = User::with('role')->findOrFail($id);
+        $this->abortIfHiddenSuperAdminUser($user);
+
         if ($user->id === auth()->id()) {
             return redirect()->route('users.index')
                 ->with('error', 'You cannot delete your own account!');

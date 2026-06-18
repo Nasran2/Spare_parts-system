@@ -4,6 +4,26 @@
 @section('page-title', 'Purchase Details')
 
 @section('content')
+@php
+    $controls = is_array($controls ?? null) ? $controls : [];
+    $priceVisiblePct = (float) ($controls['price_visible_percentage'] ?? 100);
+    $applyPct = function ($value, $pct) {
+        $pct = max(0, min(100, (float) $pct));
+        return (float) $value * ($pct / 100);
+    };
+    $maskMoney = function ($value, $forceHide = false) use ($controls, $priceVisiblePct, $applyPct) {
+        if ($forceHide || !empty($controls['hide_price_wise_data'])) {
+            return '—';
+        }
+
+        $masked = $applyPct((float) $value, $priceVisiblePct);
+
+        $roundToWhole = $priceVisiblePct < 100;
+
+
+        return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
+    };
+@endphp
 <div class="max-w-6xl mx-auto space-y-6">
     <div>
         <a href="{{ route('purchases.index') }}" class="inline-flex items-center text-blue-600 hover:text-blue-800">
@@ -40,8 +60,8 @@
                             <td class="px-4 py-2">{{ $i + 1 }}</td>
                             <td class="px-4 py-2">{{ $item->product->name ?? 'Product' }}</td>
                             <td class="px-4 py-2 text-right">{{ $item->quantity }}</td>
-                            <td class="px-4 py-2 text-right">${{ number_format($item->unit_cost, 2) }}</td>
-                            <td class="px-4 py-2 text-right">${{ number_format($item->quantity * $item->unit_cost, 2) }}</td>
+                            <td class="px-4 py-2 text-right">${{ $maskMoney($item->unit_cost, !empty($controls['hide_actual_purchase_price']) || !empty($controls['hide_actual_stock_price'])) }}</td>
+                            <td class="px-4 py-2 text-right">${{ $maskMoney(($item->quantity * $item->unit_cost), !empty($controls['hide_total_purchase']) || !empty($controls['hide_invoice_details'])) }}</td>
                         </tr>
                         @endforeach
                     </tbody>
@@ -50,14 +70,14 @@
 
             <div class="flex justify-end">
                 <div class="w-full max-w-md bg-gray-50 p-4 rounded-lg border">
-                    <div class="flex justify-between py-1"><span class="text-sm">Net Total</span><span class="font-semibold">${{ number_format($purchase->total_amount - ($purchase->shipping_cost ?? 0) - ($purchase->tax_amount ?? 0) + ($purchase->discount_amount ?? 0), 2) }}</span></div>
-                    <div class="flex justify-between py-1"><span class="text-sm">Discount</span><span class="font-semibold">${{ number_format($purchase->discount_amount ?? 0, 2) }}</span></div>
-                    <div class="flex justify-between py-1"><span class="text-sm">Tax</span><span class="font-semibold">${{ number_format($purchase->tax_amount ?? 0, 2) }}</span></div>
-                    <div class="flex justify-between py-1"><span class="text-sm">Shipping</span><span class="font-semibold">${{ number_format($purchase->shipping_cost ?? 0, 2) }}</span></div>
+                    <div class="flex justify-between py-1"><span class="text-sm">Net Total</span><span class="font-semibold">${{ $maskMoney(($purchase->total_amount - ($purchase->shipping_cost ?? 0) - ($purchase->tax_amount ?? 0) + ($purchase->discount_amount ?? 0)), !empty($controls['hide_total_purchase']) || !empty($controls['hide_invoice_details'])) }}</span></div>
+                    <div class="flex justify-between py-1"><span class="text-sm">Discount</span><span class="font-semibold">${{ $maskMoney(($purchase->discount_amount ?? 0), !empty($controls['hide_total_purchase']) || !empty($controls['hide_invoice_details'])) }}</span></div>
+                    <div class="flex justify-between py-1"><span class="text-sm">Tax</span><span class="font-semibold">${{ $maskMoney(($purchase->tax_amount ?? 0), !empty($controls['hide_total_purchase']) || !empty($controls['hide_invoice_details'])) }}</span></div>
+                    <div class="flex justify-between py-1"><span class="text-sm">Shipping</span><span class="font-semibold">${{ $maskMoney(($purchase->shipping_cost ?? 0), !empty($controls['hide_total_purchase']) || !empty($controls['hide_invoice_details'])) }}</span></div>
                     <hr class="my-2" />
-                    <div class="flex justify-between py-1 text-lg"><span class="font-semibold">Grand Total</span><span class="font-bold text-blue-600">${{ number_format($purchase->total_amount ?? 0, 2) }}</span></div>
-                    <div class="flex justify-between py-1"><span class="text-sm">Paid</span><span class="font-semibold">${{ number_format($purchase->paid_amount ?? 0, 2) }}</span></div>
-                    <div class="flex justify-between py-1"><span class="text-sm">Due</span><span class="font-semibold text-red-600">${{ number_format($purchase->due_amount ?? 0, 2) }}</span></div>
+                    <div class="flex justify-between py-1 text-lg"><span class="font-semibold">Grand Total</span><span class="font-bold text-blue-600">${{ $maskMoney(($purchase->total_amount ?? 0), !empty($controls['hide_total_purchase']) || !empty($controls['hide_invoice_details'])) }}</span></div>
+                    <div class="flex justify-between py-1"><span class="text-sm">Paid</span><span class="font-semibold">${{ $maskMoney(($purchase->paid_amount ?? 0), !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</span></div>
+                    <div class="flex justify-between py-1"><span class="text-sm">Due</span><span class="font-semibold text-red-600">${{ $maskMoney(($purchase->due_amount ?? 0), !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</span></div>
                     <div class="mt-3 text-right">
                         @if(($purchase->due_amount ?? 0) > 0)
                             <a href="{{ route('payments.create', ['purchase_id' => $purchase->id]) }}" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Add Payment</a>
@@ -85,7 +105,7 @@
                             <tr class="border-b">
                                 <td class="px-4 py-2">{{ optional($payment->payment_date)->format('M d, Y') }}</td>
                                 <td class="px-4 py-2">{{ $payment->payment_method }}</td>
-                                <td class="px-4 py-2 text-right">${{ number_format($payment->amount, 2) }}</td>
+                                <td class="px-4 py-2 text-right">${{ $maskMoney($payment->amount, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
                                 <td class="px-4 py-2">{{ $payment->notes }}</td>
                             </tr>
                             @empty

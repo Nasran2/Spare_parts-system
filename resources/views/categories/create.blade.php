@@ -15,6 +15,17 @@
             </div>
 
             <div class="mt-4">
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Parent Category (optional)</label>
+                <select name="parent_id" class="w-full px-4 py-2 border rounded">
+                    <option value="">None (Main Category)</option>
+                    @foreach(($parents ?? collect()) as $p)
+                        <option value="{{ $p->id }}" @selected((int) old('parent_id', 0) === (int) $p->id)>{{ $p->name }}</option>
+                    @endforeach
+                </select>
+                @error('parent_id')<p class="text-red-500 text-xs mt-1">{{ $message }}</p>@enderror
+            </div>
+
+            <div class="mt-4">
                 <label class="block text-sm font-semibold text-gray-700 mb-2">Description</label>
                 <textarea name="description" class="w-full px-4 py-2 border rounded">{{ old('description') }}</textarea>
             </div>

@@ -3,19 +3,26 @@
 namespace App\Http\Controllers;
 
 use App\Models\Supplier;
+use App\Services\DashboardVisibilityService;
+use App\Support\SecretPos;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use App\Support\SecretPos;
 
 class SupplierController extends Controller
 {
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
-        $suppliers = Supplier::orderBy('name')->get();
-        return view('suppliers.index', compact('suppliers'));
+        $hiddenSupplierIds = DashboardVisibilityService::hiddenSupplierIdsForUser($request->user());
+        $suppliers = Supplier::query()
+            ->when(! empty($hiddenSupplierIds), fn ($query) => $query->whereNotIn('id', $hiddenSupplierIds))
+            ->orderBy('name')
+            ->get();
+        $controls = DashboardVisibilityService::configForUser($request->user());
+
+        return view('suppliers.index', compact('suppliers', 'controls'));
     }
 
     /**
@@ -54,7 +61,7 @@ class SupplierController extends Controller
                 return response()->json([
                     'success' => true,
                     'message' => 'Supplier created successfully!',
-                    'supplier' => $supplier
+                    'supplier' => $supplier,
                 ]);
             }
 
@@ -62,14 +69,14 @@ class SupplierController extends Controller
                 ->with('success', 'Supplier created successfully!');
         } catch (\Throwable $e) {
             Log::error('Supplier create failed', ['error' => $e->getMessage()]);
-            
+
             if ($request->ajax() || $request->wantsJson()) {
                 return response()->json([
                     'success' => false,
-                    'message' => $e->getMessage()
+                    'message' => $e->getMessage(),
                 ], 422);
             }
-            
+
             return back()->withInput()->with('error', 'Failed to create supplier.');
         }
     }
@@ -77,9 +84,13 @@ class SupplierController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(string $id)
+    public function show(Request $request, string $id)
     {
         $supplier = Supplier::findOrFail($id);
+        if (DashboardVisibilityService::isSupplierHiddenForUser((int) $supplier->id, $request->user())) {
+            abort(404);
+        }
+        $controls = DashboardVisibilityService::configForUser($request->user());
 
         $purchasesQuery = $supplier->purchases()->with('payments')->orderByDesc('purchase_date');
         $purchasesQuery = SecretPos::excludeHiddenPurchaseRanges($purchasesQuery, 'total_amount');
@@ -90,7 +101,7 @@ class SupplierController extends Controller
             'total_due' => (float) $purchases->sum('due_amount'),
         ];
 
-        return view('suppliers.show', compact('supplier', 'purchases', 'purchaseTotals'));
+        return view('suppliers.show', compact('supplier', 'purchases', 'purchaseTotals', 'controls'));
     }
 
     /**
@@ -99,6 +110,10 @@ class SupplierController extends Controller
     public function edit(string $id)
     {
         $supplier = Supplier::findOrFail($id);
+        if (DashboardVisibilityService::isSupplierHiddenForUser((int) $supplier->id, auth()->user())) {
+            abort(404);
+        }
+
         return view('suppliers.edit', compact('supplier'));
     }
 
@@ -108,11 +123,14 @@ class SupplierController extends Controller
     public function update(Request $request, string $id)
     {
         $supplier = Supplier::findOrFail($id);
+        if (DashboardVisibilityService::isSupplierHiddenForUser((int) $supplier->id, auth()->user())) {
+            abort(404);
+        }
         try {
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
                 'company_name' => 'nullable|string|max:255',
-                'email' => 'nullable|email|max:255|unique:suppliers,email,' . $supplier->id,
+                'email' => 'nullable|email|max:255|unique:suppliers,email,'.$supplier->id,
                 'phone' => 'required|string|max:30',
                 'address' => 'nullable|string',
                 'city' => 'nullable|string|max:100',
@@ -130,6 +148,7 @@ class SupplierController extends Controller
                 ->with('success', 'Supplier updated successfully!');
         } catch (\Throwable $e) {
             Log::error('Supplier update failed', ['error' => $e->getMessage()]);
+
             return back()->withInput()->with('error', 'Failed to update supplier.');
         }
     }
@@ -140,13 +159,18 @@ class SupplierController extends Controller
     public function destroy(string $id)
     {
         $supplier = Supplier::findOrFail($id);
+        if (DashboardVisibilityService::isSupplierHiddenForUser((int) $supplier->id, auth()->user())) {
+            abort(404);
+        }
         try {
             // TODO: If purchases exist, consider preventing deletion or soft deleting
             $supplier->delete();
+
             return redirect()->route('suppliers.index')
                 ->with('success', 'Supplier deleted successfully!');
         } catch (\Throwable $e) {
             Log::error('Supplier delete failed', ['error' => $e->getMessage()]);
+
             return back()->with('error', 'Failed to delete supplier.');
         }
     }

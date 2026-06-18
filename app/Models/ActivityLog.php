@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class ActivityLog extends Model
 {
@@ -36,14 +37,23 @@ class ActivityLog extends Model
 
     public static function log($action, $description, $model = null, $changes = null)
     {
-        return static::create([
-            'user_id' => Auth::id(),
-            'action' => $action,
-            'model_type' => $model ? get_class($model) : null,
-            'model_id' => $model ? $model->id : null,
-            'description' => $description,
-            'changes' => $changes,
-            'ip_address' => request()->ip(),
-        ]);
+        try {
+            return static::create([
+                'user_id' => Auth::id(),
+                'action' => $action,
+                'model_type' => $model ? get_class($model) : null,
+                'model_id' => $model ? $model->id : null,
+                'description' => $description,
+                'changes' => $changes,
+                'ip_address' => request()->ip(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Activity log write failed.', [
+                'action' => $action,
+                'message' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 }

@@ -2,13 +2,16 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
+use App\Models\Product;
+use App\Models\ProductPrice;
 use App\Models\Purchase;
 use App\Models\PurchaseItem;
-use App\Models\Product;
-use Illuminate\Support\Facades\DB;
+use App\Models\Setting;
+use App\Services\DashboardVisibilityService;
 use App\Support\PublicStorageSync;
 use App\Support\SecretPos;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class PurchaseController extends Controller
 {
@@ -17,10 +20,16 @@ class PurchaseController extends Controller
      */
     public function index()
     {
+        $hiddenSupplierIds = DashboardVisibilityService::hiddenSupplierIdsForUser(auth()->user());
         $query = Purchase::with('supplier')->latest();
+        if (! empty($hiddenSupplierIds)) {
+            $query->whereNotIn('supplier_id', $hiddenSupplierIds);
+        }
         $query = SecretPos::excludeHiddenPurchaseRanges($query, 'total_amount');
         $purchases = $query->get();
-        return view('purchases.index', compact('purchases'));
+        $controls = DashboardVisibilityService::configForUser(auth()->user());
+
+        return view('purchases.index', compact('purchases', 'controls'));
     }
 
     /**
@@ -28,12 +37,17 @@ class PurchaseController extends Controller
      */
     public function create()
     {
+        $canUseSellingSecretCode = auth()->user()?->isSuperAdmin() === true;
         // load suppliers and products for the purchase create form if needed
-        $suppliers = \App\Models\Supplier::orderBy('name')->get();
+        $hiddenSupplierIds = DashboardVisibilityService::hiddenSupplierIdsForUser(auth()->user());
+        $suppliers = \App\Models\Supplier::query()
+            ->when(! empty($hiddenSupplierIds), fn ($query) => $query->whereNotIn('id', $hiddenSupplierIds))
+            ->orderBy('name')
+            ->get();
         $products = \App\Models\Product::orderBy('name')->get();
-        
+
         // Pre-format products for JS to avoid Blade parsing issues
-        $productsData = $products->map(function($p) {
+        $productsData = $products->map(function ($p) {
             return [
                 'id' => $p->id,
                 'name' => $p->name,
@@ -43,8 +57,11 @@ class PurchaseController extends Controller
                 'barcode' => $p->barcode,
             ];
         })->values()->toArray();
-        
-        return view('purchases.create', compact('suppliers', 'products', 'productsData'));
+
+        $stores = \App\Models\Store::where('is_active', true)->orderBy('name')->get();
+        $defaultStore = $stores->firstWhere('is_default', true) ?? $stores->first();
+
+        return view('purchases.create', compact('suppliers', 'products', 'productsData', 'canUseSellingSecretCode', 'stores', 'defaultStore'));
     }
 
     /**
@@ -54,6 +71,8 @@ class PurchaseController extends Controller
     {
         $validated = $request->validate([
             'supplier_id' => 'required|exists:suppliers,id',
+            'store_ids' => 'required|array|min:1',
+            'store_ids.*' => 'exists:stores,id',
             'reference_no' => 'nullable|string|max:255',
             'purchase_date' => 'nullable|date',
             'status' => 'nullable|string|in:pending,ordered,received',
@@ -62,18 +81,26 @@ class PurchaseController extends Controller
             'tax_id' => 'nullable|string',
             'shipping_cost' => 'nullable|numeric|min:0',
             'shipping_type' => 'nullable|string|in:divided,expense',
-            'payment_method' => 'required|string|in:cash,card,bank_transfer,cheque,credit',
+            'payment_method' => 'required|string|in:cash,credit,cheque,bank_deposit,bank_transfer,card,mobile_payment',
             'payment_amount' => 'nullable|numeric|min:0',
             'document' => 'nullable|file|mimes:pdf,jpg,jpeg,png,csv,zip,doc,docx|max:5120',
             'notes' => 'nullable|string',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
-            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.quantity' => 'required|numeric|min:0.001',
             'items.*.unit_cost' => 'required|numeric|min:0',
             'items.*.selling_price' => 'required|numeric|min:0',
+            'items.*.add_to_price_stock' => 'nullable|boolean',
+            'items.*.store_stock' => 'nullable|array',
+            'items.*.store_stock.*' => 'nullable|numeric|min:0',
         ]);
 
+        if (DashboardVisibilityService::isSupplierHiddenForUser((int) $validated['supplier_id'], auth()->user())) {
+            abort(404);
+        }
+
         return DB::transaction(function () use ($request, $validated) {
+            $usePriceWiseStock = (bool) Setting::get('use_price_wise_stock', true);
             // Calculate totals
             $subtotal = 0;
             $totalQty = 0;
@@ -126,6 +153,7 @@ class PurchaseController extends Controller
 
             $purchase = Purchase::create([
                 'supplier_id' => $validated['supplier_id'],
+                'store_id' => $validated['store_ids'][0] ?? null,
                 'user_id' => auth()->id(),
                 'reference_no' => $validated['reference_no'] ?? null,
                 'purchase_date' => $validated['purchase_date'] ?? now()->toDateString(),
@@ -155,21 +183,54 @@ class PurchaseController extends Controller
                     $finalUnitCost += $shippingPerItem;
                 }
 
+                $product = Product::findOrFail($it['product_id']);
+                $priceOption = $this->findOrCreatePurchasePriceOption(
+                    $product,
+                    (float) $finalUnitCost,
+                    (float) $it['selling_price'],
+                    (float) $it['quantity'],
+                    $usePriceWiseStock && (bool) ($it['add_to_price_stock'] ?? true)
+                );
+
                 PurchaseItem::create([
                     'purchase_id' => $purchase->id,
                     'product_id' => $it['product_id'],
+                    'product_price_id' => $priceOption?->id,
                     'quantity' => $it['quantity'],
                     'unit_cost' => $finalUnitCost,
+                    'selling_price' => $it['selling_price'],
                     'total' => $it['quantity'] * $finalUnitCost,
                 ]);
 
                 // Update product stock and prices
-                $product = Product::find($it['product_id']);
                 $product->stock_quantity = ($product->stock_quantity ?? 0) + $it['quantity'];
                 // Update cost price with shipping if divided
                 $product->cost_price = $finalUnitCost;
                 $product->selling_price = $it['selling_price'];
                 $product->save();
+
+                // Increment store stock quantities for each store entered
+                $storeStockInput = $it['store_stock'] ?? [];
+                
+                if (empty($storeStockInput) && $it['quantity'] > 0) {
+                    $defaultStore = \App\Models\Store::where('is_default', true)->first() ?? \App\Models\Store::first();
+                    if ($defaultStore) {
+                        $storeStockInput[$defaultStore->id] = $it['quantity'];
+                    }
+                }
+
+                foreach ($storeStockInput as $storeId => $storeQty) {
+                    $storeQty = (float) $storeQty;
+                    if ($storeQty <= 0) {
+                        continue;
+                    }
+                    $storeStockRecord = \App\Models\StoreStock::firstOrCreate([
+                        'store_id' => (int) $storeId,
+                        'product_id' => $product->id,
+                        'product_price_id' => $priceOption?->id,
+                    ], ['quantity' => 0]);
+                    $storeStockRecord->increment('quantity', $storeQty);
+                }
             }
 
             // If shipping is expense, create expense record (future feature)
@@ -182,6 +243,48 @@ class PurchaseController extends Controller
         });
     }
 
+    private function findOrCreatePurchasePriceOption(Product $product, float $costPrice, float $sellingPrice, float $qty, bool $addStock): ?ProductPrice
+    {
+        $costPrice = round($costPrice, 2);
+        $sellingPrice = round($sellingPrice, 2);
+
+        $price = ProductPrice::query()
+            ->where('product_id', $product->id)
+            ->where('status', 'active')
+            ->where('cost_price', $costPrice)
+            ->where('selling_price', $sellingPrice)
+            ->lockForUpdate()
+            ->first();
+
+        if ($price) {
+            if ($addStock) {
+                $price->increment('stock_qty', $qty);
+            }
+
+            ProductPrice::ensureDefaultForProduct($product->id);
+
+            return $price->fresh();
+        }
+
+        $hasActivePrice = ProductPrice::query()
+            ->where('product_id', $product->id)
+            ->where('status', 'active')
+            ->exists();
+
+        $price = ProductPrice::create([
+            'product_id' => $product->id,
+            'cost_price' => $costPrice,
+            'selling_price' => $sellingPrice,
+            'stock_qty' => $addStock ? round($qty, 3) : 0,
+            'is_default' => ! $hasActivePrice,
+            'status' => 'active',
+        ]);
+
+        ProductPrice::ensureDefaultForProduct($product->id);
+
+        return $price;
+    }
+
     /**
      * Display the specified resource.
      */
@@ -191,7 +294,12 @@ class PurchaseController extends Controller
         if (SecretPos::isPurchaseHidden((float) $purchase->total_amount)) {
             abort(404);
         }
-        return view('purchases.show', compact('purchase'));
+        if (DashboardVisibilityService::isSupplierHiddenForUser((int) $purchase->supplier_id, auth()->user())) {
+            abort(404);
+        }
+        $controls = DashboardVisibilityService::configForUser(auth()->user());
+
+        return view('purchases.show', compact('purchase', 'controls'));
     }
 
     /**
@@ -199,13 +307,20 @@ class PurchaseController extends Controller
      */
     public function edit(string $id)
     {
-        $purchase = \App\Models\Purchase::with('items')->findOrFail($id);
+        $purchase = \App\Models\Purchase::with(['items.product', 'supplier'])->findOrFail($id);
         if (SecretPos::isPurchaseHidden((float) $purchase->total_amount)) {
             abort(404);
         }
-        $suppliers = \App\Models\Supplier::orderBy('name')->get();
-        $products = \App\Models\Product::orderBy('name')->get();
-        return view('purchases.edit', compact('purchase', 'suppliers', 'products'));
+        if (DashboardVisibilityService::isSupplierHiddenForUser((int) $purchase->supplier_id, auth()->user())) {
+            abort(404);
+        }
+        $hiddenSupplierIds = DashboardVisibilityService::hiddenSupplierIdsForUser(auth()->user());
+        $suppliers = \App\Models\Supplier::query()
+            ->when(! empty($hiddenSupplierIds), fn ($query) => $query->whereNotIn('id', $hiddenSupplierIds))
+            ->orderBy('name')
+            ->get();
+
+        return view('purchases.edit', compact('purchase', 'suppliers'));
     }
 
     /**
@@ -213,14 +328,57 @@ class PurchaseController extends Controller
      */
     public function update(Request $request, string $id)
     {
-        // Minimal placeholder: validate and redirect back
-        $request->validate([
+        $purchase = \App\Models\Purchase::findOrFail($id);
+        if (SecretPos::isPurchaseHidden((float) $purchase->total_amount)) {
+            abort(404);
+        }
+        if (DashboardVisibilityService::isSupplierHiddenForUser((int) $purchase->supplier_id, auth()->user())) {
+            abort(404);
+        }
+
+        $validated = $request->validate([
             'supplier_id' => 'required|exists:suppliers,id',
+            'reference_no' => 'nullable|string|max:255',
             'purchase_date' => 'nullable|date',
+            'status' => 'required|string|in:pending,ordered,received',
+            'payment_method' => 'nullable|string|in:cash,credit,cheque,bank_deposit,bank_transfer,card,mobile_payment',
+            'paid_amount' => 'nullable|numeric|min:0',
+            'document' => 'nullable|file|mimes:pdf,jpg,jpeg,png,csv,zip,doc,docx|max:5120',
+            'notes' => 'nullable|string',
         ]);
 
-        // TODO: implement full update logic
-        return redirect()->route('purchases.index')->with('success', 'Purchase updated (placeholder)');
+        return DB::transaction(function () use ($request, $validated, $purchase) {
+            $paidAmount = min((float) ($validated['paid_amount'] ?? $purchase->paid_amount ?? 0), (float) $purchase->total_amount);
+            $dueAmount = max((float) $purchase->total_amount - $paidAmount, 0);
+            $paymentStatus = 'unpaid';
+            if ($paidAmount >= (float) $purchase->total_amount) {
+                $paymentStatus = 'paid';
+            } elseif ($paidAmount > 0) {
+                $paymentStatus = 'partial';
+            }
+
+            $documentPath = $purchase->document_path;
+            if ($request->hasFile('document')) {
+                $documentPath = $request->file('document')->store('purchases', 'public');
+                PublicStorageSync::syncFile($documentPath);
+            }
+
+            $purchase->update([
+                'supplier_id' => $validated['supplier_id'],
+                'reference_no' => $validated['reference_no'] ?? null,
+                'purchase_date' => $validated['purchase_date'] ?? now()->toDateString(),
+                'status' => $validated['status'],
+                'payment_method' => $validated['payment_method'] ?? $purchase->payment_method,
+                'paid_amount' => $paidAmount,
+                'due_amount' => $dueAmount,
+                'payment_status' => $paymentStatus,
+                'document_path' => $documentPath,
+                'notes' => $validated['notes'] ?? null,
+            ]);
+
+            return redirect()->route('purchases.show', $purchase->id)
+                ->with('success', 'Purchase updated successfully');
+        });
     }
 
     /**

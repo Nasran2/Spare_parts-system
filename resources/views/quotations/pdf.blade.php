@@ -27,8 +27,13 @@
         @endif
         <div>
             <h1>Quotation</h1>
-            <div class="muted">{{ $shop['name'] }}</div>
-            <div class="muted">{{ $shop['address'] }}</div>
+            <div style="font-size:16px; font-weight:bold; margin-top:4px;">{{ $shop['name'] }}</div>
+            @if(!empty($shop['tagline']))
+                <div class="muted">{{ $shop['tagline'] }}</div>
+            @endif
+            @if(!empty($shop['address']))
+                <div class="muted">{{ $shop['address'] }}</div>
+            @endif
             @if($shop['phone'])<div class="muted">Tel: {{ $shop['phone'] }}</div>@endif
             @if($shop['email'])<div class="muted">Email: {{ $shop['email'] }}</div>@endif
         </div>
@@ -94,12 +99,11 @@
             <table class="totals" style="width:100%">
                 <tr><td>Subtotal</td><td class="right">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->subtotal, $currency) }}</td></tr>
                 <tr><td>Discount</td><td class="right">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->discount, $currency) }}</td></tr>
-                <tr><td>Tax</td><td class="right">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->tax, $currency) }}</td></tr>
                 <tr><td style="font-weight:bold; border-top:1px solid #333;">Grand Total</td><td class="right" style="font-weight:bold; border-top:1px solid #333;">{{ \App\Support\SecretPos::currencyMaskForSale($sale->total_amount, $sale->total_amount, $currency) }}</td></tr>
             </table>
         </div>
     </div>
 
-    <div class="footer">This is a system generated quotation.</div>
+    <div class="footer">{{ $shop['footer_text'] ?: 'This is a system generated quotation.' }}</div>
 </body>
 </html>
