@@ -33,6 +33,12 @@
             </div>
             @include('partials.quick-date-filter', ['fromName' => 'date_from', 'toName' => 'date_to'])
             <div>
+                <label class="flex items-center space-x-2 mt-6 cursor-pointer">
+                    <input type="checkbox" name="all_dates" value="1" @checked($filters['all_dates'] ?? false) class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                    <span class="text-sm font-semibold text-gray-600">All Dates</span>
+                </label>
+            </div>
+            <div>
                 <label class="text-xs font-semibold text-gray-600">Customer</label>
                 <select name="customer_id" class="mt-1 w-full px-3 py-2 border rounded-lg">
                     <option value="">All</option>

@@ -56,70 +56,10 @@ class SaleController extends Controller
         $hiddenCustomerIds = $this->hiddenCustomerIdsForCurrentUser();
         $hiddenSaleIds = $this->hiddenSaleIdsForCurrentUser();
 
-        $query = Sale::with(['customer', 'user', 'returns', 'chequePayments'])->orderByDesc('created_at');
-        if (! empty($hiddenSaleIds)) {
-            $query->whereNotIn('id', $hiddenSaleIds);
-        }
-        if (! empty($hiddenCustomerIds)) {
-            $query->where(function ($customerQuery) use ($hiddenCustomerIds) {
-                $customerQuery->whereNull('customer_id')
-                    ->orWhereNotIn('customer_id', $hiddenCustomerIds);
-            });
-        }
-
-        // Filters: date range, customer, status
-        if ($request->filled('date_from')) {
-            $query->whereDate('sale_date', '>=', $request->date('date_from'));
-        }
-        if ($request->filled('date_to')) {
-            $query->whereDate('sale_date', '<=', $request->date('date_to'));
-        }
-        if ($request->filled('customer_id')) {
-            $query->where('customer_id', $request->integer('customer_id'));
-        }
-        if ($request->filled('payment_status')) {
-            if ($request->string('payment_status')->toString() === 'hold') {
-                $query->where('held_cheque_amount', '>', 0);
-            } else {
-                $query->where('payment_status', $request->string('payment_status'));
-            }
-        }
-
-        // Exclude bills whose totals fall into hidden ranges
-        $query = SecretPos::excludeHiddenRanges($query, 'total_amount');
-        if (! empty($hiddenProductIds)) {
-            $query->whereDoesntHave('items', fn ($q) => $q->whereIn('product_id', $hiddenProductIds));
-        }
-
+        $query = $this->filteredQuery($request);
         $isActive = PrivacyModeService::isActiveForUser($request->user()) && PrivacyModeService::shouldMaskForCurrentPage();
-        if ($isActive) {
-            $query->where('sale_type', 'sale')
-                ->where('sale_no', 'like', 'INV-%');
 
-            $limit = (int) PrivacyModeService::setting('visible_invoice_limit', 10);
-            $currentPage = \Illuminate\Pagination\LengthAwarePaginator::resolveCurrentPage();
-            $perPage = 20;
-            $offset = ($currentPage - 1) * $perPage;
-            $itemsToFetch = max(0, min($perPage, $limit - $offset));
-            if ($itemsToFetch > 0) {
-                $items = $query->skip($offset)->take($itemsToFetch)->get();
-            } else {
-                $items = collect();
-            }
-            $totalCount = min($query->count(), $limit);
-            $sales = new \Illuminate\Pagination\LengthAwarePaginator(
-                $items,
-                $totalCount,
-                $perPage,
-                $currentPage,
-                [
-                    'path' => \Illuminate\Pagination\LengthAwarePaginator::resolveCurrentPath(),
-                    'query' => $request->query(),
-                ]
-            );
-        } else {
-            $sales = $query->paginate(20)->appends($request->query());
-        }
+        $sales = $query->paginate(20)->appends($request->query());
 
         // Make sure totals are up-to-date for invoices that have returns.
         // (Older data or some flows might have recorded returns without recalculating the Sale row.)
@@ -157,7 +97,7 @@ class SaleController extends Controller
         return view('sales.index', [
             'sales' => $sales,
             'customers' => $customers,
-            'filters' => $request->only(['date_from', 'date_to', 'customer_id', 'payment_status']),
+            'filters' => $request->only(['date_from', 'date_to', 'customer_id', 'payment_status', 'all_dates']),
             'currency' => $currency,
         ]);
     }
@@ -659,6 +599,12 @@ class SaleController extends Controller
                     ->orWhereNotIn('customer_id', $hiddenCustomerIds);
             });
         }
+        if ($request->string('sale_type') !== 'quotation') {
+            if (! $request->filled('date_from') && ! $request->filled('date_to') && ! $request->boolean('all_dates')) {
+                $query->whereDate('sale_date', now()->toDateString());
+            }
+        }
+
         if ($request->filled('date_from')) {
             $query->whereDate('sale_date', '>=', $request->date('date_from'));
         }
@@ -682,6 +628,31 @@ class SaleController extends Controller
         if (PrivacyModeService::isActiveForUser($request->user()) && PrivacyModeService::shouldMaskForCurrentPage()) {
             $query->where('sale_type', 'sale')
                 ->where('sale_no', 'like', 'INV-%');
+
+            $percentage = (int) PrivacyModeService::setting('visible_invoice_limit', 100);
+            $mode = PrivacyModeService::setting('sales_list_percentage_mode', 'all_matching_bills');
+
+            if ($mode === 'each_day') {
+                $clone = clone $query;
+                $salesData = $clone->get(['id', 'sale_date', 'created_at', 'total_amount']);
+                $allowedIds = collect();
+                $grouped = $salesData->groupBy(function($s) {
+                    return $s->sale_date?->toDateString() ?? $s->created_at?->toDateString() ?? 'unknown';
+                });
+                foreach ($grouped as $date => $daySales) {
+                    $dayTotal = $daySales->count();
+                    $limit = (int) ceil($dayTotal * ($percentage / 100));
+                    $dayAllowed = $daySales->sortBy('total_amount')->take($limit)->pluck('id');
+                    $allowedIds = $allowedIds->concat($dayAllowed);
+                }
+                $query->whereIn('id', $allowedIds);
+            } else {
+                $clone = clone $query;
+                $totalCount = $clone->count();
+                $limit = (int) ceil($totalCount * ($percentage / 100));
+                $allowedIds = $clone->reorder()->orderBy('total_amount', 'asc')->limit($limit)->pluck('id');
+                $query->whereIn('id', $allowedIds);
+            }
         }
 
         return $query;

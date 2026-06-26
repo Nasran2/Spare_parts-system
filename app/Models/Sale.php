@@ -143,7 +143,7 @@ class Sale extends Model
 
             for ($attempt = 0; $attempt < 20; $attempt++) {
                 $sequence = str_pad((string) $next, max(3, strlen((string) $next)), '0', STR_PAD_LEFT);
-                $encoded = static::encodeSecretDigits($date->format('dmy').$sequence);
+                $encoded = static::encodeSecretDigits($date->format('ymd').$sequence);
                 $candidate = $prefix.'-'.$encoded.str_pad((string) random_int(0, 99), 2, '0', STR_PAD_LEFT);
 
                 if (! static::query()->where('sale_no', $candidate)->exists()) {
@@ -201,7 +201,7 @@ class Sale extends Model
         }
 
         $decoded = static::decodeSecretDigits(substr($encoded, 0, -2));
-        $dateDigits = $date->format('dmy');
+        $dateDigits = $date->format('ymd');
         if (! str_starts_with($decoded, $dateDigits)) {
             return null;
         }

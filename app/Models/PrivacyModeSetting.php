@@ -16,6 +16,7 @@ class PrivacyModeSetting extends Model
         'shortcut_key',
         'shortcut_key_mac',
         'visible_invoice_limit',
+        'sales_list_percentage_mode',
         'masking_type',
         'apply_to_pos',
         'apply_to_sales_list',

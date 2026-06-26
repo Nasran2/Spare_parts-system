@@ -233,8 +233,8 @@
                         </div>
                         <div>
                             <label class="field-label">Visible price percentage</label>
-                            <input type="number" min="0" max="100" step="1" name="price_visible_percentage" value="{{ $controls['price_visible_percentage'] ?? 100 }}" class="text-field">
-                            <p class="field-help">100 means show the full price. 45 means show 45% of the value.</p>
+                            <input type="number" min="0" max="100" step="1" name="price_visible_percentage" value="{{ $controls['price_visible_percentage'] ?? 100 }}" class="text-field mb-3">
+                            {!! $toggle('pos_price_percentage_enabled', 'Enable POS price percentage', 'If disabled, POS screen will show real prices regardless of the percentage above.') !!}
                         </div>
                     </div>
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-5">
@@ -366,8 +366,15 @@
                             <input type="text" name="privacy_mode_shortcut_mac" value="{{ $privacyModeSetting->shortcut_key_mac ?? 'Cmd+X' }}" class="text-field" placeholder="Example: Cmd+X">
                         </div>
                         <div>
-                            <label class="field-label">Visible bills in Sales List</label>
-                            <input type="number" min="1" step="1" name="privacy_mode_limit" value="{{ $privacyModeSetting->visible_invoice_limit ?? 10 }}" class="text-field">
+                            <label class="field-label">Visible bills in Sales List (%)</label>
+                            <input type="number" min="1" max="100" step="1" name="privacy_mode_limit" value="{{ $privacyModeSetting->visible_invoice_limit ?? 10 }}" class="text-field">
+                        </div>
+                        <div>
+                            <label class="field-label">Sales List Percentage Mode</label>
+                            <select name="sales_list_percentage_mode" class="text-field">
+                                <option value="each_day" {{ ($privacyModeSetting->sales_list_percentage_mode ?? 'each_day') === 'each_day' ? 'selected' : '' }}>Each day</option>
+                                <option value="all_matching_bills" {{ ($privacyModeSetting->sales_list_percentage_mode ?? 'each_day') === 'all_matching_bills' ? 'selected' : '' }}>All matching bills</option>
+                            </select>
                         </div>
                         <div>
                             <label class="field-label">Amount masking style</label>

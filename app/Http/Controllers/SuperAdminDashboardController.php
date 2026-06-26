@@ -306,7 +306,7 @@ class SuperAdminDashboardController extends Controller
                 'hide_widgets', 'hide_reports', 'hidden_widgets', 'profit_visible_percentage',
             ],
             'inventory' => [
-                'affected_stores', 'stock_visible_percentage', 'qty_visible_percentage', 'price_visible_percentage',
+                'affected_stores', 'stock_visible_percentage', 'qty_visible_percentage', 'price_visible_percentage', 'pos_price_percentage_enabled',
                 'hide_actual_stock_quantity', 'hide_actual_stock_price', 'hide_actual_purchase_price',
                 'hide_price_wise_data', 'hide_qty_wise_data', 'hide_product_wise_data',
                 'hidden_products', 'hidden_product_cost_price_ranges',

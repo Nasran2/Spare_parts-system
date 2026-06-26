@@ -109,6 +109,22 @@ class ReportController extends Controller
         return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
     }
 
+    private function maskProfitForControls(float|int $value, array $controls, bool $forceHide = false): string
+    {
+        if (\App\Services\PrivacyModeService::isActiveForUser(auth()->user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
+            return \App\Services\PrivacyModeService::maskAmount((float) $value);
+        }
+
+        if ($forceHide || !empty($controls['hide_profit_loss'])) {
+            return '—';
+        }
+
+        $masked = \App\Services\DashboardVisibilityService::profitValue((float) $value, $controls);
+        $roundToWhole = $this->shouldRoundPriceDisplay($controls);
+
+        return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
+    }
+
     private function maskQtyForControls(float|int $value, array $controls, bool $forceHide = false): string
     {
         if ($forceHide || !empty($controls['hide_qty_wise_data'])) {
@@ -1000,9 +1016,9 @@ class ReportController extends Controller
             ['Metric','Value'],
             ['Sales Revenue', $this->maskCurrencyForControls((float) $salesRevenue, $controls, !empty($controls['hide_total_sales']))],
             ['COGS', $this->maskCurrencyForControls((float) $cogs, $controls)],
-            ['Gross Profit', $this->maskCurrencyForControls((float) $grossProfit, $controls)],
+            ['Gross Profit', $this->maskProfitForControls((float) $grossProfit, $controls)],
             ['Expenses', $this->maskCurrencyForControls((float) $expenseTotal, $controls)],
-            ['Net Profit', $this->maskCurrencyForControls((float) $netProfit, $controls)],
+            ['Net Profit', $this->maskProfitForControls((float) $netProfit, $controls)],
         ];
         $csv = fopen('php://temp','r+'); foreach ($rows as $r) { fputcsv($csv,$r); } rewind($csv);
         return response(stream_get_contents($csv), 200, [

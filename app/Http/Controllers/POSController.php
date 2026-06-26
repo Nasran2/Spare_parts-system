@@ -216,7 +216,10 @@ class POSController extends Controller
         $rawStockQty = $usePriceWiseStock && $activePrices->isNotEmpty()
             ? (float) $activePrices->sum('stock_qty')
             : (float) ($product->stock_quantity ?? 0);
-        $priceVisiblePct = (float) ($controls['price_visible_percentage'] ?? 100);
+        $posPricePercentageEnabled = ! empty($controls['pos_price_percentage_enabled']);
+        $priceVisiblePct = $posPricePercentageEnabled
+            ? (float) ($controls['price_visible_percentage'] ?? 100)
+            : 100;
 
         $displaySellingPrice = ! empty($controls['hide_price_wise_data']) || ! empty($controls['hide_actual_stock_price'])
             ? '—'

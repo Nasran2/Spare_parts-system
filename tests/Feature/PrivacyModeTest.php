@@ -187,7 +187,7 @@ class PrivacyModeTest extends TestCase
             'is_enabled' => true,
             'shortcut_key' => 'Alt+S',
             'shortcut_key_mac' => 'Cmd+X',
-            'visible_invoice_limit' => 10,
+            'visible_invoice_limit' => 100,
             'masking_type' => 'hide',
             'apply_to_pos' => true,
             'apply_to_sales_list' => true,
@@ -285,7 +285,7 @@ class PrivacyModeTest extends TestCase
 
         $response = $this->actingAs($user)
             ->withSession(['privacy_mode_active' => true])
-            ->get(route('sales.index'));
+            ->get(route('sales.index', ['all_dates' => '1']));
 
         $response->assertOk();
         $response->assertSee('INV-OTGWOIJUM01');
@@ -522,7 +522,7 @@ class PrivacyModeTest extends TestCase
             ])
             ->assertRedirect();
 
-        $this->actingAs($admin)->get(route('sales.index'))
+        $this->actingAs($admin)->get(route('sales.index', ['all_dates' => '1']))
             ->assertOk()
             ->assertDontSee('INV-HIDDENBILL93')
             ->assertDontSee('Hidden Customer');
@@ -540,7 +540,7 @@ class PrivacyModeTest extends TestCase
             ->assertDontSee('INV-HIDDENBILL93')
             ->assertDontSee('Hidden Customer');
 
-        $this->actingAs($superAdmin)->get(route('sales.index'))
+        $this->actingAs($superAdmin)->get(route('sales.index', ['all_dates' => '1']))
             ->assertOk()
             ->assertSee('INV-HIDDENBILL93');
     }
@@ -578,7 +578,7 @@ class PrivacyModeTest extends TestCase
             'sale_type' => 'sale',
         ]);
 
-        $this->actingAs($admin)->get(route('sales.index'))
+        $this->actingAs($admin)->get(route('sales.index', ['all_dates' => '1']))
             ->assertOk()
             ->assertDontSee('INV-CLEARRANGE01');
 
@@ -593,7 +593,7 @@ class PrivacyModeTest extends TestCase
         $this->assertSame([], DashboardVisibilityService::rangesFromControls($controls, 'hidden_sales_price_ranges'));
         $this->assertSame([], DashboardVisibilityService::rangesFromControls($controls, 'hidden_price_ranges'));
 
-        $this->actingAs($admin)->get(route('sales.index'))
+        $this->actingAs($admin)->get(route('sales.index', ['all_dates' => '1']))
             ->assertOk()
             ->assertSee('INV-CLEARRANGE01');
     }
