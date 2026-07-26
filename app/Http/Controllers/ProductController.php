@@ -847,30 +847,52 @@ class ProductController extends Controller
 
     private function syncDefaultPriceOption(Product $product): void
     {
-        $price = ProductPrice::query()
+        $costPrice = round((float) $product->cost_price, 2);
+        $sellingPrice = round((float) $product->selling_price, 2);
+
+        $matchingPrice = ProductPrice::query()
             ->where('product_id', $product->id)
-            ->where('is_default', true)
+            ->where('status', 'active')
+            ->where('cost_price', $costPrice)
+            ->where('selling_price', $sellingPrice)
             ->first();
 
-        if (! $price) {
-            $price = ProductPrice::create([
-                'product_id' => $product->id,
-                'cost_price' => round((float) $product->cost_price, 2),
-                'selling_price' => round((float) $product->selling_price, 2),
-                'stock_qty' => round((float) ($product->stock_quantity ?? 0), 3),
-                'is_default' => true,
-                'status' => 'active',
-            ]);
+        $priceId = null;
+
+        if ($matchingPrice) {
+            $matchingPrice->update(['is_default' => true]);
+            $priceId = $matchingPrice->id;
         } else {
-            $price->update([
-                'cost_price' => round((float) $product->cost_price, 2),
-                'selling_price' => round((float) $product->selling_price, 2),
-                'stock_qty' => round((float) ($product->stock_quantity ?? 0), 3),
-                'status' => 'active',
-            ]);
+            $defaultPrice = ProductPrice::query()
+                ->where('product_id', $product->id)
+                ->where('is_default', true)
+                ->first();
+
+            if (! $defaultPrice) {
+                $newPrice = ProductPrice::create([
+                    'product_id' => $product->id,
+                    'cost_price' => $costPrice,
+                    'selling_price' => $sellingPrice,
+                    'stock_qty' => round((float) ($product->stock_quantity ?? 0), 3),
+                    'is_default' => true,
+                    'status' => 'active',
+                ]);
+                $priceId = $newPrice->id;
+            } else {
+                $defaultPrice->update([
+                    'cost_price' => $costPrice,
+                    'selling_price' => $sellingPrice,
+                    'status' => 'active',
+                ]);
+                $priceId = $defaultPrice->id;
+            }
         }
 
-        ProductPrice::where('product_id', $product->id)->where('id', '!=', $price->id)->update(['is_default' => false]);
+        if ($priceId) {
+            ProductPrice::where('product_id', $product->id)
+                ->where('id', '!=', $priceId)
+                ->update(['is_default' => false]);
+        }
     }
 
     public function destroy(Product $product)

@@ -209,6 +209,13 @@ class TaxManagementController extends Controller
         return view('tax.payments', compact('payments', 'accounts'));
     }
 
+    public function paymentBalance(Request $request)
+    {
+        $request->validate(['period' => 'required|date_format:Y-m']);
+        $balance = $this->periodBalance($request->period);
+        return response()->json($balance);
+    }
+
     public function storePayment(Request $request)
     {
         $data = $request->validate([
@@ -377,6 +384,7 @@ class TaxManagementController extends Controller
             'reference' => ['required', 'string', 'max:100', 'unique:tax_adjustments,reference'],
             'approve' => ['nullable', 'boolean'],
         ]);
+        unset($data['approve']);
         $adjustment = TaxAdjustment::create([
             ...$data,
             'status' => $request->boolean('approve') ? 'approved' : 'draft',

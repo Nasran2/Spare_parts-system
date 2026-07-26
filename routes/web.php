@@ -479,6 +479,8 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
             ->middleware('permission:tax.view')->name('ledger');
         Route::get('/payments', [TaxManagementController::class, 'payments'])
             ->middleware('permission:tax.view')->name('payments');
+        Route::get('/payments/balance', [TaxManagementController::class, 'paymentBalance'])
+            ->middleware('permission:tax.view')->name('payments.balance');
         Route::post('/payments', [TaxManagementController::class, 'storePayment'])
             ->middleware('permission:tax.payment.create')->name('payments.store');
         Route::patch('/payments/{taxPayment}', [TaxManagementController::class, 'updatePayment'])

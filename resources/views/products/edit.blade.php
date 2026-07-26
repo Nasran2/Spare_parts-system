@@ -1495,18 +1495,6 @@ function updateTaxPricePreview() {
     const total = mode === 'inclusive' ? price : net + vat;
     preview.innerHTML = `<strong>${mode === 'inclusive' ? 'Price Includes VAT' : 'VAT Will Be Added'}</strong>
         <span class="block mt-1">Net: Rs ${net.toFixed(2)} · VAT: Rs ${vat.toFixed(2)} · Final: Rs ${total.toFixed(2)}</span>`;
-
-    const defaultRowCheckbox = document.querySelector('input[name="is_default"]:checked');
-    if (defaultRowCheckbox) {
-        const row = defaultRowCheckbox.closest('tr');
-        if (row) {
-            const costInput = row.querySelector('input[name="cost_price"]');
-            const sellInput = row.querySelector('input[name="selling_price"]');
-            const mainCost = document.getElementById('cost_price')?.value;
-            if (costInput && mainCost !== undefined) costInput.value = mainCost;
-            if (sellInput && price !== undefined) sellInput.value = price.toFixed(2);
-        }
-    }
 }
 ['selling_price', 'tax_status', 'product_vat_rate'].forEach(id => {
     document.getElementById(id)?.addEventListener('input', updateTaxPricePreview);
