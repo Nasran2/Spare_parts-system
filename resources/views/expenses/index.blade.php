@@ -46,7 +46,7 @@
                             <span class="text-gray-800">{{ $expense->description }}</span>
                         </td>
                         <td class="px-6 py-4 text-right">
-                            <span class="font-semibold text-red-600">${{ number_format($expense->amount, 2) }}</span>
+                            <span class="font-semibold text-red-600">{{ $currency }}{{ number_format($expense->amount, 2) }}</span>
                         </td>
                         <td class="px-6 py-4 text-center">
                             <span class="px-3 py-1 {{ ($expense->payment_method ?? 'cash') === 'bank_transfer' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-700' }} rounded-full text-xs font-semibold">

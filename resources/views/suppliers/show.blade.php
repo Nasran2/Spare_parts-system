@@ -96,9 +96,9 @@
                             <tr>
                                 <td class="px-4 py-2 border-b">{{ optional($purchase->purchase_date)->format('M d, Y') }}</td>
                                 <td class="px-4 py-2 border-b">{{ !empty($controls['hide_invoice_details']) ? 'HIDDEN' : $purchase->purchase_no }}</td>
-                                <td class="px-4 py-2 border-b text-right">${{ $maskMoney($purchase->total_amount, !empty($controls['hide_total_purchase']) || !empty($controls['hide_invoice_details'])) }}</td>
-                                <td class="px-4 py-2 border-b text-right">${{ $maskMoney($purchase->paid_amount, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
-                                <td class="px-4 py-2 border-b text-right">${{ $maskMoney($purchase->due_amount, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
+                                <td class="px-4 py-2 border-b text-right">{{ $currency }}{{ $maskMoney($purchase->total_amount, !empty($controls['hide_total_purchase']) || !empty($controls['hide_invoice_details'])) }}</td>
+                                <td class="px-4 py-2 border-b text-right">{{ $currency }}{{ $maskMoney($purchase->paid_amount, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
+                                <td class="px-4 py-2 border-b text-right">{{ $currency }}{{ $maskMoney($purchase->due_amount, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
                                 <td class="px-4 py-2 border-b text-left">
                                     @if(!empty($controls['hide_supplier_payments']))
                                         <span class="text-xs text-gray-500">Hidden</span>
@@ -106,7 +106,7 @@
                                     @foreach($purchase->payments as $payment)
                                         <div>
                                             <span class="text-xs text-gray-700">{{ optional($payment->payment_date)->format('M d, Y') }}:</span>
-                                            <span class="font-semibold text-green-700">${{ $maskMoney($payment->amount) }}</span>
+                                            <span class="font-semibold text-green-700">{{ $currency }}{{ $maskMoney($payment->amount) }}</span>
                                             <span class="text-xs text-gray-500">({{ $payment->payment_method }})</span>
                                         </div>
                                     @endforeach

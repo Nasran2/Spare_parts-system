@@ -70,7 +70,7 @@
                             <span class="text-sm text-gray-600">{{ optional($purchase->purchase_date)->format('M d, Y') }}</span>
                         </td>
                         <td class="px-6 py-4 text-right">
-                            <span class="font-semibold text-gray-800">${{ $maskMoney(($purchase->total_amount ?? 0), !empty($controls['hide_total_purchase']) || !empty($controls['hide_invoice_details'])) }}</span>
+                            <span class="font-semibold text-gray-800">{{ $currency }}{{ $maskMoney(($purchase->total_amount ?? 0), !empty($controls['hide_total_purchase']) || !empty($controls['hide_invoice_details'])) }}</span>
                         </td>
                         <td class="px-6 py-4 text-center">
                             @if($purchase->payment_status === 'paid')

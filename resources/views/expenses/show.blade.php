@@ -11,7 +11,7 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
             <div><span class="font-medium text-gray-600">Date:</span> {{ $expense->expense_date->format('M d, Y') }}</div>
             <div><span class="font-medium text-gray-600">Category:</span> {{ $expense->category->name ?? 'N/A' }}</div>
-            <div><span class="font-medium text-gray-600">Amount:</span> <span class="font-semibold text-red-600">${{ number_format($expense->amount,2) }}</span></div>
+            <div><span class="font-medium text-gray-600">Amount:</span> <span class="font-semibold text-red-600">{{ $currency }}{{ number_format($expense->amount,2) }}</span></div>
             <div><span class="font-medium text-gray-600">Recorded By:</span> {{ $expense->user->name ?? 'N/A' }}</div>
             <div class="md:col-span-2"><span class="font-medium text-gray-600">Description:</span> {{ $expense->description ?? '—' }}</div>
         </div>
