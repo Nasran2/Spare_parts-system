@@ -586,6 +586,14 @@ class POSController extends Controller
                             ->lockForUpdate()
                             ->first();
 
+                        if (! $storeStock && $usePriceWiseStock) {
+                            $storeStock = \App\Models\StoreStock::where('store_id', $storeId)
+                                ->where('product_id', $product->id)
+                                ->whereNull('product_price_id')
+                                ->lockForUpdate()
+                                ->first();
+                        }
+
                         if (! $storeStock || (float) $storeStock->quantity < $baseQty) {
                             throw new \Exception("Not enough stock for {$product->name} in the selected branch.");
                         }
@@ -913,6 +921,14 @@ class POSController extends Controller
                                 ->where('product_id', $product->id)
                                 ->where('product_price_id', $usePriceWiseStock ? ($item['product_price_id'] ?? null) : null)
                                 ->first();
+                                
+                            if (! $storeStock && $usePriceWiseStock) {
+                                $storeStock = \App\Models\StoreStock::where('store_id', $storeId)
+                                    ->where('product_id', $product->id)
+                                    ->whereNull('product_price_id')
+                                    ->first();
+                            }
+
                             if ($storeStock) {
                                 $storeStock->decrement('quantity', $decrementQty);
                             }

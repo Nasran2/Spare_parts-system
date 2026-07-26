@@ -293,7 +293,7 @@
                     </div>
                     <div>
                         <label class="block text-xs font-semibold text-gray-600 mb-2">Purchase Price VAT Mode</label>
-                        <select name="purchase_price_mode" class="w-full px-3 py-2 border rounded-lg">
+                        <select id="purchase_price_mode" name="purchase_price_mode" class="w-full px-3 py-2 border rounded-lg">
                             <option value="global" @selected(old('purchase_price_mode', $pts?->purchase_price_mode ?? 'global') === 'global')>Use Global ({{ $taxSettings->default_purchase_price_mode === 'exclusive' ? 'Show VAT' : 'Hide VAT' }})</option>
                             <option value="inclusive" @selected(old('purchase_price_mode', $pts?->purchase_price_mode) === 'inclusive')>Hide VAT</option>
                             <option value="exclusive" @selected(old('purchase_price_mode', $pts?->purchase_price_mode) === 'exclusive')>Show VAT</option>
@@ -1111,18 +1111,26 @@ document.getElementById('brandForm').addEventListener('submit', async function(e
 });
 
 function onPercentageChange() {
-    const costPrice = parseFloat(document.getElementById('cost_price').value) || 0;
+    const costPriceRaw = parseFloat(document.getElementById('cost_price').value) || 0;
     const percentage = parseFloat(document.getElementById('profit_margin_percent').value) || 0;
     const denominator = 1 - (percentage / 100);
-    if (costPrice > 0 && percentage >= 0 && denominator > 0) {
-        const baseSelling = costPrice / denominator;
-        const fixedAmount = baseSelling - costPrice;
+    const vatRate = parseFloat({{ \Illuminate\Support\Js::from($vatRate ?? 0) }});
+    const vatEnabled = Boolean({{ \Illuminate\Support\Js::from($vatEnabled ?? false) }});
+    const vatType = document.getElementById('vat_type') ? document.getElementById('vat_type').value : 'exclusive';
+    const effectiveVatType = vatType === 'global' ? {{ \Illuminate\Support\Js::from($taxSettings->default_sale_price_mode) }} : vatType;
+    const purchaseVatType = document.getElementById('purchase_price_mode') ? document.getElementById('purchase_price_mode').value : 'exclusive';
+    const effectivePurchaseVatType = purchaseVatType === 'global' ? {{ \Illuminate\Support\Js::from($taxSettings->default_purchase_price_mode) }} : purchaseVatType;
+
+    let baseCost = costPriceRaw;
+    if (vatEnabled && effectivePurchaseVatType === 'inclusive') {
+        baseCost = costPriceRaw / (1 + (vatRate / 100));
+    }
+
+    if (baseCost > 0 && percentage >= 0 && denominator > 0) {
+        const baseSelling = baseCost / denominator;
+        const fixedAmount = baseSelling - baseCost;
         document.getElementById('profit_margin_fixed').value = fixedAmount.toFixed(2);
 
-        const vatRate = parseFloat({{ \Illuminate\Support\Js::from($vatRate ?? 0) }});
-        const vatEnabled = Boolean({{ \Illuminate\Support\Js::from($vatEnabled ?? false) }});
-        const vatType = document.getElementById('vat_type') ? document.getElementById('vat_type').value : 'exclusive';
-        const effectiveVatType = vatType === 'global' ? {{ \Illuminate\Support\Js::from($taxSettings->default_sale_price_mode) }} : vatType;
         let finalSelling = baseSelling;
         if (vatEnabled) {
             finalSelling = effectiveVatType === 'inclusive' ? baseSelling * (1 + (vatRate / 100)) : baseSelling;
@@ -1130,22 +1138,30 @@ function onPercentageChange() {
         document.getElementById('selling_price').value = finalSelling.toFixed(2);
     } else {
         document.getElementById('profit_margin_fixed').value = '';
-        document.getElementById('selling_price').value = costPrice.toFixed(2);
+        document.getElementById('selling_price').value = costPriceRaw.toFixed(2);
     }
 }
 
 function onFixedAmountChange() {
-    const costPrice = parseFloat(document.getElementById('cost_price').value) || 0;
+    const costPriceRaw = parseFloat(document.getElementById('cost_price').value) || 0;
     const fixedAmount = parseFloat(document.getElementById('profit_margin_fixed').value) || 0;
-    if (costPrice > 0 && fixedAmount >= 0) {
-        const baseSelling = costPrice + fixedAmount;
+    const vatRate = parseFloat({{ \Illuminate\Support\Js::from($vatRate ?? 0) }});
+    const vatEnabled = Boolean({{ \Illuminate\Support\Js::from($vatEnabled ?? false) }});
+    const vatType = document.getElementById('vat_type') ? document.getElementById('vat_type').value : 'exclusive';
+    const effectiveVatType = vatType === 'global' ? {{ \Illuminate\Support\Js::from($taxSettings->default_sale_price_mode) }} : vatType;
+    const purchaseVatType = document.getElementById('purchase_price_mode') ? document.getElementById('purchase_price_mode').value : 'exclusive';
+    const effectivePurchaseVatType = purchaseVatType === 'global' ? {{ \Illuminate\Support\Js::from($taxSettings->default_purchase_price_mode) }} : purchaseVatType;
+
+    let baseCost = costPriceRaw;
+    if (vatEnabled && effectivePurchaseVatType === 'inclusive') {
+        baseCost = costPriceRaw / (1 + (vatRate / 100));
+    }
+
+    if (baseCost > 0 && fixedAmount >= 0) {
+        const baseSelling = baseCost + fixedAmount;
         const percentage = baseSelling > 0 ? (fixedAmount / baseSelling) * 100 : 0;
         document.getElementById('profit_margin_percent').value = percentage.toFixed(2);
 
-        const vatRate = parseFloat({{ \Illuminate\Support\Js::from($vatRate ?? 0) }});
-        const vatEnabled = Boolean({{ \Illuminate\Support\Js::from($vatEnabled ?? false) }});
-        const vatType = document.getElementById('vat_type') ? document.getElementById('vat_type').value : 'exclusive';
-        const effectiveVatType = vatType === 'global' ? {{ \Illuminate\Support\Js::from($taxSettings->default_sale_price_mode) }} : vatType;
         let finalSelling = baseSelling;
         if (vatEnabled) {
             finalSelling = effectiveVatType === 'inclusive' ? baseSelling * (1 + (vatRate / 100)) : baseSelling;
@@ -1153,7 +1169,7 @@ function onFixedAmountChange() {
         document.getElementById('selling_price').value = finalSelling.toFixed(2);
     } else {
         document.getElementById('profit_margin_percent').value = '';
-        document.getElementById('selling_price').value = costPrice.toFixed(2);
+        document.getElementById('selling_price').value = costPriceRaw.toFixed(2);
     }
 }
 
@@ -1180,19 +1196,26 @@ if (vatTypeEl) {
 }
 
 function onSellingPriceChange() {
-    const costPrice = parseFloat(document.getElementById('cost_price').value) || 0;
+    const costPriceRaw = parseFloat(document.getElementById('cost_price').value) || 0;
     const sellingFinal = parseFloat(document.getElementById('selling_price').value) || 0;
     const vatRate = parseFloat({{ \Illuminate\Support\Js::from($vatRate ?? 0) }});
     const vatEnabled = Boolean({{ \Illuminate\Support\Js::from($vatEnabled ?? false) }});
     const vatType = document.getElementById('vat_type') ? document.getElementById('vat_type').value : 'exclusive';
     const effectiveVatType = vatType === 'global' ? {{ \Illuminate\Support\Js::from($taxSettings->default_sale_price_mode) }} : vatType;
+    const purchaseVatType = document.getElementById('purchase_price_mode') ? document.getElementById('purchase_price_mode').value : 'exclusive';
+    const effectivePurchaseVatType = purchaseVatType === 'global' ? {{ \Illuminate\Support\Js::from($taxSettings->default_purchase_price_mode) }} : purchaseVatType;
 
     let baseSelling = sellingFinal;
     if (vatEnabled && effectiveVatType === 'inclusive') {
         baseSelling = sellingFinal / (1 + (vatRate / 100));
     }
 
-    const fixedAmount = baseSelling - costPrice;
+    let baseCost = costPriceRaw;
+    if (vatEnabled && effectivePurchaseVatType === 'inclusive') {
+        baseCost = costPriceRaw / (1 + (vatRate / 100));
+    }
+
+    const fixedAmount = baseSelling - baseCost;
     const percentage = baseSelling > 0 ? (fixedAmount / baseSelling) * 100 : 0;
 
     if (!isNaN(fixedAmount)) {
@@ -1472,11 +1495,54 @@ function updateTaxPricePreview() {
     const total = mode === 'inclusive' ? price : net + vat;
     preview.innerHTML = `<strong>${mode === 'inclusive' ? 'Price Includes VAT' : 'VAT Will Be Added'}</strong>
         <span class="block mt-1">Net: Rs ${net.toFixed(2)} · VAT: Rs ${vat.toFixed(2)} · Final: Rs ${total.toFixed(2)}</span>`;
+
+    const defaultRowCheckbox = document.querySelector('input[name="is_default"]:checked');
+    if (defaultRowCheckbox) {
+        const row = defaultRowCheckbox.closest('tr');
+        if (row) {
+            const costInput = row.querySelector('input[name="cost_price"]');
+            const sellInput = row.querySelector('input[name="selling_price"]');
+            const mainCost = document.getElementById('cost_price')?.value;
+            if (costInput && mainCost !== undefined) costInput.value = mainCost;
+            if (sellInput && price !== undefined) sellInput.value = price.toFixed(2);
+        }
+    }
 }
-['selling_price', 'vat_type', 'tax_status', 'product_vat_rate'].forEach(id => {
+['selling_price', 'tax_status', 'product_vat_rate'].forEach(id => {
     document.getElementById(id)?.addEventListener('input', updateTaxPricePreview);
     document.getElementById(id)?.addEventListener('change', updateTaxPricePreview);
 });
+
+let _lastVatMode = null;
+document.getElementById('vat_type')?.addEventListener('change', function(e) {
+    const newSelected = e.target.value;
+    const newMode = newSelected === 'global' ? {{ \Illuminate\Support\Js::from($taxSettings->default_sale_price_mode) }} : newSelected;
+    
+    if (_lastVatMode && newMode !== _lastVatMode) {
+        const priceInput = document.getElementById('selling_price');
+        const price = Number(priceInput.value || 0);
+        const status = document.getElementById('tax_status')?.value || 'standard';
+        const rate = status === 'zero_rated' || status === 'exempt' || status === 'out_of_scope'
+            ? 0
+            : Number(document.getElementById('product_vat_rate')?.value || {{ \Illuminate\Support\Js::from((float) $vatRate) }});
+            
+        if (price > 0 && rate > 0) {
+            if (_lastVatMode === 'exclusive' && newMode === 'inclusive') {
+                priceInput.value = (price * (1 + rate / 100)).toFixed(2);
+            } else if (_lastVatMode === 'inclusive' && newMode === 'exclusive') {
+                priceInput.value = (price / (1 + rate / 100)).toFixed(2);
+            }
+            if (typeof onSellingPriceChange === 'function') onSellingPriceChange();
+        }
+    }
+    _lastVatMode = newMode;
+    updateTaxPricePreview();
+});
+
+// Initialize last mode
+const initialSelected = document.getElementById('vat_type')?.value || 'global';
+_lastVatMode = initialSelected === 'global' ? {{ \Illuminate\Support\Js::from($taxSettings->default_sale_price_mode) }} : initialSelected;
+
 updateTaxPricePreview();
 </script>
 @endsection

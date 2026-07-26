@@ -185,6 +185,7 @@
                     <option value="global">Use Global ({{ $taxSettings->default_purchase_price_mode === 'exclusive' ? 'Show VAT' : 'Hide VAT' }})</option>
                     <option value="inclusive">Hide VAT</option>
                     <option value="exclusive">Show VAT</option>
+                    <option value="no_vat">No VAT (0%)</option>
                 </select>
             </div>
             <div class="flex items-end">
@@ -443,6 +444,10 @@
                     <input type="text" name="company_name" class="w-full border rounded px-3 py-2" />
                 </div>
                 <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Supplier TIN</label>
+                    <input type="text" name="tin" inputmode="numeric" pattern="[0-9]{9,12}" maxlength="12" class="w-full border rounded px-3 py-2" />
+                </div>
+                <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Email</label>
                     <input type="email" name="email" class="w-full border rounded px-3 py-2" />
                 </div>
@@ -644,7 +649,7 @@ function buildStoreQuantitiesContainer(tr, selectedStores) {
         div.className = 'flex items-center justify-between gap-2 text-xs mb-1';
         div.innerHTML = `
             <span class="text-gray-700 font-medium truncate max-w-[120px]" title="${store.name}">${store.name}:</span>
-            <input type="number" min="0" step="0.01" class="store-qty-input border border-gray-300 rounded px-1 py-0.5 text-right w-16 focus:ring-1 focus:ring-green-500 text-xs" data-store-id="${store.id}" value="${val}" oninput="onStoreQtyInput(this)" />
+            <input type="number" min="0" step="any" class="store-qty-input border border-gray-300 rounded px-1 py-0.5 text-right w-16 focus:ring-1 focus:ring-green-500 text-xs" data-store-id="${store.id}" value="${val}" oninput="onStoreQtyInput(this)" />
         `;
         container.appendChild(div);
     });
@@ -1073,7 +1078,7 @@ function recalcGrandTotal() {
     // Apply tax
     const selectedMode = document.getElementById('purchase_vat_mode').value;
     const taxMode = selectedMode === 'global' ? {{ \Illuminate\Support\Js::from($taxSettings->default_purchase_price_mode) }} : selectedMode;
-    const vatEnabled = {{ \Illuminate\Support\Js::from((bool) $taxSettings->vat_enabled) }};
+    const vatEnabled = {{ \Illuminate\Support\Js::from((bool) $taxSettings->vat_enabled) }} && selectedMode !== 'no_vat';
     const vatRate = Number({{ \Illuminate\Support\Js::from((string) $taxSettings->default_vat_rate) }});
     let tax = 0;
     const discountedTotal = Math.max(0, netTotal - discount);

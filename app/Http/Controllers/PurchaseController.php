@@ -147,7 +147,7 @@ class PurchaseController extends Controller
             $subtotal = $taxInvoice['totals']['gross'];
             $discountAmount = $taxInvoice['totals']['discount'];
             $taxAmount = $taxInvoice['totals']['vat'];
-            $taxId = $taxSettings->vat_enabled ? 'VAT' : null;
+            $taxId = $taxSettings->vat_enabled ? $taxSettings->id : null;
 
             // Handle shipping cost
             $shippingCost = (string) ($validated['shipping_cost'] ?? '0');

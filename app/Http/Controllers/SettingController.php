@@ -600,6 +600,64 @@ class SettingController extends Controller
                     $created,
                     ['old' => $old, 'new' => $created->snapshot()]
                 );
+
+                // Auto-migrate prices for products using global setting
+                $oldSaleMode = $current->default_sale_price_mode ?? 'inclusive';
+                $newSaleMode = $created->default_sale_price_mode ?? 'inclusive';
+                $oldPurchaseMode = $current->default_purchase_price_mode ?? 'inclusive';
+                $newPurchaseMode = $created->default_purchase_price_mode ?? 'inclusive';
+
+                if ($oldSaleMode !== $newSaleMode || $oldPurchaseMode !== $newPurchaseMode) {
+                    $products = \App\Models\Product::with('prices')->get();
+                    foreach ($products as $product) {
+                        $vatRate = (float) ($product->vat_rate ?? $created->default_vat_rate);
+                        if ($vatRate <= 0) continue;
+                        
+                        $multiplier = 1 + ($vatRate / 100);
+                        $changed = false;
+                        
+                        $isGlobalSale = in_array($product->sale_price_mode, ['global', null, ''], true);
+                        if ($isGlobalSale && $oldSaleMode !== $newSaleMode) {
+                            if ($oldSaleMode === 'inclusive' && $newSaleMode === 'exclusive') {
+                                $product->selling_price = round($product->selling_price / $multiplier, 2);
+                            } elseif ($oldSaleMode === 'exclusive' && $newSaleMode === 'inclusive') {
+                                $product->selling_price = round($product->selling_price * $multiplier, 2);
+                            }
+                            $changed = true;
+                        }
+                        
+                        $isGlobalPurchase = in_array($product->purchase_price_mode, ['global', null, ''], true);
+                        if ($isGlobalPurchase && $oldPurchaseMode !== $newPurchaseMode) {
+                            if ($oldPurchaseMode === 'inclusive' && $newPurchaseMode === 'exclusive') {
+                                $product->cost_price = round($product->cost_price / $multiplier, 2);
+                            } elseif ($oldPurchaseMode === 'exclusive' && $newPurchaseMode === 'inclusive') {
+                                $product->cost_price = round($product->cost_price * $multiplier, 2);
+                            }
+                            $changed = true;
+                        }
+                        
+                        if ($changed) {
+                            $product->save();
+                            foreach ($product->prices as $price) {
+                                if ($isGlobalSale && $oldSaleMode !== $newSaleMode) {
+                                    if ($oldSaleMode === 'inclusive' && $newSaleMode === 'exclusive') {
+                                        $price->selling_price = round($price->selling_price / $multiplier, 2);
+                                    } elseif ($oldSaleMode === 'exclusive' && $newSaleMode === 'inclusive') {
+                                        $price->selling_price = round($price->selling_price * $multiplier, 2);
+                                    }
+                                }
+                                if ($isGlobalPurchase && $oldPurchaseMode !== $newPurchaseMode) {
+                                    if ($oldPurchaseMode === 'inclusive' && $newPurchaseMode === 'exclusive') {
+                                        $price->cost_price = round($price->cost_price / $multiplier, 2);
+                                    } elseif ($oldPurchaseMode === 'exclusive' && $newPurchaseMode === 'inclusive') {
+                                        $price->cost_price = round($price->cost_price * $multiplier, 2);
+                                    }
+                                }
+                                $price->save();
+                            }
+                        }
+                    }
+                }
             });
 
             Cache::flush();

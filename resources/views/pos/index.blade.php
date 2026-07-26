@@ -1378,6 +1378,19 @@
 
     function getFilteredList() {
         let list = activeProductList;
+        
+        const storeId = document.getElementById('pos-location')?.value;
+        if (storeId) {
+            list = list.filter(p => {
+                // If the product doesn't have store_stocks array at all (old data), fallback to total stock
+                if (!p.store_stocks || Object.keys(p.store_stocks).length === 0) {
+                    return p.stock_quantity > 0;
+                }
+                const storeStock = Number(p.store_stocks[storeId] || 0);
+                return storeStock > 0;
+            });
+        }
+        
         if (posPageState.category && posPageState.category !== 'All') {
             list = list.filter(p => (p.categories || []).includes(posPageState.category));
         }
