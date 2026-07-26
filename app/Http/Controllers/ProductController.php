@@ -849,9 +849,7 @@ class ProductController extends Controller
     {
         $price = ProductPrice::query()
             ->where('product_id', $product->id)
-            ->where('status', 'active')
-            ->where('cost_price', round((float) $product->cost_price, 2))
-            ->where('selling_price', round((float) $product->selling_price, 2))
+            ->where('is_default', true)
             ->first();
 
         if (! $price) {
@@ -863,14 +861,16 @@ class ProductController extends Controller
                 'is_default' => true,
                 'status' => 'active',
             ]);
+        } else {
+            $price->update([
+                'cost_price' => round((float) $product->cost_price, 2),
+                'selling_price' => round((float) $product->selling_price, 2),
+                'stock_qty' => round((float) ($product->stock_quantity ?? 0), 3),
+                'status' => 'active',
+            ]);
         }
 
         ProductPrice::where('product_id', $product->id)->where('id', '!=', $price->id)->update(['is_default' => false]);
-        $price->update([
-            'stock_qty' => round((float) ($product->stock_quantity ?? 0), 3),
-            'is_default' => true,
-            'status' => 'active',
-        ]);
     }
 
     public function destroy(Product $product)

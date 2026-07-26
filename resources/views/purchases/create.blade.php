@@ -182,9 +182,9 @@
                 <label class="block text-sm font-semibold text-gray-700 mb-2">Purchase VAT Mode:</label>
                 <input type="hidden" name="tax_id" value="{{ $taxSettings->vat_enabled ? 'VAT' : '' }}">
                 <select name="purchase_vat_mode" id="purchase_vat_mode" onchange="recalcGrandTotal()" class="w-full border border-gray-300 rounded px-3 py-2">
-                    <option value="global">Use Global ({{ ucfirst($taxSettings->default_purchase_price_mode) }})</option>
-                    <option value="inclusive">VAT Inclusive</option>
-                    <option value="exclusive">VAT Exclusive</option>
+                    <option value="global">Use Global ({{ $taxSettings->default_purchase_price_mode === 'exclusive' ? 'Show VAT' : 'Hide VAT' }})</option>
+                    <option value="inclusive">Hide VAT</option>
+                    <option value="exclusive">Show VAT</option>
                 </select>
             </div>
             <div class="flex items-end">

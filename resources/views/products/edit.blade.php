@@ -184,12 +184,16 @@
                 </label>
                 <p class="text-xs text-gray-500 mb-2">Uncheck units you do not want to display in the product list. Leave all checked to show prices for every unit.</p>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    @php($selectedUnits = old('visible_units', $product->visible_units))
+                    @php
+                        $selectedUnits = old('visible_units', $product->visible_units);
+                    @endphp
                     @foreach($units as $u)
                         <label class="flex items-center space-x-2 px-2 py-1 border rounded">
                             <input type="checkbox" name="visible_units[]" value="{{ $u->id }}" class="text-blue-600 rounded"
                                 {{ (is_array($selectedUnits) ? in_array($u->id, $selectedUnits) : true) ? 'checked' : '' }}>
-                            @php($m = rtrim(rtrim(number_format((float)$u->base_unit_multiplier, 3, '.', ''), '0'), '.'))
+                            @php
+                                $m = rtrim(rtrim(number_format((float)$u->base_unit_multiplier, 3, '.', ''), '0'), '.');
+                            @endphp
                             <span class="text-xs text-gray-700">{{ $u->short_name }} (x{{ $m }})</span>
                         </label>
                     @endforeach
@@ -263,7 +267,9 @@
                 <label class="block text-sm font-semibold text-gray-700 mb-2">
                     <i class="fas fa-receipt text-green-600 mr-2"></i>Product Tax Settings
                 </label>
-                @php($pts = $product->taxSetting)
+                @php
+                    $pts = $product->taxSetting;
+                @endphp
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div>
                         <label class="block text-xs font-semibold text-gray-600 mb-2">Tax Status</label>
@@ -280,17 +286,17 @@
                     <div>
                         <label class="block text-xs font-semibold text-gray-600 mb-2">Selling Price VAT Mode</label>
                         <select id="vat_type" name="sale_price_mode" class="w-full px-3 py-2 border rounded-lg">
-                            <option value="global" @selected(old('sale_price_mode', $pts?->sale_price_mode ?? 'global') === 'global')>Use Global ({{ ucfirst($taxSettings->default_sale_price_mode) }})</option>
-                            <option value="inclusive" @selected(old('sale_price_mode', $pts?->sale_price_mode) === 'inclusive')>VAT Inclusive</option>
-                            <option value="exclusive" @selected(old('sale_price_mode', $pts?->sale_price_mode) === 'exclusive')>VAT Exclusive</option>
+                            <option value="global" @selected(old('sale_price_mode', $pts?->sale_price_mode ?? 'global') === 'global')>Use Global ({{ $taxSettings->default_sale_price_mode === 'exclusive' ? 'Show VAT' : 'Hide VAT' }})</option>
+                            <option value="inclusive" @selected(old('sale_price_mode', $pts?->sale_price_mode) === 'inclusive')>Hide VAT</option>
+                            <option value="exclusive" @selected(old('sale_price_mode', $pts?->sale_price_mode) === 'exclusive')>Show VAT</option>
                         </select>
                     </div>
                     <div>
                         <label class="block text-xs font-semibold text-gray-600 mb-2">Purchase Price VAT Mode</label>
                         <select name="purchase_price_mode" class="w-full px-3 py-2 border rounded-lg">
-                            <option value="global" @selected(old('purchase_price_mode', $pts?->purchase_price_mode ?? 'global') === 'global')>Use Global ({{ ucfirst($taxSettings->default_purchase_price_mode) }})</option>
-                            <option value="inclusive" @selected(old('purchase_price_mode', $pts?->purchase_price_mode) === 'inclusive')>VAT Inclusive</option>
-                            <option value="exclusive" @selected(old('purchase_price_mode', $pts?->purchase_price_mode) === 'exclusive')>VAT Exclusive</option>
+                            <option value="global" @selected(old('purchase_price_mode', $pts?->purchase_price_mode ?? 'global') === 'global')>Use Global ({{ $taxSettings->default_purchase_price_mode === 'exclusive' ? 'Show VAT' : 'Hide VAT' }})</option>
+                            <option value="inclusive" @selected(old('purchase_price_mode', $pts?->purchase_price_mode) === 'inclusive')>Hide VAT</option>
+                            <option value="exclusive" @selected(old('purchase_price_mode', $pts?->purchase_price_mode) === 'exclusive')>Show VAT</option>
                         </select>
                     </div>
                 </div>
@@ -379,7 +385,10 @@
                         <span class="text-xs text-green-100">Set stock per store. Exclude stores where this product shouldn't appear.</span>
                     </div>
                     <div class="p-4 space-y-3">
-                        @forelse($stores as $store)
+                        @if($stores->isEmpty())
+                        <p class="text-sm text-gray-500 text-center py-4">No active stores found. <a href="{{ route('inventory-stores.index') }}" class="text-blue-600 hover:underline">Manage Stores</a></p>
+                        @else
+                        @foreach($stores as $store)
                         @php
                             $isDefault = $store->is_default;
                             $dbStock = $product->storeStocks->where('store_id', $store->id)->first()?->quantity;
@@ -447,9 +456,8 @@
                                 </span>
                             </div>
                         </div>
-                        @empty
-                        <p class="text-sm text-gray-500 text-center py-4">No active stores found. <a href="{{ route('inventory-stores.index') }}" class="text-blue-600 hover:underline">Manage Stores</a></p>
-                        @endforelse
+                        @endforeach
+                        @endif
                     </div>
                     <div class="bg-green-50 border-t border-green-200 px-4 py-2">
                         <p class="text-xs text-gray-500"><i class="fas fa-info-circle text-green-600 mr-1"></i>The <strong>Main Store ⭐</strong> stock is auto-filled from the Stock Quantity field above. Toggle <strong>Exclude</strong> to hide a product from a specific store.</p>
@@ -620,7 +628,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @forelse($product->prices as $price)
+                    @forelse($product->prices->where('status', 'active') as $price)
                     <tr class="{{ $price->status !== 'active' ? 'bg-gray-50 text-gray-400' : 'bg-white' }}">
                         <form action="{{ route('product-prices.update', $price) }}" method="POST">
                             @csrf

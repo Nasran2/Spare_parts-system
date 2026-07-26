@@ -2533,7 +2533,7 @@
                     ?? (resolvedSaleId ? String(resolvedSaleId) : ''),
             };
             window.__lastReceiptSaleData = saleForPrint;
-            openSalePrintChoice(saleForPrint, Boolean(res.official_tax_invoice_available));
+            showPrintReceipt(saleForPrint);
             const cart = await postJSON('{{ route('pos.cart.clear') }}');
             renderCart(cart);
             document.getElementById('cash-amount').value = '';

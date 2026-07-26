@@ -58,16 +58,16 @@
     <table class="meta party" style="margin-top:8px">
         <tr>
             <td>
-                <div class="line">Supplier’s TIN: <strong>{{ $settings['business_tin'] ?? $settings['supplier_tin'] ?? '' }}</strong></div>
+                <div class="line">Supplier’s TIN: <strong>{{ $settings['business_tin'] ?? $settings['supplier_tin'] ?? '-' }}</strong></div>
                 <div class="line">Supplier’s Name: <strong>{{ $shop['name'] }}</strong></div>
                 <div class="line">Address: {{ $shop['address'] }}</div>
                 <div style="margin-top:42px">Telephone No: {{ $shop['phone'] }}</div>
             </td>
             <td>
-                <div class="line">Purchaser’s TIN: <strong>{{ $settings['customer_tin'] ?? $sale->customer?->tin }}</strong></div>
-                <div class="line">Purchaser’s Name: <strong>{{ $sale->customer?->name }}</strong></div>
-                <div class="line">Address: {{ $sale->customer?->address }}</div>
-                <div style="margin-top:42px">Telephone No: {{ $sale->customer?->phone }}</div>
+                <div class="line">Purchaser’s TIN: <strong>{{ $settings['customer_tin'] ?? $sale->customer?->tin ?: '-' }}</strong></div>
+                <div class="line">Purchaser’s Name: <strong>{{ $sale->customer?->name ?: 'Walking Customer' }}</strong></div>
+                <div class="line">Address: {{ $sale->customer?->address ?: '-' }}</div>
+                <div style="margin-top:42px">Telephone No: {{ $sale->customer?->phone ?: '-' }}</div>
             </td>
         </tr>
     </table>
@@ -77,7 +77,15 @@
     <table class="meta additional" style="margin-top:8px"><tr><td>Additional Information if any: {{ $sale->notes }}</td></tr></table>
 
     <table class="items">
-        <thead><tr><th class="ref">Reference</th><th class="desc">Description of Goods or Services</th><th class="qty">Quantity</th><th class="unit">Unit Price</th><th class="amount">Amount Excluding VAT (Rs.)</th></tr></thead>
+        <thead>
+            <tr>
+                <th class="ref" style="text-align: center;">Reference</th>
+                <th class="desc" style="text-align: center;">Description of Goods or Services</th>
+                <th class="qty" style="text-align: center;">Quantity</th>
+                <th class="unit" style="text-align: center;">Unit Price</th>
+                <th class="amount" style="text-align: center;">Amount<br>Excluding VAT<br>(Rs.)</th>
+            </tr>
+        </thead>
         <tbody>
             @foreach($rows as $row)
             <tr>

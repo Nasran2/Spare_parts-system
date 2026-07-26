@@ -288,17 +288,17 @@
                         <div>
                             <label class="block text-xs font-semibold text-gray-600 mb-2">Selling Price VAT Mode</label>
                             <select id="vat_type" name="sale_price_mode" class="w-full px-3 py-2 border rounded-lg">
-                                <option value="global" @selected(old('sale_price_mode', 'global') === 'global')>Use Global ({{ ucfirst($taxSettings->default_sale_price_mode) }})</option>
-                                <option value="inclusive" @selected(old('sale_price_mode') === 'inclusive')>VAT Inclusive</option>
-                                <option value="exclusive" @selected(old('sale_price_mode') === 'exclusive')>VAT Exclusive</option>
+                                <option value="global" @selected(old('sale_price_mode', 'global') === 'global')>Use Global ({{ $taxSettings->default_sale_price_mode === 'exclusive' ? 'Show VAT' : 'Hide VAT' }})</option>
+                                <option value="inclusive" @selected(old('sale_price_mode') === 'inclusive')>Hide VAT</option>
+                                <option value="exclusive" @selected(old('sale_price_mode') === 'exclusive')>Show VAT</option>
                             </select>
                         </div>
                         <div>
                             <label class="block text-xs font-semibold text-gray-600 mb-2">Purchase Price VAT Mode</label>
                             <select name="purchase_price_mode" class="w-full px-3 py-2 border rounded-lg">
-                                <option value="global" @selected(old('purchase_price_mode', 'global') === 'global')>Use Global ({{ ucfirst($taxSettings->default_purchase_price_mode) }})</option>
-                                <option value="inclusive" @selected(old('purchase_price_mode') === 'inclusive')>VAT Inclusive</option>
-                                <option value="exclusive" @selected(old('purchase_price_mode') === 'exclusive')>VAT Exclusive</option>
+                                <option value="global" @selected(old('purchase_price_mode', 'global') === 'global')>Use Global ({{ $taxSettings->default_purchase_price_mode === 'exclusive' ? 'Show VAT' : 'Hide VAT' }})</option>
+                                <option value="inclusive" @selected(old('purchase_price_mode') === 'inclusive')>Hide VAT</option>
+                                <option value="exclusive" @selected(old('purchase_price_mode') === 'exclusive')>Show VAT</option>
                             </select>
                         </div>
                     </div>
@@ -391,13 +391,16 @@
                             <span class="text-xs text-green-100">Set stock per store. Exclude stores where this product shouldn't appear.</span>
                         </div>
                         <div class="p-4 space-y-3">
-                            @forelse($stores as $store)
+                            @if($stores->isEmpty())
+                            <p class="text-sm text-gray-500 text-center py-4">No active stores found. <a href="{{ route('inventory-stores.index') }}" class="text-blue-600 hover:underline">Manage Stores</a></p>
+                            @else
+                            @foreach($stores as $store)
                             @php
                                 $isDefault = $store->is_default;
                                 $oldStoreStock = old("store_stock.{$store->id}", $isDefault ? old('stock_quantity', '0') : '');
                                 $isExcluded = in_array($store->id, old('excluded_stores', []));
                             @endphp
-                            <div class="flex items-center gap-3 p-3 rounded-lg border bg-white {{ $isDefault ? 'border-green-400 ring-1 ring-green-300' : 'border-gray-200' }}" id="store-row-{{ $store->id }}">
+                            <div class="flex items-center gap-3 p-3 rounded-lg border bg-white {{ $isDefault ? 'border-green-400 ring-1 ring-green-300' : 'border-gray-200' }} {{ $isExcluded ? 'opacity-50 bg-red-50' : '' }}" id="store-row-{{ $store->id }}">
                                 <!-- Store Info -->
                                 <div class="flex-shrink-0 w-40">
                                     <div class="flex items-center gap-1">
@@ -444,7 +447,7 @@
                                             onchange="toggleStoreExclusion({{ $store->id }}, this.checked)"
                                             {{ $isDefault ? 'data-is-main=1' : '' }}
                                         >
-                                        <div class="w-10 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[\'\'] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-500"></div>
+                                        <div class="w-10 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-500"></div>
                                     </label>
                                 </div>
 
@@ -455,9 +458,8 @@
                                     </span>
                                 </div>
                             </div>
-                            @empty
-                            <p class="text-sm text-gray-500 text-center py-4">No active stores found. <a href="{{ route('inventory-stores.index') }}" class="text-blue-600 hover:underline">Manage Stores</a></p>
-                            @endforelse
+                            @endforeach
+                            @endif
                         </div>
                         <div class="bg-green-50 border-t border-green-200 px-4 py-2">
                             <p class="text-xs text-gray-500"><i class="fas fa-info-circle text-green-600 mr-1"></i>The <strong>Main Store ⭐</strong> stock is auto-filled from the Stock Quantity field above. Toggle <strong>Exclude</strong> to hide a product from a specific store.</p>
