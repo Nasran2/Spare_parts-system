@@ -267,27 +267,60 @@
                 </div>
 
                 <!-- VAT -->
-                <div>
+                <div class="md:col-span-2 rounded-xl border border-green-200 bg-green-50/40 p-4">
                     <label class="block text-sm font-semibold text-gray-700 mb-2">
-                        <i class="fas fa-receipt text-green-600 mr-2"></i>VAT
+                        <i class="fas fa-receipt text-green-600 mr-2"></i>Product Tax Settings
                     </label>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div>
-                            <input type="text" disabled value="{{ ($vatEnabled ?? false) ? 'Enabled' : 'Disabled' }}" class="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50">
-                            <p class="text-xs text-gray-500 mt-1">Configured in Settings</p>
+                            <label class="block text-xs font-semibold text-gray-600 mb-2">Tax Status</label>
+                            <select name="tax_status" id="tax_status" class="w-full px-3 py-2 border rounded-lg">
+                                <option value="standard" @selected(old('tax_status', 'standard') === 'standard')>Standard Rated</option>
+                                <option value="zero_rated" @selected(old('tax_status') === 'zero_rated')>Zero Rated</option>
+                                <option value="exempt" @selected(old('tax_status') === 'exempt')>Exempt</option>
+                                <option value="out_of_scope" @selected(old('tax_status') === 'out_of_scope')>Out of Scope</option>
+                            </select>
                         </div>
                         <div>
-                            <input type="text" disabled value="Rate: {{ number_format($vatRate ?? 0, 2) }}%" class="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50">
-                            <p class="text-xs text-gray-500 mt-1">Used for price calculation</p>
+                            <label class="block text-xs font-semibold text-gray-600 mb-2">VAT Rate (%)</label>
+                            <input type="number" name="product_vat_rate" id="product_vat_rate" step="0.0001" min="0" max="100" value="{{ old('product_vat_rate', $vatRate ?? 18) }}" class="w-full px-3 py-2 border rounded-lg">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-2">Selling Price VAT Mode</label>
+                            <select id="vat_type" name="sale_price_mode" class="w-full px-3 py-2 border rounded-lg">
+                                <option value="global" @selected(old('sale_price_mode', 'global') === 'global')>Use Global ({{ ucfirst($taxSettings->default_sale_price_mode) }})</option>
+                                <option value="inclusive" @selected(old('sale_price_mode') === 'inclusive')>VAT Inclusive</option>
+                                <option value="exclusive" @selected(old('sale_price_mode') === 'exclusive')>VAT Exclusive</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-2">Purchase Price VAT Mode</label>
+                            <select name="purchase_price_mode" class="w-full px-3 py-2 border rounded-lg">
+                                <option value="global" @selected(old('purchase_price_mode', 'global') === 'global')>Use Global ({{ ucfirst($taxSettings->default_purchase_price_mode) }})</option>
+                                <option value="inclusive" @selected(old('purchase_price_mode') === 'inclusive')>VAT Inclusive</option>
+                                <option value="exclusive" @selected(old('purchase_price_mode') === 'exclusive')>VAT Exclusive</option>
+                            </select>
                         </div>
                     </div>
-                    <div class="mt-3">
-                        <label class="block text-xs font-semibold text-gray-600 mb-2">Selling Price VAT Type</label>
-                        <select id="vat_type" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                            <option value="exclusive" selected>Exclusive (VAT added on top)</option>
-                            <option value="inclusive">Inclusive (Price includes VAT)</option>
-                        </select>
+                    <div class="mt-4 flex flex-wrap gap-6">
+                        <label class="inline-flex items-center gap-2 text-sm">
+                            <input type="hidden" name="output_vat_allowed" value="0">
+                            <input type="checkbox" name="output_vat_allowed" value="1" @checked(old('output_vat_allowed', true)) class="rounded text-green-600">
+                            Allow VAT on Sales
+                        </label>
+                        <label class="inline-flex items-center gap-2 text-sm">
+                            <input type="hidden" name="input_vat_allowed" value="0">
+                            <input type="checkbox" name="input_vat_allowed" value="1" @checked(old('input_vat_allowed', true)) class="rounded text-green-600">
+                            Allow Input VAT on Purchases
+                        </label>
                     </div>
+                    <div id="tax-price-preview" class="mt-4 rounded-lg bg-white border border-green-100 p-3 text-sm text-gray-700">
+                        Enter a selling price to preview its VAT split.
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2">
+                        Global VAT is {{ $vatEnabled ? 'enabled' : 'disabled' }} at {{ number_format((float) $vatRate, 2) }}%.
+                        Product overrides take effect only when enabled in Tax Settings.
+                    </p>
                 </div>
 
                 <!-- Selling Price -->
@@ -919,11 +952,11 @@ function updatePerBrandPricing() {
     const baseSell = (document.getElementById('selling_price')?.value ?? '').trim();
     const baseStock = (document.getElementById('stock_quantity')?.value ?? '').trim();
 
-    const oldBrandCost = @json(old('brand_cost_price', []));
-    const oldBrandSell = @json(old('brand_selling_price', []));
-    const oldBrandStock = @json(old('brand_stock_quantity', []));
-    const oldBrandPercent = @json(old('brand_profit_margin_percent', []));
-    const oldBrandFixed = @json(old('brand_profit_margin_fixed', []));
+    const oldBrandCost = {{ \Illuminate\Support\Js::from(old('brand_cost_price', [])) }};
+    const oldBrandSell = {{ \Illuminate\Support\Js::from(old('brand_selling_price', [])) }};
+    const oldBrandStock = {{ \Illuminate\Support\Js::from(old('brand_stock_quantity', [])) }};
+    const oldBrandPercent = {{ \Illuminate\Support\Js::from(old('brand_profit_margin_percent', [])) }};
+    const oldBrandFixed = {{ \Illuminate\Support\Js::from(old('brand_profit_margin_fixed', [])) }};
 
     rowsWrapper.innerHTML = '';
     section.classList.remove('hidden');
@@ -1361,16 +1394,14 @@ function onPercentageChange() {
         document.getElementById('profit_margin_fixed').value = fixedAmount.toFixed(2);
         
         // Calculate selling price with VAT option
-        const vatRate = parseFloat({{ json_encode($vatRate ?? 0) }});
-        const vatEnabled = Boolean({{ json_encode($vatEnabled ?? false) }});
+        const vatRate = parseFloat({{ \Illuminate\Support\Js::from($vatRate ?? 0) }});
+        const vatEnabled = Boolean({{ \Illuminate\Support\Js::from($vatEnabled ?? false) }});
         const vatType = document.getElementById('vat_type') ? document.getElementById('vat_type').value : 'exclusive';
+        const effectiveVatType = vatType === 'global' ? {{ \Illuminate\Support\Js::from($taxSettings->default_sale_price_mode) }} : vatType;
         let finalSelling = baseSelling;
         if (vatEnabled) {
-            if (vatType === 'exclusive') {
+            if (effectiveVatType === 'inclusive') {
                 finalSelling = baseSelling * (1 + (vatRate / 100));
-            } else {
-                // Inclusive: base price is treated as including VAT already
-                finalSelling = baseSelling;
             }
         }
         document.getElementById('selling_price').value = finalSelling.toFixed(2);
@@ -1392,15 +1423,14 @@ function onFixedAmountChange() {
         document.getElementById('profit_margin_percent').value = percentage.toFixed(2);
         
         // Calculate selling price with VAT option
-        const vatRate = parseFloat({{ json_encode($vatRate ?? 0) }});
-        const vatEnabled = Boolean({{ json_encode($vatEnabled ?? false) }});
+        const vatRate = parseFloat({{ \Illuminate\Support\Js::from($vatRate ?? 0) }});
+        const vatEnabled = Boolean({{ \Illuminate\Support\Js::from($vatEnabled ?? false) }});
         const vatType = document.getElementById('vat_type') ? document.getElementById('vat_type').value : 'exclusive';
+        const effectiveVatType = vatType === 'global' ? {{ \Illuminate\Support\Js::from($taxSettings->default_sale_price_mode) }} : vatType;
         let finalSelling = baseSelling;
         if (vatEnabled) {
-            if (vatType === 'exclusive') {
+            if (effectiveVatType === 'inclusive') {
                 finalSelling = baseSelling * (1 + (vatRate / 100));
-            } else {
-                finalSelling = baseSelling;
             }
         }
         document.getElementById('selling_price').value = finalSelling.toFixed(2);
@@ -1456,12 +1486,13 @@ if (vatTypeEl) {
 function onSellingPriceChange() {
     const costPrice = parseFloat(document.getElementById('cost_price').value) || 0;
     const sellingFinal = parseFloat(document.getElementById('selling_price').value) || 0;
-    const vatRate = parseFloat({{ json_encode($vatRate ?? 0) }});
-    const vatEnabled = Boolean({{ json_encode($vatEnabled ?? false) }});
+    const vatRate = parseFloat({{ \Illuminate\Support\Js::from($vatRate ?? 0) }});
+    const vatEnabled = Boolean({{ \Illuminate\Support\Js::from($vatEnabled ?? false) }});
     const vatType = document.getElementById('vat_type') ? document.getElementById('vat_type').value : 'exclusive';
+    const effectiveVatType = vatType === 'global' ? {{ \Illuminate\Support\Js::from($taxSettings->default_sale_price_mode) }} : vatType;
 
     let baseSelling = sellingFinal;
-    if (vatEnabled && vatType === 'exclusive') {
+    if (vatEnabled && effectiveVatType === 'inclusive') {
         baseSelling = sellingFinal / (1 + (vatRate / 100));
     }
 
@@ -1478,9 +1509,9 @@ function onSellingPriceChange() {
 
 document.getElementById('selling_price').addEventListener('input', onSellingPriceChange);
 
-var sellingSecretEnabled = {{ json_encode((bool) ($sellingSecretEnabled ?? false)) }};
-var costSecretMap = @json($costCodeMap ?? []);
-var sellingSecretMap = @json($sellingCodeMap ?? ($costCodeMap ?? []));
+var sellingSecretEnabled = {{ \Illuminate\Support\Js::from((bool) ($sellingSecretEnabled ?? false)) }};
+var costSecretMap = {{ \Illuminate\Support\Js::from($costCodeMap ?? []) }};
+var sellingSecretMap = {{ \Illuminate\Support\Js::from($sellingCodeMap ?? ($costCodeMap ?? [])) }};
 
 var secretInput = document.getElementById('secret_cost_code');
 var secretPreview = document.getElementById('secret_cost_preview');
@@ -1488,8 +1519,8 @@ var costInput = document.getElementById('cost_price');
 var sellingInput = document.getElementById('selling_price');
 var sellingSecretInput = document.getElementById('secret_selling_code');
 var sellingSecretPreview = document.getElementById('secret_selling_preview');
-var costZeroFallback = {{ json_encode((bool) config('app.secret_cost_zero_fallback', false)) }};
-var sellingZeroFallback = {{ json_encode((bool) config('app.secret_selling_zero_fallback', false)) }};
+var costZeroFallback = {{ \Illuminate\Support\Js::from((bool) config('app.secret_cost_zero_fallback', false)) }};
+var sellingZeroFallback = {{ \Illuminate\Support\Js::from((bool) config('app.secret_selling_zero_fallback', false)) }};
 
 function buildReverseMap(map) {
     var reverseMap = {};
@@ -1719,5 +1750,32 @@ if (sellingSecretEnabled && sellingInput && sellingSecretInput) {
 
 // Initial render
 updatePerBrandPricing();
+</script>
+<script>
+function updateTaxPricePreview() {
+    const preview = document.getElementById('tax-price-preview');
+    const price = Number(document.getElementById('selling_price')?.value || 0);
+    const selectedMode = document.getElementById('vat_type')?.value || 'global';
+    const mode = selectedMode === 'global' ? {{ \Illuminate\Support\Js::from($taxSettings->default_sale_price_mode) }} : selectedMode;
+    const status = document.getElementById('tax_status')?.value || 'standard';
+    const rate = status === 'zero_rated' || status === 'exempt' || status === 'out_of_scope'
+        ? 0
+        : Number(document.getElementById('product_vat_rate')?.value || {{ \Illuminate\Support\Js::from((float) $vatRate) }});
+    if (!preview || price <= 0) return;
+    if (!{{ \Illuminate\Support\Js::from((bool) $vatEnabled) }} || status === 'exempt' || status === 'out_of_scope') {
+        preview.innerHTML = `<strong>No VAT applied.</strong> Final selling price: Rs ${price.toFixed(2)}`;
+        return;
+    }
+    const net = mode === 'inclusive' ? price / (1 + rate / 100) : price;
+    const vat = mode === 'inclusive' ? price - net : net * rate / 100;
+    const total = mode === 'inclusive' ? price : net + vat;
+    preview.innerHTML = `<strong>${mode === 'inclusive' ? 'Price Includes VAT' : 'VAT Will Be Added'}</strong>
+        <span class="block mt-1">Net: Rs ${net.toFixed(2)} · VAT: Rs ${vat.toFixed(2)} · Final: Rs ${total.toFixed(2)}</span>`;
+}
+['selling_price', 'vat_type', 'tax_status', 'product_vat_rate'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', updateTaxPricePreview);
+    document.getElementById(id)?.addEventListener('change', updateTaxPricePreview);
+});
+updateTaxPricePreview();
 </script>
 @endsection

@@ -12,11 +12,15 @@ use App\Models\ProductPrice;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\Setting;
+use App\Models\TaxSetting;
 use App\Models\Unit;
 use App\Models\User;
 use App\Services\DashboardVisibilityService;
 use App\Services\PrivacyModeService;
 use App\Services\SalePaymentAccountingService;
+use App\Services\TaxCalculationService;
+use App\Services\TaxInvoiceNumberService;
+use App\Services\TaxPostingService;
 use App\Support\DatabaseAutoIncrementRepair;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -50,7 +54,7 @@ class POSController extends Controller
 
         $stores = \App\Models\Store::where('is_active', true)->orderBy('name')->get(['id', 'name', 'is_default']);
 
-        $products = Product::with(['unit', 'categories', 'brands', 'activePrices', 'storeStocks'])
+        $products = Product::with(['unit', 'categories', 'brands', 'activePrices', 'storeStocks', 'taxSetting'])
             ->where('is_active', true)
             ->when(! empty($hiddenProductIds), fn ($q) => $q->whereNotIn('id', $hiddenProductIds))
             ->orderBy('name')
@@ -159,7 +163,7 @@ class POSController extends Controller
         $hiddenProductIds = DashboardVisibilityService::hiddenProductIdsForUser($request->user());
         $controls = DashboardVisibilityService::configForUser($request->user());
 
-        $products = Product::with(['unit', 'categories', 'brands', 'activePrices', 'storeStocks'])
+        $products = Product::with(['unit', 'categories', 'brands', 'activePrices', 'storeStocks', 'taxSetting'])
             ->where('is_active', true)
             ->when(! empty($hiddenProductIds), fn ($q) => $q->whereNotIn('id', $hiddenProductIds))
             ->where(function ($q) use ($term) {
@@ -213,6 +217,8 @@ class POSController extends Controller
         $defaultPrice = $activePrices->firstWhere('is_default', true) ?: $activePrices->first();
 
         $rawSellingPrice = $defaultPrice ? (float) $defaultPrice->selling_price : (float) $product->selling_price;
+        $taxSettings = TaxSetting::current();
+        $taxRules = app(TaxCalculationService::class)->productRules($product, $taxSettings, 'sale');
         $rawStockQty = $usePriceWiseStock && $activePrices->isNotEmpty()
             ? (float) $activePrices->sum('stock_qty')
             : (float) ($product->stock_quantity ?? 0);
@@ -263,6 +269,10 @@ class POSController extends Controller
                 'short_name' => $product->unit->short_name,
             ] : null,
             'visible_units' => $product->visible_units ?? [],
+            'tax' => $taxRules,
+            'price_tax_label' => $taxRules['price_mode'] === 'inclusive'
+                ? 'Price Includes VAT'
+                : 'VAT Will Be Added',
         ];
     }
 
@@ -481,6 +491,7 @@ class POSController extends Controller
                 }
 
                 foreach ($returnsBySale as $saleId => $items) {
+                    $originalSale = \App\Models\Sale::with(['items.product', 'payments'])->find($saleId);
                     $totalRefund = 0;
                     foreach ($items as $item) {
                         $totalRefund += abs($item['qty']) * $item['price'];
@@ -530,6 +541,21 @@ class POSController extends Controller
                                 ProductPrice::whereKey($saleItem->product_price_id)->increment('stock_qty', $qty);
                             }
                         }
+                    }
+                    app(\App\Services\TaxReturnService::class)->recordSaleReturn($saleReturn);
+                    $taxReturnTotal = \App\Models\TransactionTaxLine::query()
+                        ->where('transaction_type', 'sale_return')
+                        ->where('transaction_id', $saleReturn->id)
+                        ->get()
+                        ->reduce(
+                            fn (int $carry, $line) => $carry + abs(\App\Services\DecimalMath::parse($line->total_amount)),
+                            0
+                        );
+                    if ($taxReturnTotal > 0) {
+                        $saleReturn->update([
+                            'subtotal' => \App\Services\DecimalMath::currency($taxReturnTotal),
+                            'total_refund' => \App\Services\DecimalMath::currency($taxReturnTotal),
+                        ]);
                     }
 
                     // Update the original sale totals/status after return items are recorded
@@ -586,51 +612,40 @@ class POSController extends Controller
                     }
                 }
 
-                $subtotal = 0.0;
-                $lineDiscountTotal = 0.0;
-
-                foreach ($saleItemsData as $idx => $it) {
-                    $qty = (float) ($it['qty'] ?? 0);
-                    $price = (float) ($it['price'] ?? 0);
-                    $lineSubtotal = $qty * $price;
-                    $lineDiscount = 0.0;
-
-                    if ($qty > 0 && ! empty($it['line_discount']) && is_array($it['line_discount'])) {
-                        $type = ($it['line_discount']['type'] ?? 'fixed') === 'percent' ? 'percent' : 'fixed';
-                        $value = (float) ($it['line_discount']['value'] ?? 0);
-                        $value = max(0, $value);
-
-                        if ($type === 'percent') {
-                            $value = min(100, $value);
-                            $lineDiscount = round($lineSubtotal * ($value / 100), 2);
-                        } else {
-                            $lineDiscount = round($value, 2);
-                        }
-                        $lineDiscount = min($lineDiscount, max(0, $lineSubtotal));
-                    }
-
-                    $saleItemsData[$idx]['line_subtotal'] = round($lineSubtotal, 2);
-                    $saleItemsData[$idx]['line_discount_amount'] = round($lineDiscount, 2);
-                    $saleItemsData[$idx]['line_total'] = round($lineSubtotal - $lineDiscount, 2);
-
-                    $subtotal += $lineSubtotal;
-                    $lineDiscountTotal += $lineDiscount;
+                $taxSettings = TaxSetting::current(now());
+                $taxCalculator = app(TaxCalculationService::class);
+                $taxInputs = [];
+                foreach ($saleItemsData as $item) {
+                    $product = Product::with('taxSetting')->findOrFail($item['id']);
+                    $rules = $taxCalculator->productRules($product, $taxSettings, 'sale');
+                    $taxInputs[] = [
+                        'unit_price' => (string) ($item['price'] ?? '0'),
+                        'quantity' => (string) ($item['qty'] ?? '0'),
+                        'line_discount_type' => $item['line_discount']['type'] ?? 'fixed',
+                        'line_discount_value' => (string) ($item['line_discount']['value'] ?? '0'),
+                        'tax_status' => $rules['tax_status'],
+                        'vat_rate' => $rules['vat_rate'],
+                        'price_mode' => $rules['price_mode'],
+                        'vat_allowed' => $rules['vat_allowed'],
+                        'vat_enabled' => $taxSettings->vat_enabled,
+                    ];
+                }
+                $taxInvoice = $taxCalculator->calculateInvoice(
+                    $taxInputs,
+                    $cart['discount']['type'] ?? 'fixed',
+                    (string) ($cart['discount']['value'] ?? '0')
+                );
+                foreach ($taxInvoice['lines'] as $index => $taxLine) {
+                    $saleItemsData[$index]['tax_result'] = $taxLine;
+                    $saleItemsData[$index]['line_subtotal'] = $taxLine['gross_amount'];
+                    $saleItemsData[$index]['line_discount_amount'] = $taxLine['discount_amount'];
+                    $saleItemsData[$index]['line_total'] = $taxLine['total_amount'];
                 }
 
-                $baseForCartDiscount = $subtotal - $lineDiscountTotal;
-                $cartDiscount = 0.0;
-                if ($baseForCartDiscount > 0) {
-                    if (($cart['discount']['type'] ?? 'fixed') === 'percent') {
-                        $cartDiscount = round($baseForCartDiscount * ((float) ($cart['discount']['value'] ?? 0)) / 100, 2);
-                    } else {
-                        $cartDiscount = (float) ($cart['discount']['value'] ?? 0);
-                    }
-                    $cartDiscount = min(max(0, $cartDiscount), $baseForCartDiscount);
-                }
-
-                $discountAmount = $lineDiscountTotal + $cartDiscount;
-                $taxAmount = round(($subtotal - $discountAmount) * ((float) ($cart['tax_rate'] ?? 0)) / 100, 2);
-                $totalAmount = max(0, $subtotal - $discountAmount + $taxAmount);
+                $subtotal = $taxInvoice['totals']['gross'];
+                $discountAmount = $taxInvoice['totals']['discount'];
+                $taxAmount = $taxInvoice['totals']['vat'];
+                $totalAmount = $taxInvoice['totals']['total'];
 
                 // Payment method(s)
                 $allowedMethods = ['cash', 'credit', 'cheque', 'bank_deposit', 'bank_transfer', 'card', 'mobile_payment'];
@@ -768,6 +783,8 @@ class POSController extends Controller
                     'sale_date' => now(),
                     'subtotal' => $subtotal,
                     'tax' => $taxAmount,
+                    'rounding_adjustment' => $taxInvoice['totals']['rounding_adjustment'],
+                    'tax_template_version' => $taxSettings->active_template_version,
                     'discount' => $discountAmount,
                     'total_amount' => $effectiveTotalAmount,
                     'paid_amount' => $salePaid,
@@ -870,21 +887,20 @@ class POSController extends Controller
                     }
                 }
 
+                $taxPairs = [];
                 foreach ($saleItemsData as $item) {
                     $qty = (float) ($item['qty'] ?? 0);
-                    $lineTotal = array_key_exists('line_total', $item)
-                        ? (float) $item['line_total']
-                        : ($qty * (float) ($item['price'] ?? 0));
-                    $effectiveUnitPrice = $qty > 0 ? round($lineTotal / $qty, 2) : (float) ($item['price'] ?? 0);
+                    $lineTotal = (string) ($item['line_total'] ?? '0');
 
-                    SaleItem::create([
+                    $saleItem = SaleItem::create([
                         'sale_id' => $sale->id,
                         'product_id' => $item['id'],
                         'product_price_id' => $item['product_price_id'] ?? null,
                         'quantity' => $item['qty'],
-                        'unit_price' => $effectiveUnitPrice,
-                        'total' => round($lineTotal, 2),
+                        'unit_price' => $item['price'],
+                        'total' => $lineTotal,
                     ]);
+                    $taxPairs[] = ['model' => $saleItem, 'tax' => $item['tax_result']];
 
                     // Reduce stock
                     $product = Product::find($item['id']);
@@ -909,6 +925,8 @@ class POSController extends Controller
                         \App\Services\StockAlertService::check($product);
                     }
                 }
+                $sale->loadMissing(['customer', 'store']);
+                app(TaxPostingService::class)->postSale($sale, $taxPairs, $taxSettings);
                 $createdSale = $sale;
 
                 // If this transaction included returns, link those return records to this new sale
@@ -921,6 +939,18 @@ class POSController extends Controller
 
             DB::commit();
             Session::forget('pos.cart');
+            $officialTaxInvoiceAvailable = false;
+            if ($createdSale && $request->user()?->hasPermission('tax.invoice.print')) {
+                try {
+                    app(TaxInvoiceNumberService::class)->assertEligible(
+                        $createdSale->load(['customer', 'taxLines']),
+                        $taxSettings
+                    );
+                    $officialTaxInvoiceAvailable = true;
+                } catch (\Illuminate\Validation\ValidationException) {
+                    $officialTaxInvoiceAvailable = false;
+                }
+            }
 
             return response()->json([
                 'message' => 'Transaction completed successfully',
@@ -931,6 +961,7 @@ class POSController extends Controller
                     'sale_no' => $createdSale->sale_no,
                     'total_amount' => $createdSale->total_amount,
                 ] : null,
+                'official_tax_invoice_available' => $officialTaxInvoiceAvailable,
             ]);
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -958,66 +989,72 @@ class POSController extends Controller
 
     private function withTotals(array $cart): array
     {
-        $subtotal = 0.0;
-        $lineDiscountTotal = 0.0;
+        $settings = TaxSetting::current();
+        $calculator = app(TaxCalculationService::class);
+        $keys = [];
+        $taxInputs = [];
+        $returnTotal = 0;
 
-        foreach ($cart['items'] as $key => $it) {
-            $qty = (float) ($it['qty'] ?? 0);
-            $price = (float) ($it['price'] ?? 0);
-            $lineSubtotal = $qty * $price;
-            $lineDiscount = 0.0;
-
-            // No discounts on return lines (negative qty)
-            if ($qty > 0 && ! empty($it['line_discount']) && is_array($it['line_discount'])) {
-                $type = ($it['line_discount']['type'] ?? 'fixed') === 'percent' ? 'percent' : 'fixed';
-                $value = (float) ($it['line_discount']['value'] ?? 0);
-                $value = max(0, $value);
-
-                if ($type === 'percent') {
-                    $value = min(100, $value);
-                    $lineDiscount = round($lineSubtotal * ($value / 100), 2);
-                } else {
-                    $lineDiscount = round($value, 2);
-                }
-                $lineDiscount = min($lineDiscount, max(0, $lineSubtotal));
+        foreach ($cart['items'] as $key => $item) {
+            if (($item['qty'] ?? 0) < 0) {
+                $returnTotal += abs((float) $item['qty']) * (float) ($item['price'] ?? 0);
+                $cart['items'][$key]['line_total'] = -round(abs((float) $item['qty']) * (float) ($item['price'] ?? 0), 2);
+                continue;
             }
 
-            $lineTotal = $lineSubtotal - $lineDiscount;
-            $subtotal += $lineSubtotal;
-            $lineDiscountTotal += $lineDiscount;
-
-            // Add computed fields for frontend display
-            $cart['items'][$key]['line_subtotal'] = round($lineSubtotal, 2);
-            $cart['items'][$key]['line_discount_amount'] = round($lineDiscount, 2);
-            $cart['items'][$key]['line_total'] = round($lineTotal, 2);
-        }
-
-        $baseForCartDiscount = $subtotal - $lineDiscountTotal;
-        $cartDiscount = 0.0;
-        if ($baseForCartDiscount > 0) {
-            if (($cart['discount']['type'] ?? 'fixed') === 'percent') {
-                $cartDiscount = round($baseForCartDiscount * ((float) ($cart['discount']['value'] ?? 0)) / 100, 2);
-            } else {
-                $cartDiscount = (float) ($cart['discount']['value'] ?? 0);
+            if (empty($item['tax'])) {
+                $product = Product::with('taxSetting')->find($item['id'] ?? 0);
+                $item['tax'] = $calculator->productRules($product, $settings, 'sale');
+                $cart['items'][$key]['tax'] = $item['tax'];
             }
-            $cartDiscount = min(max(0, $cartDiscount), $baseForCartDiscount);
+
+            $keys[] = $key;
+            $taxInputs[] = [
+                'unit_price' => (string) ($item['price'] ?? '0'),
+                'quantity' => (string) ($item['qty'] ?? '0'),
+                'line_discount_type' => $item['line_discount']['type'] ?? 'fixed',
+                'line_discount_value' => (string) ($item['line_discount']['value'] ?? '0'),
+                'tax_status' => $item['tax']['tax_status'],
+                'vat_rate' => $item['tax']['vat_rate'],
+                'price_mode' => $item['tax']['price_mode'],
+                'vat_allowed' => $item['tax']['vat_allowed'],
+                'vat_enabled' => $settings->vat_enabled,
+            ];
         }
 
-        $discountAmount = $lineDiscountTotal + $cartDiscount;
-        $taxAmount = round(($subtotal - $discountAmount) * ((float) ($cart['tax_rate'] ?? 0)) / 100, 2);
-        $total = $subtotal - $discountAmount + $taxAmount;
+        $invoice = $calculator->calculateInvoice(
+            $taxInputs,
+            $cart['discount']['type'] ?? 'fixed',
+            (string) ($cart['discount']['value'] ?? '0')
+        );
+        $lineDiscountTotal = 0;
+        foreach ($invoice['lines'] as $index => $taxLine) {
+            $key = $keys[$index];
+            $cart['items'][$key]['tax_result'] = $taxLine;
+            $cart['items'][$key]['line_subtotal'] = $taxLine['gross_amount'];
+            $cart['items'][$key]['line_discount_amount'] = $taxLine['discount_amount'];
+            $cart['items'][$key]['line_total'] = $taxLine['total_amount'];
+            $lineDiscountTotal += (float) $taxLine['discount_amount'];
+        }
 
-        // Net subtotal after item-level discounts (cart discount not applied yet)
-        $netSubtotal = max(0.0, round($subtotal - $lineDiscountTotal, 2));
+        $gross = (float) $invoice['totals']['gross'];
+        $discountAmount = (float) $invoice['totals']['discount'];
+        $cartDiscount = max(0, $discountAmount - $lineDiscountTotal);
+        $total = (float) $invoice['totals']['total'] - $returnTotal;
         $cart['totals'] = [
-            'subtotal' => round($subtotal, 2),
-            'net_subtotal' => $netSubtotal,
+            'subtotal' => round($gross, 2),
+            'net_subtotal' => round($gross - $lineDiscountTotal, 2),
+            'taxable_subtotal' => $invoice['totals']['taxable'],
             'line_discount_amount' => round($lineDiscountTotal, 2),
             'cart_discount_amount' => round($cartDiscount, 2),
             'discount_amount' => round($discountAmount, 2),
-            'tax_amount' => round($taxAmount, 2),
+            'tax_amount' => $invoice['totals']['vat'],
             'total' => round($total, 2),
+            'rounding_adjustment' => $invoice['totals']['rounding_adjustment'],
+            'show_vat_breakdown' => $settings->customer_invoice_vat_display === 'always_show'
+                || collect($invoice['lines'])->contains(fn ($line) => $line['price_mode'] === 'exclusive' && (float) $line['vat_amount'] > 0),
         ];
+        $cart['tax_setting_version'] = $settings->version;
 
         return $cart;
     }
@@ -1066,7 +1103,7 @@ class POSController extends Controller
             'unit.name' => 'required_with:unit|string',
         ]);
 
-        $product = Product::with('activePrices')->findOrFail($request->integer('product_id'));
+        $product = Product::with(['activePrices', 'taxSetting'])->findOrFail($request->integer('product_id'));
         $this->ensureProductHasPriceOption($product);
         $product->load('activePrices');
 
@@ -1161,6 +1198,11 @@ class POSController extends Controller
                 'unit_name' => $selectedUnitName,
                 'unit_multiplier' => $selectedMultiplier,
                 'visible_units' => $visibleUnits->toArray(),
+                'tax' => app(TaxCalculationService::class)->productRules(
+                    $product,
+                    TaxSetting::current(),
+                    'sale'
+                ),
             ];
         }
 
@@ -1400,6 +1442,8 @@ class POSController extends Controller
                 'sale_date' => now(),
                 'subtotal' => $cart['totals']['subtotal'],
                 'tax' => $cart['totals']['tax_amount'],
+                'rounding_adjustment' => $cart['totals']['rounding_adjustment'] ?? 0,
+                'tax_template_version' => TaxSetting::current()->active_template_version,
                 'discount' => $cart['totals']['discount_amount'],
                 'total_amount' => $cart['totals']['total'],
                 // Quotations shouldn't record payment fields
@@ -1411,22 +1455,27 @@ class POSController extends Controller
                 'notes' => $request->string('notes'),
             ]);
 
+            $quotationTaxPairs = [];
             foreach ($cart['items'] as $item) {
-                $qty = (float) ($item['qty'] ?? 0);
-                $lineTotal = array_key_exists('line_total', $item)
-                    ? (float) $item['line_total']
-                    : ($qty * (float) ($item['price'] ?? 0));
-                $effectiveUnitPrice = $qty != 0 ? round($lineTotal / $qty, 2) : (float) ($item['price'] ?? 0);
-
-                SaleItem::create([
+                if (($item['qty'] ?? 0) <= 0 || empty($item['tax_result'])) {
+                    continue;
+                }
+                $saleItem = SaleItem::create([
                     'sale_id' => $sale->id,
                     'product_id' => $item['id'],
                     'product_price_id' => $item['product_price_id'] ?? null,
                     'quantity' => $item['qty'],
-                    'unit_price' => $effectiveUnitPrice,
-                    'total' => round($lineTotal, 2),
+                    'unit_price' => $item['price'],
+                    'total' => $item['tax_result']['total_amount'],
                 ]);
+                $quotationTaxPairs[] = ['model' => $saleItem, 'tax' => $item['tax_result']];
             }
+            $sale->loadMissing(['customer', 'store']);
+            app(TaxPostingService::class)->snapshotQuotation(
+                $sale,
+                $quotationTaxPairs,
+                TaxSetting::current()
+            );
 
             DB::commit();
 

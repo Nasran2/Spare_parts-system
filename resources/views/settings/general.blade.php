@@ -161,30 +161,113 @@
                         </div>
 
                         <!-- VAT Settings -->
-                        <div class="border-t border-gray-200 pt-6">
-                            <h4 class="font-bold text-gray-700 mb-4">
-                                <i class="fas fa-receipt text-green-600 mr-2"></i>VAT Settings
-                            </h4>
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div class="md:col-span-1">
-                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Enable VAT</label>
-                                    <label class="relative inline-flex items-center cursor-pointer">
-                                        <input type="checkbox" name="vat_enabled" value="1" {{ old('vat_enabled', $settings['vat_enabled']) ? 'checked' : '' }} class="sr-only peer">
-                                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                    </label>
+                        <div id="vat-settings" class="border-t border-gray-200 pt-6 scroll-mt-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <h4 class="font-bold text-gray-700">
+                                    <i class="fas fa-receipt text-green-600 mr-2"></i>Sri Lanka VAT Settings
+                                </h4>
+                                <span class="text-xs font-semibold px-2 py-1 rounded-full bg-green-50 text-green-700">
+                                    Template {{ $settings['tax_template_version'] }}
+                                </span>
+                            </div>
+
+                            @if($errors->any())
+                                <div class="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                                    <ul class="list-disc pl-5 space-y-1">
+                                        @foreach($errors->all() as $error)
+                                            <li>{{ $error }}</li>
+                                        @endforeach
+                                    </ul>
                                 </div>
-                                <div class="md:col-span-2">
-                                    <label class="block text-sm font-semibold text-gray-700 mb-2">VAT Rate (%)</label>
-                                    <input 
-                                        type="number"
-                                        name="vat_rate"
-                                        step="0.01" min="0" max="100"
-                                        value="{{ old('vat_rate', $settings['vat_rate']) }}"
-                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                        placeholder="e.g., 15"
-                                    >
-                                    <p class="text-xs text-gray-500 mt-1">This percentage will be used across the system. If VAT is disabled, no VAT will be applied.</p>
+                            @endif
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                @foreach([
+                                    ['vat_enabled', 'Enable VAT', 'VAT is applied only to new transactions.'],
+                                    ['vat_registered', 'Business VAT Registered', 'Required before official Tax Invoices can be issued.'],
+                                    ['allow_product_override', 'Allow Product-Level VAT Override', 'Products may use their own status, rate and price mode.'],
+                                    ['regular_invoice_vat_note', 'Show VAT-Inclusive Note', 'Adds “Prices are inclusive of applicable VAT” to regular receipts.'],
+                                ] as [$name, $label, $help])
+                                    <div class="flex items-center justify-between rounded-lg bg-gray-50 p-4">
+                                        <div class="pr-4">
+                                            <div class="font-semibold text-gray-700">{{ $label }}</div>
+                                            <p class="text-xs text-gray-500 mt-1">{{ $help }}</p>
+                                        </div>
+                                        <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                                            <input type="checkbox" name="{{ $name }}" value="1" {{ old($name, $settings[$name]) ? 'checked' : '' }} class="sr-only peer">
+                                            <span class="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-blue-600 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all"></span>
+                                        </label>
+                                    </div>
+                                @endforeach
+
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Supplier TIN</label>
+                                    <input type="text" name="supplier_tin" inputmode="numeric" pattern="[0-9]{9,12}" maxlength="12"
+                                           value="{{ old('supplier_tin', $settings['supplier_tin']) }}"
+                                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                           placeholder="9 to 12 digits">
+                                    <p class="text-xs text-gray-500 mt-1">Required when the business is VAT registered. Spaces are not accepted.</p>
                                 </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Default VAT Rate (%)</label>
+                                    <input type="number" name="default_vat_rate" step="0.0001" min="0" max="100"
+                                           value="{{ old('default_vat_rate', $settings['default_vat_rate']) }}"
+                                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Default Selling Price VAT Mode</label>
+                                    <select name="default_sale_price_mode" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                                        <option value="inclusive" @selected(old('default_sale_price_mode', $settings['default_sale_price_mode']) === 'inclusive')>VAT Inclusive</option>
+                                        <option value="exclusive" @selected(old('default_sale_price_mode', $settings['default_sale_price_mode']) === 'exclusive')>VAT Exclusive</option>
+                                    </select>
+                                    <p class="text-xs text-gray-500 mt-1">VAT Inclusive means VAT is already included in the selling price. The customer pays the displayed price without VAT being added again.</p>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Default Purchase Price VAT Mode</label>
+                                    <select name="default_purchase_price_mode" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                                        <option value="inclusive" @selected(old('default_purchase_price_mode', $settings['default_purchase_price_mode']) === 'inclusive')>VAT Inclusive</option>
+                                        <option value="exclusive" @selected(old('default_purchase_price_mode', $settings['default_purchase_price_mode']) === 'exclusive')>VAT Exclusive</option>
+                                    </select>
+                                    <p class="text-xs text-gray-500 mt-1">VAT Exclusive means VAT is calculated and added on top of the entered purchase price.</p>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Customer Invoice VAT Display</label>
+                                    <select name="customer_invoice_vat_display" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                                        <option value="hide_inclusive" @selected(old('customer_invoice_vat_display', $settings['customer_invoice_vat_display']) === 'hide_inclusive')>Hide Separate VAT When Price Is Inclusive</option>
+                                        <option value="always_show" @selected(old('customer_invoice_vat_display', $settings['customer_invoice_vat_display']) === 'always_show')>Always Show VAT Breakdown</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">VAT Effective Date</label>
+                                    <input type="date" name="vat_effective_date"
+                                           value="{{ old('vat_effective_date', $settings['vat_effective_date']) }}"
+                                           class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                                    <p class="text-xs text-gray-500 mt-1">A new version is created; completed transactions retain their stored snapshot.</p>
+                                </div>
+                            </div>
+
+                            <div class="mt-6 border-t border-gray-200 pt-5">
+                                <h5 class="font-semibold text-gray-700 mb-4">Tax Invoice Numbering</h5>
+                                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-600 mb-2">Prefix</label>
+                                        <input name="tax_invoice_prefix" value="{{ old('tax_invoice_prefix', $settings['tax_invoice_prefix']) }}" class="w-full px-3 py-2 border rounded-lg" required>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-600 mb-2">Starting Number</label>
+                                        <input type="number" min="1" name="tax_invoice_starting_number" value="{{ old('tax_invoice_starting_number', $settings['tax_invoice_starting_number']) }}" class="w-full px-3 py-2 border rounded-lg">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-600 mb-2">Next Number</label>
+                                        <input type="number" min="1" name="tax_invoice_next_number" value="{{ old('tax_invoice_next_number', $settings['tax_invoice_next_number']) }}" class="w-full px-3 py-2 border rounded-lg">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-600 mb-2">Branch / Store Code</label>
+                                        <input name="tax_branch_code" value="{{ old('tax_branch_code', $settings['tax_branch_code']) }}" class="w-full px-3 py-2 border rounded-lg" placeholder="Optional">
+                                    </div>
+                                </div>
+                                <input type="hidden" name="tax_template_version" value="sl-vat-2025.1">
+                                <p class="text-xs text-gray-500 mt-3">Invoice numbers are issued atomically and protected by a database unique constraint.</p>
                             </div>
                         </div>
 

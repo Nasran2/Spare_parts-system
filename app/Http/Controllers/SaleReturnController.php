@@ -11,6 +11,7 @@ use App\Models\SaleItem;
 use App\Models\SaleReturn;
 use App\Models\SaleReturnItem;
 use App\Services\SaleRecalculationService;
+use App\Services\TaxReturnService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -139,6 +140,22 @@ class SaleReturnController extends Controller
                 'subtotal' => round($totalRefund, 2),
                 'total_refund' => round($totalRefund, 2),
             ]);
+            app(TaxReturnService::class)->recordSaleReturn($saleReturn);
+            $taxReturnTotal = \App\Models\TransactionTaxLine::query()
+                ->where('transaction_type', 'sale_return')
+                ->where('transaction_id', $saleReturn->id)
+                ->get()
+                ->reduce(
+                    fn (int $carry, $line) => $carry + abs(\App\Services\DecimalMath::parse($line->total_amount)),
+                    0
+                );
+            if ($taxReturnTotal > 0) {
+                $totalRefund = (float) \App\Services\DecimalMath::currency($taxReturnTotal);
+                $saleReturn->update([
+                    'subtotal' => \App\Services\DecimalMath::currency($taxReturnTotal),
+                    'total_refund' => \App\Services\DecimalMath::currency($taxReturnTotal),
+                ]);
+            }
 
             // 2. Process Exchange Items (New Sale)
             $newSale = null;

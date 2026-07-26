@@ -96,6 +96,7 @@ class CustomerController extends Controller
     {
         $data = $request->validate([
             'name' => 'required|string|max:255',
+            'tin' => 'nullable|regex:/^\d{9,12}$/|unique:customers,tin',
             'email' => 'nullable|email|max:255',
             'phone' => 'nullable|string|max:50',
             'address' => 'nullable|string|max:500',
@@ -280,6 +281,7 @@ class CustomerController extends Controller
 
         $data = $request->validate([
             'name' => 'required|string|max:255',
+            'tin' => 'nullable|regex:/^\d{9,12}$/|unique:customers,tin,'.$customer->id,
             'email' => 'nullable|email|max:255',
             'phone' => 'nullable|string|max:50',
             'address' => 'nullable|string|max:500',

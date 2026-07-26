@@ -16,7 +16,7 @@
                     <select name="supplier_id" id="supplier_id" class="flex-1 border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500" required onchange="loadSupplierAddress()">
                         <option value="">Please Select</option>
                         @foreach($suppliers as $s)
-                        <option value="{{ $s->id }}" data-address="{{ $s->address }}, {{ $s->city }}">{{ $s->name }}</option>
+                        <option value="{{ $s->id }}" data-address="{{ $s->address }}, {{ $s->city }}" data-tin="{{ $s->tin }}">{{ $s->name }}</option>
                         @endforeach
                     </select>
                     <button type="button" onclick="openSupplierModal()" class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
@@ -78,15 +78,27 @@
 
 
         <!-- Second Row -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <!-- Address -->
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-2">Address:</label>
                 <input type="text" id="supplier_address" readonly class="w-full border border-gray-300 rounded px-3 py-2 bg-gray-50" placeholder="Auto-filled">
             </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Supplier TIN:</label>
+                <input type="text" id="supplier_tin" readonly class="w-full border border-gray-300 rounded px-3 py-2 bg-gray-50" placeholder="Set on supplier">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Supplier Tax Invoice No.:</label>
+                <input type="text" name="supplier_tax_invoice_number" class="w-full border border-gray-300 rounded px-3 py-2" placeholder="Required to claim input VAT">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Supplier Tax Invoice Date:</label>
+                <input type="date" name="supplier_tax_invoice_date" value="{{ now()->toDateString() }}" class="w-full border border-gray-300 rounded px-3 py-2">
+            </div>
 
             <!-- Attach Document -->
-            <div>
+            <div class="md:col-span-4">
                 <label class="block text-sm font-semibold text-gray-700 mb-2">Attach Document:</label>
                 <input type="file" name="document" accept=".pdf,.csv,.zip,.doc,.docx,.jpeg,.jpg,.png" class="w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500">
                 <p class="text-xs text-gray-500 mt-1">Max File size: 5MB<br>Allowed File: .pdf, .csv, .zip, .doc, .docx, .jpeg, .jpg, .png</p>
@@ -167,17 +179,27 @@
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
             <div>
-                <label class="block text-sm font-semibold text-gray-700 mb-2">Purchase Tax:</label>
-                <select name="tax_id" id="tax_id" onchange="recalcGrandTotal()" class="w-full border border-gray-300 rounded px-3 py-2">
-                    <option value="">None</option>
-                    <option value="vat_10">VAT 10%</option>
-                    <option value="vat_5">VAT 5%</option>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Purchase VAT Mode:</label>
+                <input type="hidden" name="tax_id" value="{{ $taxSettings->vat_enabled ? 'VAT' : '' }}">
+                <select name="purchase_vat_mode" id="purchase_vat_mode" onchange="recalcGrandTotal()" class="w-full border border-gray-300 rounded px-3 py-2">
+                    <option value="global">Use Global ({{ ucfirst($taxSettings->default_purchase_price_mode) }})</option>
+                    <option value="inclusive">VAT Inclusive</option>
+                    <option value="exclusive">VAT Exclusive</option>
                 </select>
             </div>
-            <div></div>
+            <div class="flex items-end">
+                <label class="inline-flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-4 py-2 w-full">
+                    <input type="hidden" name="input_vat_claimable" value="0">
+                    <input type="checkbox" name="input_vat_claimable" value="1" class="rounded text-green-600" {{ $taxSettings->vat_enabled ? 'checked' : '' }}>
+                    <span>
+                        <span class="block text-sm font-semibold text-gray-700">Input VAT Claimable</span>
+                        <span class="block text-xs text-gray-500">Recoverable VAT is excluded from inventory cost.</span>
+                    </span>
+                </label>
+            </div>
             <div class="flex items-end">
                 <div class="text-right w-full">
-                    <label class="block text-sm font-semibold text-gray-700 mb-2">Purchase Tax:</label>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Input VAT ({{ number_format((float) $taxSettings->default_vat_rate, 2) }}%):</label>
                     <span id="taxDisplay" class="text-lg font-semibold">(+) 0.00</span>
                 </div>
             </div>
@@ -453,10 +475,10 @@
 
 @push('scripts')
 <script>
-const PRODUCTS = @json($productsData);
-const CAN_USE_SELLING_SECRET_CODE = @json($canUseSellingSecretCode ?? false);
-const QUICK_COST_CODE_MAP = @json((array) \App\Models\Setting::get('barcode_cost_code_map'));
-const QUICK_SELLING_CODE_MAP = @json(($canUseSellingSecretCode ?? false) ? (array) \App\Models\Setting::get('barcode_selling_code_map') : []);
+const PRODUCTS = {{ \Illuminate\Support\Js::from($productsData) }};
+const CAN_USE_SELLING_SECRET_CODE = {{ \Illuminate\Support\Js::from($canUseSellingSecretCode ?? false) }};
+const QUICK_COST_CODE_MAP = {{ \Illuminate\Support\Js::from((array) \App\Models\Setting::get('barcode_cost_code_map')) }};
+const QUICK_SELLING_CODE_MAP = {{ \Illuminate\Support\Js::from(($canUseSellingSecretCode ?? false) ? (array) \App\Models\Setting::get('barcode_selling_code_map') : []) }};
 if (!Object.keys(QUICK_COST_CODE_MAP || {}).length) {
     Object.assign(QUICK_COST_CODE_MAP, {
         '0': 'E',
@@ -494,6 +516,7 @@ function loadSupplierAddress() {
     const sel = document.getElementById('supplier_id');
     const opt = sel.selectedOptions[0];
     document.getElementById('supplier_address').value = opt ? (opt.dataset.address || '') : '';
+    document.getElementById('supplier_tin').value = opt ? (opt.dataset.tin || '') : '';
 }
 
 function getSelectedStores() {
@@ -1023,9 +1046,10 @@ function recalcGrandTotal() {
     
     const rows = document.querySelectorAll('#itemsBody tr');
     rows.forEach(tr => {
-        const cost = parseFloat(tr.querySelector('.cost-input').value || 0);
+        const cost = parseFloat(tr.querySelector('.cost-before-discount-input').value || 0);
+        const lineDiscountPercent = Math.min(100, Math.max(0, parseFloat(tr.querySelector('.discount-percent-input').value || 0)));
         const qty = parseFloat(tr.querySelector('.qty-input').value || 0);
-        netTotal += cost * qty;
+        netTotal += (cost * (1 - lineDiscountPercent / 100)) * qty;
         itemCount += qty;
         totalQty += qty;
     });
@@ -1047,12 +1071,16 @@ function recalcGrandTotal() {
     document.getElementById('discountDisplay').textContent = '(-) ' + formatMoney(discount);
     
     // Apply tax
-    const taxId = document.getElementById('tax_id').value;
+    const selectedMode = document.getElementById('purchase_vat_mode').value;
+    const taxMode = selectedMode === 'global' ? {{ \Illuminate\Support\Js::from($taxSettings->default_purchase_price_mode) }} : selectedMode;
+    const vatEnabled = {{ \Illuminate\Support\Js::from((bool) $taxSettings->vat_enabled) }};
+    const vatRate = Number({{ \Illuminate\Support\Js::from((string) $taxSettings->default_vat_rate) }});
     let tax = 0;
-    if (taxId === 'vat_10') {
-        tax = (netTotal - discount) * 0.10;
-    } else if (taxId === 'vat_5') {
-        tax = (netTotal - discount) * 0.05;
+    const discountedTotal = Math.max(0, netTotal - discount);
+    if (vatEnabled && vatRate > 0) {
+        tax = taxMode === 'inclusive'
+            ? discountedTotal - (discountedTotal / (1 + vatRate / 100))
+            : discountedTotal * (vatRate / 100);
     }
     
     document.getElementById('taxDisplay').textContent = '(+) ' + formatMoney(tax);
@@ -1061,20 +1089,14 @@ function recalcGrandTotal() {
     const shippingCost = parseFloat(document.getElementById('shipping_cost').value || 0);
     const shippingType = document.getElementById('shipping_type').value;
     
-    let shippingToAdd = 0;
-    if (shippingType === 'divided' && totalQty > 0) {
-        // When divided, shipping is already included in product costs
-        // So we don't add it again to grand total
-        shippingToAdd = 0;
-    } else if (shippingType === 'expense') {
-        // Add as expense to grand total
-        shippingToAdd = shippingCost;
-    }
+    const shippingToAdd = shippingCost;
     
     document.getElementById('shippingDisplay').textContent = '(+) ' + formatMoney(shippingCost);
     
     // Calculate grand total
-    const grandTotal = netTotal - discount + tax + shippingToAdd;
+    const grandTotal = taxMode === 'inclusive'
+        ? discountedTotal + shippingToAdd
+        : discountedTotal + tax + shippingToAdd;
     document.getElementById('grandTotal').textContent = formatMoney(grandTotal);
     
     // Auto-fill payment amount
@@ -1119,11 +1141,12 @@ function submitPurchase(e) {
         if (!pid) return;
         
         const qty = tr.querySelector('.qty-input').value;
-        const cost = tr.querySelector('.cost-input').value;
+        const cost = tr.querySelector('.cost-before-discount-input').value;
+        const lineDiscount = tr.querySelector('.discount-percent-input').value;
         const sell = tr.querySelector('.sell-input').value;
         
-        ['product_id','quantity','unit_cost','selling_price','add_to_price_stock'].forEach((field, idx) => {
-            const val = [pid, qty, cost, sell, 1][idx];
+        ['product_id','quantity','unit_cost','line_discount_type','line_discount_value','selling_price','add_to_price_stock'].forEach((field, idx) => {
+            const val = [pid, qty, cost, 'percent', lineDiscount, sell, 1][idx];
             const input = document.createElement('input');
             input.type = 'hidden';
             input.name = `items[${i}][${field}]`;

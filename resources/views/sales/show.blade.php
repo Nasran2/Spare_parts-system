@@ -58,6 +58,14 @@
     $displayPaymentStatusClass = $hasChequeHold
         ? 'bg-indigo-100 text-indigo-700'
         : ($sale->payment_status === 'paid' ? 'bg-green-100 text-green-700' : ($sale->payment_status === 'partial' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'));
+    $taxSnapshot = $sale->tax_snapshot ?? [];
+    $supplierTin = $taxSnapshot['business_tin'] ?? $taxSnapshot['supplier_tin'] ?? \App\Models\Setting::get('supplier_tin');
+    $canTaxInvoice = !empty($taxSnapshot['vat_enabled'])
+        && !empty($taxSnapshot['vat_registered'])
+        && !empty($supplierTin)
+        && !empty($sale->customer?->tin)
+        && (float) $sale->tax > 0
+        && $sale->sale_type === 'sale';
 @endphp
 <div class="space-y-6">
     <div class="bg-white rounded-xl shadow-sm p-6">
@@ -76,6 +84,10 @@
             </div>
             <div>
                 <a href="{{ route('sales.index') }}" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Back</a>
+                @if($canTaxInvoice && auth()->user()?->hasPermission('tax.invoice.print'))
+                    <a href="{{ route('sales.tax-invoice', $sale) }}" target="_blank" class="ml-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800"><i class="fas fa-file-invoice-dollar mr-1"></i>Official Tax Invoice</a>
+                    <a href="{{ route('sales.tax-invoice', ['sale' => $sale, 'download' => 1]) }}" class="ml-2 px-4 py-2 bg-white border border-slate-300 text-slate-800 rounded-lg hover:bg-slate-50"><i class="fas fa-download mr-1"></i>Download Tax Invoice</a>
+                @endif
             </div>
         </div>
 

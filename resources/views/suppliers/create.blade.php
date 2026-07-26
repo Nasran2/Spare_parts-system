@@ -34,6 +34,11 @@
                     <input type="text" name="company_name" value="{{ old('company_name') }}" class="w-full mt-1 border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500">
                 </div>
                 <div>
+                    <label class="block text-sm font-medium text-gray-700">Supplier TIN</label>
+                    <input type="text" name="tin" value="{{ old('tin') }}" inputmode="numeric" pattern="[0-9]{9,12}" maxlength="12" class="w-full mt-1 border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 @error('tin') border-red-500 @enderror">
+                    @error('tin')<p class="text-sm text-red-600 mt-1">{{ $message }}</p>@enderror
+                </div>
+                <div>
                     <label class="block text-sm font-medium text-gray-700">Email</label>
                     <input type="email" name="email" value="{{ old('email') }}" class="w-full mt-1 border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 @error('email') border-red-500 @enderror">
                     @error('email')<p class="text-sm text-red-600 mt-1">{{ $message }}</p>@enderror

@@ -135,6 +135,11 @@ class Product extends Model
         return $this->belongsToMany(Store::class, 'product_store_exclusions');
     }
 
+    public function taxSetting()
+    {
+        return $this->hasOne(ProductTaxSetting::class);
+    }
+
     public function isLowStock()
     {
         return $this->stock_quantity <= $this->alert_quantity;

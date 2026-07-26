@@ -27,6 +27,7 @@ use App\Http\Controllers\SaleReturnController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\SuperAdminDashboardController;
 use App\Http\Controllers\SupplierController;
+use App\Http\Controllers\TaxManagementController;
 use App\Http\Controllers\UnitController;
 use App\Http\Controllers\UserController;
 use App\Support\PublicStorageSync;
@@ -466,6 +467,45 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
     Route::get('settings/pos', [SettingController::class, 'pos'])->middleware('permission:settings.view')->name('settings.pos');
     Route::get('settings/barcode', [SettingController::class, 'barcode'])->middleware('permission:settings.view')->name('settings.barcode');
     Route::post('settings/save', [SettingController::class, 'save'])->middleware('permission:settings.edit')->name('settings.save');
+
+    // Sri Lanka Tax Management
+    Route::prefix('tax')->name('tax.')->group(function () {
+        Route::get('/', [TaxManagementController::class, 'dashboard'])
+            ->middleware('permission:tax.view')->name('dashboard');
+        Route::get('/dashboard/details/{metric}', [TaxManagementController::class, 'dashboardDetails'])
+            ->middleware('permission:tax.view')->name('dashboard.details');
+        Route::get('/ledger/{direction}', [TaxManagementController::class, 'ledger'])
+            ->whereIn('direction', ['output', 'input'])
+            ->middleware('permission:tax.view')->name('ledger');
+        Route::get('/payments', [TaxManagementController::class, 'payments'])
+            ->middleware('permission:tax.view')->name('payments');
+        Route::post('/payments', [TaxManagementController::class, 'storePayment'])
+            ->middleware('permission:tax.payment.create')->name('payments.store');
+        Route::patch('/payments/{taxPayment}', [TaxManagementController::class, 'updatePayment'])
+            ->middleware('permission:tax.payment.edit')->name('payments.update');
+        Route::post('/payments/{taxPayment}/finalize', [TaxManagementController::class, 'finalizePayment'])
+            ->middleware('permission:tax.payment.edit')->name('payments.finalize');
+        Route::post('/payments/{taxPayment}/reverse', [TaxManagementController::class, 'reversePayment'])
+            ->middleware('permission:tax.payment.edit')->name('payments.reverse');
+        Route::delete('/payments/{taxPayment}', [TaxManagementController::class, 'destroyPayment'])
+            ->middleware('permission:tax.payment.delete')->name('payments.destroy');
+        Route::get('/adjustments', [TaxManagementController::class, 'adjustments'])
+            ->middleware('permission:tax.view')->name('adjustments');
+        Route::post('/adjustments', [TaxManagementController::class, 'storeAdjustment'])
+            ->middleware('permission:tax.adjustment.manage')->name('adjustments.store');
+        Route::post('/adjustments/{taxAdjustment}/approve', [TaxManagementController::class, 'approveAdjustment'])
+            ->middleware('permission:tax.adjustment.manage')->name('adjustments.approve');
+        Route::get('/reports', [TaxManagementController::class, 'reports'])
+            ->middleware('permission:tax.reports.view')->name('reports');
+        Route::get('/reports/export/{format}', [TaxManagementController::class, 'exportReport'])
+            ->whereIn('format', ['pdf', 'xlsx'])
+            ->middleware('permission:tax.reports.export')->name('reports.export');
+    });
+
+    Route::get('sales/{sale}/tax-invoice', [TaxManagementController::class, 'taxInvoice'])
+        ->middleware('permission:tax.invoice.print')->name('sales.tax-invoice');
+    Route::post('sales/{sale}/tax-invoice/email', [TaxManagementController::class, 'emailTaxInvoice'])
+        ->middleware('permission:tax.invoice.print')->name('sales.tax-invoice.email');
     Route::get('settings/storage-link', function (Request $request) {
         if (! $request->user()?->hasPermission('settings.edit')) {
             abort(403);

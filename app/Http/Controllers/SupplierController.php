@@ -41,6 +41,7 @@ class SupplierController extends Controller
         try {
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
+                'tin' => 'nullable|regex:/^\d{9,12}$/|unique:suppliers,tin',
                 'company_name' => 'nullable|string|max:255',
                 'email' => 'nullable|email|max:255|unique:suppliers,email',
                 'phone' => 'required|string|max:30',
@@ -129,6 +130,7 @@ class SupplierController extends Controller
         try {
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
+                'tin' => 'nullable|regex:/^\d{9,12}$/|unique:suppliers,tin,'.$supplier->id,
                 'company_name' => 'nullable|string|max:255',
                 'email' => 'nullable|email|max:255|unique:suppliers,email,'.$supplier->id,
                 'phone' => 'required|string|max:30',

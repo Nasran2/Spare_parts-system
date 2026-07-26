@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Models\Sale;
-use App\Models\Setting;
+use App\Models\TransactionTaxLine;
 use Illuminate\Support\Facades\DB;
 
 class SaleRecalculationService
@@ -17,6 +17,14 @@ class SaleRecalculationService
         $sale->loadMissing(['items.product', 'payments']);
 
         $returnedQtyBySaleItemId = self::returnedQtyBySaleItem((int) $sale->id);
+        $storedTaxLines = TransactionTaxLine::query()
+            ->where('transaction_type', 'sale')
+            ->where('transaction_id', $sale->id)
+            ->get()
+            ->keyBy('transaction_line_id');
+        if ($storedTaxLines->isNotEmpty()) {
+            return self::recalculateFromTaxSnapshot($sale, $returnedQtyBySaleItemId, $storedTaxLines);
+        }
 
         // Compute original totals from items (sold quantities) and remaining totals after returns.
         // - We treat `sale_items.unit_price` as the effective (after line-discount) unit price.
@@ -92,12 +100,6 @@ class SaleRecalculationService
         $netTaxBase = max(0.0, round($netSubtotal - $netDiscount, 2));
         $netTax = max(0.0, round($netTaxBase * $effectiveTaxRate, 2));
 
-        // Also respect VAT toggle if configured to be disabled.
-        $vatEnabled = (bool) Setting::get('vat_enabled', false);
-        if (! $vatEnabled) {
-            $netTax = 0.0;
-        }
-
         $netTotal = max(0.0, round($netSubtotal + $netTax - $netDiscount, 2));
 
         $paymentsSum = (float) $sale->payments->sum(fn ($p) => (float) $p->amount);
@@ -124,6 +126,52 @@ class SaleRecalculationService
         $sale->due_amount = $due;
         $sale->payment_status = $status;
         $sale->save();
+
+        return $sale;
+    }
+
+    private static function recalculateFromTaxSnapshot(Sale $sale, array $returnedQtyByItem, $taxLines): Sale
+    {
+        $gross = 0;
+        $discount = 0;
+        $vat = 0;
+        $total = 0;
+        foreach ($sale->items as $item) {
+            $line = $taxLines->get($item->id);
+            if (! $line) {
+                continue;
+            }
+            $soldQty = DecimalMath::parse((string) $line->quantity);
+            $returnedQty = DecimalMath::parse((string) ($returnedQtyByItem[$item->id] ?? 0));
+            $remainingQty = max(0, $soldQty - $returnedQty);
+            if ($soldQty <= 0) {
+                continue;
+            }
+            $ratio = fn (string $value) => DecimalMath::roundDiv(
+                DecimalMath::parse($value) * $remainingQty,
+                $soldQty
+            );
+            $gross += $ratio($line->gross_amount);
+            $discount += $ratio($line->discount_amount);
+            $vat += $ratio($line->vat_amount);
+            $total += $ratio($line->total_amount);
+        }
+        $paid = 0;
+        foreach ($sale->payments as $payment) {
+            $paid += DecimalMath::parse((string) $payment->amount);
+        }
+        $paid = min($paid, $total);
+        $due = max(0, $total - $paid);
+
+        $sale->forceFill([
+            'subtotal' => DecimalMath::currency($gross),
+            'discount' => DecimalMath::currency($discount),
+            'tax' => DecimalMath::currency($vat),
+            'total_amount' => DecimalMath::currency($total),
+            'paid_amount' => DecimalMath::currency($paid),
+            'due_amount' => DecimalMath::currency($due),
+            'payment_status' => $due > 0 ? ($paid > 0 ? 'partial' : 'unpaid') : 'paid',
+        ])->save();
 
         return $sale;
     }

@@ -13,12 +13,16 @@ class Sale extends Model
 
     protected $fillable = [
         'sale_no',
+        'tax_invoice_number',
+        'tax_template_version',
         'customer_id',
         'user_id',
         'store_id',
         'sale_date',
         'subtotal',
         'tax',
+        'rounding_adjustment',
+        'tax_snapshot',
         'discount',
         'total_amount',
         'paid_amount',
@@ -37,6 +41,8 @@ class Sale extends Model
         'sale_date' => 'date',
         'subtotal' => 'decimal:2',
         'tax' => 'decimal:2',
+        'rounding_adjustment' => 'decimal:4',
+        'tax_snapshot' => 'array',
         'discount' => 'decimal:2',
         'total_amount' => 'decimal:2',
         'paid_amount' => 'decimal:2',
@@ -78,6 +84,17 @@ class Sale extends Model
     public function exchangeReturns()
     {
         return $this->hasMany(SaleReturn::class, 'exchange_sale_id');
+    }
+
+    public function store()
+    {
+        return $this->belongsTo(Store::class);
+    }
+
+    public function taxLines()
+    {
+        return $this->hasMany(TransactionTaxLine::class, 'transaction_id')
+            ->where('transaction_type', 'sale');
     }
 
     protected static function boot()

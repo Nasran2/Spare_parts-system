@@ -212,8 +212,11 @@
             </tbody>
         </table>
         @php
-            $vatEnabled = (bool) \App\Models\Setting::get('vat_enabled', false);
-            $vatRate = (float) \App\Models\Setting::get('vat_rate', 0);
+            $taxSnapshot = $sale->tax_snapshot ?? [];
+            $vatEnabled = (bool) ($taxSnapshot['vat_enabled'] ?? false);
+            $vatRate = (float) ($taxSnapshot['default_vat_rate'] ?? 0);
+            $showVatBreakdown = ($taxSnapshot['customer_invoice_vat_display'] ?? 'hide_inclusive') === 'always_show'
+                || $sale->taxLines->contains(fn ($line) => $line->price_mode === 'exclusive' && (float) $line->vat_amount > 0);
             $payments = $sale->payments ?? collect();
             $tenderedAmount = isset($sale->tendered_amount) && (float) $sale->tendered_amount > 0
                 ? (float) $sale->tendered_amount
@@ -235,7 +238,7 @@
             @if(((float) ($cartDiscountAmount ?? 0)) > 0)
             <div class="totals-row"><span>Discount</span><span>{{ $maskMoney((float) $cartDiscountAmount, !empty($controls['hide_invoice_details'])) }}</span></div>
             @endif
-            @if($vatEnabled)
+            @if($vatEnabled && $showVatBreakdown)
             <div class="totals-row"><span>VAT{{ $vatRate ? ' ('.$vatRate.'%)' : '' }}</span><span>{{ $maskMoney($sale->tax, !empty($controls['hide_invoice_details'])) }}</span></div>
             @endif
             <div class="totals-row grand"><span>Total</span><span>{{ $maskMoney($totalBeforeReturn, !empty($controls['hide_invoice_details'])) }}</span></div>
@@ -268,6 +271,9 @@
             @endif
             <div class="totals-row"><span>Status</span><span>{{ $displayPaymentStatus }}</span></div>
         </div>
+        @if($vatEnabled && !$showVatBreakdown && !empty($taxSnapshot['regular_invoice_vat_note']))
+            <div style="margin-top:8px; font-size:10px; text-align:center;">Prices are inclusive of applicable VAT.</div>
+        @endif
         <div class="footer">
             @if($payments->count() > 0)
                 <div class="cheque-footer">

@@ -155,6 +155,10 @@
                     <input type="text" name="phone" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
                 </div>
                 <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Purchaser TIN</label>
+                    <input type="text" name="tin" inputmode="numeric" pattern="[0-9]{9,12}" maxlength="12" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Email</label>
                     <input type="email" name="email" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
                 </div>
@@ -344,6 +348,10 @@
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Phone</label>
                     <input type="text" id="edit_phone" name="phone" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Purchaser TIN</label>
+                    <input type="text" id="edit_tin" name="tin" inputmode="numeric" pattern="[0-9]{9,12}" maxlength="12" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
                 </div>
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Email</label>
@@ -566,6 +574,7 @@ function editCustomer(id) {
             document.getElementById('edit_customer_id').value = customer.id;
             document.getElementById('edit_name').value = customer.name;
             document.getElementById('edit_phone').value = customer.phone || '';
+            document.getElementById('edit_tin').value = customer.tin || '';
             document.getElementById('edit_email').value = customer.email || '';
             document.getElementById('edit_city').value = customer.city || '';
             document.getElementById('edit_country').value = customer.country || '';

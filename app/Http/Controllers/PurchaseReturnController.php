@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use App\Support\SecretPos;
+use App\Services\TaxReturnService;
 
 class PurchaseReturnController extends Controller
 {
@@ -126,6 +127,21 @@ class PurchaseReturnController extends Controller
             }
 
             $purchaseReturn->update(['total_refund' => $totalRefund]);
+            app(TaxReturnService::class)->recordPurchaseReturn($purchaseReturn);
+            $taxReturnTotal = \App\Models\TransactionTaxLine::query()
+                ->where('transaction_type', 'purchase_return')
+                ->where('transaction_id', $purchaseReturn->id)
+                ->get()
+                ->reduce(
+                    fn (int $carry, $line) => $carry + abs(\App\Services\DecimalMath::parse($line->total_amount)),
+                    0
+                );
+            if ($taxReturnTotal > 0) {
+                $totalRefund = (float) \App\Services\DecimalMath::currency($taxReturnTotal);
+                $purchaseReturn->update([
+                    'total_refund' => \App\Services\DecimalMath::currency($taxReturnTotal),
+                ]);
+            }
 
             // Handle Refund
             if ($request->refund_method === 'account') {

@@ -9,10 +9,14 @@ use App\Models\SaleItem;
 use App\Models\SaleReturn;
 use App\Models\SaleReturnItem;
 use App\Models\Setting;
+use App\Models\TaxSetting;
+use App\Models\TransactionTaxLine;
 use App\Services\DashboardVisibilityService;
 use App\Services\PrivacyModeService;
 use App\Services\SalePaymentAccountingService;
 use App\Services\SaleRecalculationService;
+use App\Services\TaxCalculationService;
+use App\Services\TaxPostingService;
 use App\Support\SecretPos;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -126,7 +130,7 @@ class SaleController extends Controller
         $hiddenProductIds = $this->hiddenProductIdsForCurrentUser();
         $hiddenCustomerIds = $this->hiddenCustomerIdsForCurrentUser();
         $hiddenSaleIds = $this->hiddenSaleIdsForCurrentUser();
-        $sale = Sale::with(['items.product', 'customer', 'user', 'payments', 'chequePayments'])->findOrFail($id);
+        $sale = Sale::with(['items.product', 'customer', 'user', 'payments', 'chequePayments', 'taxLines'])->findOrFail($id);
         // Block access to hidden bills entirely
         if (SecretPos::isHidden((float) $sale->total_amount)) {
             abort(404);
@@ -144,7 +148,7 @@ class SaleController extends Controller
         if ($sale->returns()->exists()) {
             SaleRecalculationService::recalculateSaleFinancials($sale);
             $sale->refresh();
-            $sale->load(['items.product', 'customer', 'user', 'payments', 'chequePayments']);
+            $sale->load(['items.product', 'customer', 'user', 'payments', 'chequePayments', 'taxLines']);
         }
 
         $returnedQtyByItem = SaleRecalculationService::returnedQtyBySaleItem($sale->id);
@@ -205,7 +209,7 @@ class SaleController extends Controller
         $hiddenCustomerIds = $this->hiddenCustomerIdsForCurrentUser();
         $hiddenSaleIds = $this->hiddenSaleIdsForCurrentUser();
 
-        $sale = Sale::with(['items.product', 'customer', 'user', 'payments', 'chequePayments'])->findOrFail($id);
+        $sale = Sale::with(['items.product', 'customer', 'user', 'payments', 'chequePayments', 'taxLines'])->findOrFail($id);
         if (SecretPos::isHidden((float) $sale->total_amount)) {
             abort(404);
         }
@@ -222,7 +226,7 @@ class SaleController extends Controller
         if ($sale->returns()->exists()) {
             SaleRecalculationService::recalculateSaleFinancials($sale);
             $sale->refresh();
-            $sale->load(['items.product', 'customer', 'user', 'payments', 'chequePayments']);
+            $sale->load(['items.product', 'customer', 'user', 'payments', 'chequePayments', 'taxLines']);
         }
 
         $hasReturns = $sale->returns()->exists();
@@ -405,11 +409,26 @@ class SaleController extends Controller
             }
 
             $return->subtotal = round($subtotal, 2);
-            $return->total_refund = round($subtotal, 2); // simple: refund subtotal; taxes/discounts ignored for now
+            $return->total_refund = round($subtotal, 2);
             if ((float) $return->total_refund <= 0) {
                 throw new \Exception('No items selected for return.');
             }
             $return->save();
+            app(\App\Services\TaxReturnService::class)->recordSaleReturn($return);
+            $taxReturnTotal = \App\Models\TransactionTaxLine::query()
+                ->where('transaction_type', 'sale_return')
+                ->where('transaction_id', $return->id)
+                ->get()
+                ->reduce(
+                    fn (int $carry, $line) => $carry + abs(\App\Services\DecimalMath::parse($line->total_amount)),
+                    0
+                );
+            if ($taxReturnTotal > 0) {
+                $return->forceFill([
+                    'subtotal' => \App\Services\DecimalMath::currency($taxReturnTotal),
+                    'total_refund' => \App\Services\DecimalMath::currency($taxReturnTotal),
+                ])->save();
+            }
 
             $sale->refresh();
             $sale->load(['items', 'payments']);
@@ -551,6 +570,60 @@ class SaleController extends Controller
             $sale->due_amount = $sale->total_amount;
             $sale->payment_method = 'cash';
             $sale->save();
+
+            $storedTaxLines = TransactionTaxLine::query()
+                ->where('transaction_type', 'quotation')
+                ->where('transaction_id', $sale->id)
+                ->get()
+                ->keyBy('transaction_line_id');
+            $settingsVersion = data_get($sale->tax_snapshot, 'version');
+            $taxSettings = $settingsVersion
+                ? TaxSetting::query()->where('version', $settingsVersion)->first()
+                : null;
+            $taxSettings ??= TaxSetting::current($sale->sale_date);
+            $taxPairs = [];
+
+            if ($storedTaxLines->isNotEmpty()) {
+                TransactionTaxLine::query()
+                    ->where('transaction_type', 'quotation')
+                    ->where('transaction_id', $sale->id)
+                    ->update(['transaction_type' => 'sale']);
+                foreach ($sale->items as $item) {
+                    if ($line = $storedTaxLines->get($item->id)) {
+                        $taxPairs[] = ['model' => $item, 'tax' => $line->toArray()];
+                    }
+                }
+            } else {
+                $calculator = app(TaxCalculationService::class);
+                $inputs = [];
+                foreach ($sale->items as $item) {
+                    $product = $item->product()->with('taxSetting')->first();
+                    $rules = $calculator->productRules($product, $taxSettings, 'sale');
+                    $inputs[] = [
+                        'unit_price' => $item->unit_price,
+                        'quantity' => $item->quantity,
+                        'tax_status' => $rules['tax_status'],
+                        'vat_rate' => $rules['vat_rate'],
+                        'price_mode' => $rules['price_mode'],
+                        'vat_allowed' => $rules['vat_allowed'],
+                        'vat_enabled' => $taxSettings->vat_enabled,
+                    ];
+                }
+                $calculated = $calculator->calculateInvoice($inputs);
+                foreach ($sale->items as $index => $item) {
+                    $taxPairs[] = ['model' => $item, 'tax' => $calculated['lines'][$index]];
+                }
+                $sale->update([
+                    'subtotal' => $calculated['totals']['gross'],
+                    'discount' => $calculated['totals']['discount'],
+                    'tax' => $calculated['totals']['vat'],
+                    'total_amount' => $calculated['totals']['total'],
+                    'due_amount' => $calculated['totals']['total'],
+                    'rounding_adjustment' => $calculated['totals']['rounding_adjustment'],
+                ]);
+            }
+            $sale->loadMissing(['customer', 'store']);
+            app(TaxPostingService::class)->postSale($sale, $taxPairs, $taxSettings);
 
             // Reduce stock for each item
             foreach ($sale->items as $it) {
@@ -744,6 +817,7 @@ class SaleController extends Controller
                             ProductPrice::whereKey($priceId)->decrement('stock_qty', (int) $qty);
                         }
                     }
+                    app(\App\Services\TaxPostingService::class)->reverse('sale', $sale->id, 'Sale deleted');
                 }
 
                 $sale->delete();

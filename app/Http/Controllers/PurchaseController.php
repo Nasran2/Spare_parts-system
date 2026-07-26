@@ -7,7 +7,11 @@ use App\Models\ProductPrice;
 use App\Models\Purchase;
 use App\Models\PurchaseItem;
 use App\Models\Setting;
+use App\Models\TaxSetting;
+use App\Services\DecimalMath;
 use App\Services\DashboardVisibilityService;
+use App\Services\TaxCalculationService;
+use App\Services\TaxPostingService;
 use App\Support\PublicStorageSync;
 use App\Support\SecretPos;
 use Illuminate\Http\Request;
@@ -44,10 +48,11 @@ class PurchaseController extends Controller
             ->when(! empty($hiddenSupplierIds), fn ($query) => $query->whereNotIn('id', $hiddenSupplierIds))
             ->orderBy('name')
             ->get();
-        $products = \App\Models\Product::orderBy('name')->get();
+        $products = \App\Models\Product::with('taxSetting')->orderBy('name')->get();
+        $taxSettings = TaxSetting::current();
 
         // Pre-format products for JS to avoid Blade parsing issues
-        $productsData = $products->map(function ($p) {
+        $productsData = $products->map(function ($p) use ($taxSettings) {
             return [
                 'id' => $p->id,
                 'name' => $p->name,
@@ -55,13 +60,14 @@ class PurchaseController extends Controller
                 'selling_price' => (float) $p->selling_price,
                 'sku' => $p->sku,
                 'barcode' => $p->barcode,
+                'tax' => app(TaxCalculationService::class)->productRules($p, $taxSettings, 'purchase'),
             ];
         })->values()->toArray();
 
         $stores = \App\Models\Store::where('is_active', true)->orderBy('name')->get();
         $defaultStore = $stores->firstWhere('is_default', true) ?? $stores->first();
 
-        return view('purchases.create', compact('suppliers', 'products', 'productsData', 'canUseSellingSecretCode', 'stores', 'defaultStore'));
+        return view('purchases.create', compact('suppliers', 'products', 'productsData', 'canUseSellingSecretCode', 'stores', 'defaultStore', 'taxSettings'));
     }
 
     /**
@@ -79,6 +85,10 @@ class PurchaseController extends Controller
             'discount_type' => 'nullable|string|in:none,fixed,percentage',
             'discount_amount' => 'nullable|numeric|min:0',
             'tax_id' => 'nullable|string',
+            'supplier_tax_invoice_number' => 'nullable|string|max:100',
+            'supplier_tax_invoice_date' => 'nullable|date',
+            'purchase_vat_mode' => 'nullable|in:global,inclusive,exclusive',
+            'input_vat_claimable' => 'nullable|boolean',
             'shipping_cost' => 'nullable|numeric|min:0',
             'shipping_type' => 'nullable|string|in:divided,expense',
             'payment_method' => 'required|string|in:cash,credit,cheque,bank_deposit,bank_transfer,card,mobile_payment',
@@ -89,6 +99,8 @@ class PurchaseController extends Controller
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.quantity' => 'required|numeric|min:0.001',
             'items.*.unit_cost' => 'required|numeric|min:0',
+            'items.*.line_discount_type' => 'nullable|in:fixed,percent',
+            'items.*.line_discount_value' => 'nullable|numeric|min:0',
             'items.*.selling_price' => 'required|numeric|min:0',
             'items.*.add_to_price_stock' => 'nullable|boolean',
             'items.*.store_stock' => 'nullable|array',
@@ -101,37 +113,50 @@ class PurchaseController extends Controller
 
         return DB::transaction(function () use ($request, $validated) {
             $usePriceWiseStock = (bool) Setting::get('use_price_wise_stock', true);
-            // Calculate totals
-            $subtotal = 0;
-            $totalQty = 0;
-            foreach ($validated['items'] as $it) {
-                $subtotal += $it['quantity'] * $it['unit_cost'];
-                $totalQty += $it['quantity'];
+            $purchaseDate = $validated['purchase_date'] ?? now()->toDateString();
+            $taxSettings = TaxSetting::current($purchaseDate);
+            $taxCalculator = app(TaxCalculationService::class);
+            $taxInputs = [];
+            $totalQtyMinor = 0;
+            foreach ($validated['items'] as $item) {
+                $product = Product::with('taxSetting')->findOrFail($item['product_id']);
+                $rules = $taxCalculator->productRules($product, $taxSettings, 'purchase');
+                if (($validated['purchase_vat_mode'] ?? 'global') !== 'global') {
+                    $rules['price_mode'] = $validated['purchase_vat_mode'];
+                }
+                $taxInputs[] = [
+                    'unit_price' => (string) $item['unit_cost'],
+                    'quantity' => (string) $item['quantity'],
+                    'line_discount_type' => $item['line_discount_type'] ?? 'fixed',
+                    'line_discount_value' => (string) ($item['line_discount_value'] ?? '0'),
+                    'tax_status' => $rules['tax_status'],
+                    'vat_rate' => $rules['vat_rate'],
+                    'price_mode' => $rules['price_mode'],
+                    'vat_allowed' => $rules['vat_allowed'],
+                    'vat_enabled' => $taxSettings->vat_enabled,
+                ];
+                $totalQtyMinor += DecimalMath::parse((string) $item['quantity']);
             }
 
-            // Calculate discount
-            $discountAmount = 0;
             $discountType = $validated['discount_type'] ?? 'none';
-            if ($discountType === 'fixed') {
-                $discountAmount = $validated['discount_amount'] ?? 0;
-            } elseif ($discountType === 'percentage') {
-                $discountAmount = $subtotal * (($validated['discount_amount'] ?? 0) / 100);
-            }
-
-            // Calculate tax
-            $taxAmount = 0;
-            $taxId = $validated['tax_id'] ?? null;
-            if ($taxId === 'vat_10') {
-                $taxAmount = ($subtotal - $discountAmount) * 0.10;
-            } elseif ($taxId === 'vat_5') {
-                $taxAmount = ($subtotal - $discountAmount) * 0.05;
-            }
+            $taxInvoice = $taxCalculator->calculateInvoice(
+                $taxInputs,
+                $discountType,
+                (string) ($validated['discount_amount'] ?? '0')
+            );
+            $subtotal = $taxInvoice['totals']['gross'];
+            $discountAmount = $taxInvoice['totals']['discount'];
+            $taxAmount = $taxInvoice['totals']['vat'];
+            $taxId = $taxSettings->vat_enabled ? 'VAT' : null;
 
             // Handle shipping cost
-            $shippingCost = $validated['shipping_cost'] ?? 0;
+            $shippingCost = (string) ($validated['shipping_cost'] ?? '0');
             $shippingType = $validated['shipping_type'] ?? 'divided';
-
-            $grandTotal = $subtotal - $discountAmount + $taxAmount + $shippingCost;
+            $grandTotalMinor = DecimalMath::parse($taxInvoice['totals']['total'])
+                + DecimalMath::parse($shippingCost);
+            $grandTotal = DecimalMath::currency($grandTotalMinor);
+            $inputVatClaimable = $request->boolean('input_vat_claimable')
+                && $taxSettings->vat_enabled;
 
             // Handle document upload
             $documentPath = null;
@@ -156,12 +181,19 @@ class PurchaseController extends Controller
                 'store_id' => $validated['store_ids'][0] ?? null,
                 'user_id' => auth()->id(),
                 'reference_no' => $validated['reference_no'] ?? null,
-                'purchase_date' => $validated['purchase_date'] ?? now()->toDateString(),
+                'purchase_date' => $purchaseDate,
                 'status' => $validated['status'] ?? 'pending',
                 'discount_type' => $discountType,
                 'discount_amount' => $discountAmount,
                 'tax_id' => $taxId,
                 'tax_amount' => $taxAmount,
+                'supplier_tax_invoice_number' => $validated['supplier_tax_invoice_number'] ?? null,
+                'supplier_tax_invoice_date' => $validated['supplier_tax_invoice_date'] ?? null,
+                'purchase_vat_mode' => $validated['purchase_vat_mode'] ?? 'global',
+                'taxable_purchase_value' => $taxInvoice['totals']['taxable'],
+                'input_vat_claimable' => $inputVatClaimable,
+                'tax_period' => substr($purchaseDate, 0, 7),
+                'tax_snapshot' => $taxSettings->snapshot(),
                 'shipping_cost' => $shippingCost,
                 'shipping_type' => $shippingType,
                 'payment_method' => $validated['payment_method'],
@@ -173,15 +205,29 @@ class PurchaseController extends Controller
                 'notes' => $validated['notes'] ?? null,
             ]);
 
-            // Calculate shipping cost per item if dividing
-            $shippingPerItem = ($shippingType === 'divided' && $totalQty > 0) ? $shippingCost / $totalQty : 0;
+            $shippingPerItemMinor = ($shippingType === 'divided' && $totalQtyMinor > 0)
+                ? DecimalMath::roundDiv(
+                    DecimalMath::parse($shippingCost) * DecimalMath::SCALE,
+                    $totalQtyMinor
+                )
+                : 0;
 
-            foreach ($validated['items'] as $it) {
-                // If shipping is divided, add it to unit cost
-                $finalUnitCost = $it['unit_cost'];
+            $taxPairs = [];
+            foreach ($validated['items'] as $index => $it) {
+                $taxResult = $taxInvoice['lines'][$index];
+                $quantityMinor = DecimalMath::parse((string) $it['quantity']);
+                $inventoryLineMinor = DecimalMath::parse(
+                    $inputVatClaimable
+                        ? $taxResult['taxable_amount']
+                        : $taxResult['total_amount']
+                );
+                $finalUnitCostMinor = $quantityMinor > 0
+                    ? DecimalMath::roundDiv($inventoryLineMinor * DecimalMath::SCALE, $quantityMinor)
+                    : 0;
                 if ($shippingType === 'divided') {
-                    $finalUnitCost += $shippingPerItem;
+                    $finalUnitCostMinor += $shippingPerItemMinor;
                 }
+                $finalUnitCost = DecimalMath::currency($finalUnitCostMinor);
 
                 $product = Product::findOrFail($it['product_id']);
                 $priceOption = $this->findOrCreatePurchasePriceOption(
@@ -192,15 +238,21 @@ class PurchaseController extends Controller
                     $usePriceWiseStock && (bool) ($it['add_to_price_stock'] ?? true)
                 );
 
-                PurchaseItem::create([
+                $purchaseItem = PurchaseItem::create([
                     'purchase_id' => $purchase->id,
                     'product_id' => $it['product_id'],
                     'product_price_id' => $priceOption?->id,
                     'quantity' => $it['quantity'],
                     'unit_cost' => $finalUnitCost,
                     'selling_price' => $it['selling_price'],
-                    'total' => $it['quantity'] * $finalUnitCost,
+                    'total' => DecimalMath::currency(
+                        DecimalMath::multiply(
+                            DecimalMath::parse($finalUnitCost),
+                            $quantityMinor
+                        )
+                    ),
                 ]);
+                $taxPairs[] = ['model' => $purchaseItem, 'tax' => $taxResult];
 
                 // Update product stock and prices
                 $product->stock_quantity = ($product->stock_quantity ?? 0) + $it['quantity'];
@@ -232,6 +284,9 @@ class PurchaseController extends Controller
                     $storeStockRecord->increment('quantity', $storeQty);
                 }
             }
+
+            $purchase->loadMissing(['supplier', 'store']);
+            app(TaxPostingService::class)->postPurchase($purchase, $taxPairs, $taxSettings);
 
             // If shipping is expense, create expense record (future feature)
             // if ($shippingType === 'expense' && $shippingCost > 0) {
@@ -390,7 +445,10 @@ class PurchaseController extends Controller
         if (SecretPos::isPurchaseHidden((float) $purchase->total_amount)) {
             abort(404);
         }
-        $purchase->delete();
+        DB::transaction(function () use ($purchase) {
+            app(TaxPostingService::class)->reverse('purchase', $purchase->id, 'Purchase deleted');
+            $purchase->delete();
+        });
 
         return redirect()->route('purchases.index')->with('success', 'Purchase deleted successfully');
     }

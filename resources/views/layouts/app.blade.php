@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'Dashboard') - Vehicle POS</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -249,6 +249,9 @@
             || $navUser?->hasPermission('reports.unsold-recently');
         $canNotificationsMenu = $navUser?->hasPermission('notifications.view')
             || $navUser?->hasPermission('notifications.configure');
+        $canTaxMenu = $navUser?->hasPermission('tax.view')
+            || $navUser?->hasPermission('tax.reports.view')
+            || $navUser?->hasPermission('tax.settings.manage');
         $canSettings = $navUser?->hasPermission('settings.view');
         $canActivityLog = $navUser?->hasPermission('activity-log.view');
         $canPos = $navUser?->hasPermission('pos.access');
@@ -678,6 +681,33 @@
             </div>
             @endif
 
+            @if($canTaxMenu)
+            <div class="nav-group">
+                <button onclick="toggleDropdown('tax-menu')" class="nav-item flex items-center justify-between w-full px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('tax.*') || request()->routeIs('sales.tax-invoice*') ? 'active' : '' }}">
+                    <div class="flex items-center space-x-3">
+                        <i class="fas fa-file-invoice-dollar w-5"></i>
+                        <span>Tax Management</span>
+                    </div>
+                    <i class="fas fa-chevron-down transition-transform {{ request()->routeIs('tax.*') ? 'rotate-180' : '' }}" id="tax-menu-icon"></i>
+                </button>
+                <div id="tax-menu" class="dropdown-menu ml-4 mt-1 space-y-1 {{ request()->routeIs('tax.*') ? 'open' : '' }}">
+                    @if($navUser?->hasPermission('tax.view'))
+                        <a href="{{ route('tax.dashboard') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('tax.dashboard') ? 'active' : '' }}"><i class="fas fa-gauge w-4"></i><span>Tax Dashboard</span></a>
+                        <a href="{{ route('tax.ledger', 'output') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->is('tax/ledger/output') ? 'active' : '' }}"><i class="fas fa-arrow-up w-4"></i><span>Sales VAT / Output VAT</span></a>
+                        <a href="{{ route('tax.ledger', 'input') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->is('tax/ledger/input') ? 'active' : '' }}"><i class="fas fa-arrow-down w-4"></i><span>Purchase VAT / Input VAT</span></a>
+                        <a href="{{ route('tax.payments') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('tax.payments*') ? 'active' : '' }}"><i class="fas fa-money-check-dollar w-4"></i><span>VAT Payments</span></a>
+                        <a href="{{ route('tax.adjustments') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('tax.adjustments*') ? 'active' : '' }}"><i class="fas fa-sliders w-4"></i><span>VAT Adjustments</span></a>
+                    @endif
+                    @if($navUser?->hasPermission('tax.reports.view'))
+                        <a href="{{ route('tax.reports') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('tax.reports*') ? 'active' : '' }}"><i class="fas fa-chart-column w-4"></i><span>Tax Reports</span></a>
+                    @endif
+                    @if($navUser?->hasPermission('tax.settings.manage'))
+                        <a href="{{ route('settings.general') }}#vat-settings" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600"><i class="fas fa-gears w-4"></i><span>Tax Settings</span></a>
+                    @endif
+                </div>
+            </div>
+            @endif
+
             <!-- Reports -->
             @if($canReportsMenu)
             <div class="nav-group">
@@ -934,7 +964,7 @@
 
         <!-- Page Content -->
         <main class="flex-1 p-4 md:p-6 lg:p-8">
-            @if (session('success') || session('error'))
+            @if (session('success') || session('error') || $errors->any())
                 <div class="fixed top-4 right-4 z-[9999] space-y-3 w-[92vw] max-w-md">
                     @if (session('success'))
                         <div class="bg-green-50 border-l-4 border-green-500 p-4 rounded-lg shadow-lg">
@@ -950,6 +980,19 @@
                             <div class="flex items-start">
                                 <i class="fas fa-exclamation-circle text-red-500 mr-3 text-xl mt-0.5"></i>
                                 <p class="text-red-700">{{ session('error') }}</p>
+                            </div>
+                        </div>
+                    @endif
+                    
+                    @if ($errors->any())
+                        <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg shadow-lg">
+                            <div class="flex items-start">
+                                <i class="fas fa-exclamation-circle text-red-500 mr-3 text-xl mt-0.5"></i>
+                                <div>
+                                    @foreach ($errors->all() as $error)
+                                        <p class="text-red-700 text-sm">{{ $error }}</p>
+                                    @endforeach
+                                </div>
                             </div>
                         </div>
                     @endif

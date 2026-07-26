@@ -8,6 +8,9 @@ use App\Models\ActivityLog;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\ProductTaxSetting;
+use App\Models\TaxSetting;
+use App\Models\TaxType;
 use App\Models\ProductPrice;
 use App\Models\Setting;
 use App\Models\Unit;
@@ -323,9 +326,9 @@ class ProductController extends Controller
         $categories = $this->getActiveCategoriesWithCounts();
         $brands = Brand::where('is_active', true)->get();
         $units = Unit::where('is_active', true)->get();
-        // VAT settings
-        $vatEnabled = \App\Models\Setting::get('vat_enabled', false);
-        $vatRate = (float) \App\Models\Setting::get('vat_rate', 0);
+        $taxSettings = TaxSetting::current();
+        $vatEnabled = $taxSettings->vat_enabled;
+        $vatRate = $taxSettings->default_vat_rate;
 
         $defaultMap = [
             '0' => 'E',
@@ -350,7 +353,7 @@ class ProductController extends Controller
         $stores = \App\Models\Store::where('is_active', true)->orderByDesc('is_default')->orderBy('name')->get();
         $defaultStore = $stores->firstWhere('is_default', true) ?? $stores->first();
 
-        return view('products.create', compact('categories', 'brands', 'units', 'vatEnabled', 'vatRate', 'costCodeMap', 'sellingCodeMap', 'sellingSecretEnabled', 'stores', 'defaultStore'));
+        return view('products.create', compact('categories', 'brands', 'units', 'vatEnabled', 'vatRate', 'taxSettings', 'costCodeMap', 'sellingCodeMap', 'sellingSecretEnabled', 'stores', 'defaultStore'));
     }
 
     public function store(Request $request)
@@ -396,6 +399,12 @@ class ProductController extends Controller
             'store_stock.*' => 'nullable|numeric|min:0',
             'excluded_stores' => 'nullable|array',
             'excluded_stores.*' => 'exists:stores,id',
+            'tax_status' => 'nullable|in:standard,zero_rated,exempt,out_of_scope',
+            'product_vat_rate' => 'nullable|decimal:0,4|min:0|max:100',
+            'sale_price_mode' => 'nullable|in:global,inclusive,exclusive',
+            'purchase_price_mode' => 'nullable|in:global,inclusive,exclusive',
+            'output_vat_allowed' => 'nullable|boolean',
+            'input_vat_allowed' => 'nullable|boolean',
         ]);
 
         if ($request->hasFile('image')) {
@@ -443,6 +452,7 @@ class ProductController extends Controller
             $validated['brand_id'] = null;
 
             $product = Product::create($validated);
+            $this->syncProductTaxSetting($product, $request);
             $this->syncDefaultPriceOption($product);
             $this->syncProductStoreStock($product, $storeStockInput, $excludedStoreIds);
 
@@ -504,6 +514,7 @@ class ProductController extends Controller
             $productData['barcode'] = $productData['sku'];
 
             $product = Product::create($productData);
+            $this->syncProductTaxSetting($product, $request);
             $this->syncDefaultPriceOption($product);
             $this->syncProductStoreStock($product, $storeStockInput, $excludedStoreIds);
             if (! empty($categories)) {
@@ -694,13 +705,16 @@ class ProductController extends Controller
 
     public function edit(Product $product)
     {
-        $product->load(['prices' => fn ($query) => $query->orderByDesc('is_default')->orderBy('selling_price')]);
+        $product->load([
+            'prices' => fn ($query) => $query->orderByDesc('is_default')->orderBy('selling_price'),
+            'taxSetting',
+        ]);
         $categories = $this->getActiveCategoriesWithCounts();
         $brands = Brand::where('is_active', true)->get();
         $units = Unit::where('is_active', true)->get();
-        // VAT settings
-        $vatEnabled = \App\Models\Setting::get('vat_enabled', false);
-        $vatRate = (float) \App\Models\Setting::get('vat_rate', 0);
+        $taxSettings = TaxSetting::current();
+        $vatEnabled = $taxSettings->vat_enabled;
+        $vatRate = $taxSettings->default_vat_rate;
 
         $defaultMap = [
             '0' => 'E',
@@ -725,7 +739,7 @@ class ProductController extends Controller
         $stores = \App\Models\Store::where('is_active', true)->orderByDesc('is_default')->orderBy('name')->get();
         $defaultStore = $stores->firstWhere('is_default', true) ?? $stores->first();
 
-        return view('products.edit', compact('product', 'categories', 'brands', 'units', 'vatEnabled', 'vatRate', 'costCodeMap', 'sellingCodeMap', 'sellingSecretEnabled', 'stores', 'defaultStore'));
+        return view('products.edit', compact('product', 'categories', 'brands', 'units', 'vatEnabled', 'vatRate', 'taxSettings', 'costCodeMap', 'sellingCodeMap', 'sellingSecretEnabled', 'stores', 'defaultStore'));
     }
 
     public function update(Request $request, Product $product)
@@ -754,6 +768,12 @@ class ProductController extends Controller
             'stock_quantity' => 'required|integer|min:0',
             'alert_quantity' => 'required|integer|min:0',
             'image' => 'nullable|image|max:2048',
+            'tax_status' => 'nullable|in:standard,zero_rated,exempt,out_of_scope',
+            'product_vat_rate' => 'nullable|decimal:0,4|min:0|max:100',
+            'sale_price_mode' => 'nullable|in:global,inclusive,exclusive',
+            'purchase_price_mode' => 'nullable|in:global,inclusive,exclusive',
+            'output_vat_allowed' => 'nullable|boolean',
+            'input_vat_allowed' => 'nullable|boolean',
         ]);
 
         // Auto-generate SKU if not provided
@@ -791,6 +811,7 @@ class ProductController extends Controller
         $excludedStoreIds = $request->input('excluded_stores', []);
 
         $product->update($validated);
+        $this->syncProductTaxSetting($product, $request);
         $this->syncDefaultPriceOption($product->fresh());
         $this->syncProductStoreStock($product, $storeStockInput, $excludedStoreIds);
 
@@ -803,6 +824,25 @@ class ProductController extends Controller
         ]);
 
         return redirect()->route('products.index')->with('success', 'Product updated successfully!');
+    }
+
+    private function syncProductTaxSetting(Product $product, Request $request): void
+    {
+        $vatType = TaxType::query()->where('code', 'VAT')->first();
+        ProductTaxSetting::updateOrCreate(
+            ['product_id' => $product->id],
+            [
+                'tax_type_id' => $vatType?->id,
+                'tax_status' => $request->input('tax_status', 'standard'),
+                'vat_rate' => $request->filled('product_vat_rate')
+                    ? $request->input('product_vat_rate')
+                    : null,
+                'sale_price_mode' => $request->input('sale_price_mode', 'global'),
+                'purchase_price_mode' => $request->input('purchase_price_mode', 'global'),
+                'output_vat_allowed' => $request->boolean('output_vat_allowed', true),
+                'input_vat_allowed' => $request->boolean('input_vat_allowed', true),
+            ]
+        );
     }
 
     private function syncDefaultPriceOption(Product $product): void

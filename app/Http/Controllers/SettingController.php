@@ -3,8 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\ExpenseCategory;
+use App\Models\ActivityLog;
 use App\Models\Setting;
+use App\Models\TaxSetting;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class SettingController extends Controller
@@ -39,6 +43,7 @@ class SettingController extends Controller
      */
     public function general()
     {
+        $tax = TaxSetting::current();
         $settings = [
             'currency' => Setting::get('currency', 'Rs'),
             'currency_position' => Setting::get('currency_position', 'before'),
@@ -50,8 +55,21 @@ class SettingController extends Controller
             'items_per_page' => (int) Setting::get('items_per_page', 10),
             'low_stock_warning' => Setting::get('low_stock_warning', true),
             // VAT Settings
-            'vat_enabled' => (bool) Setting::get('vat_enabled', false),
-            'vat_rate' => (float) Setting::get('vat_rate', 0),
+            'vat_enabled' => $tax->vat_enabled,
+            'vat_registered' => $tax->vat_registered,
+            'supplier_tin' => $tax->supplier_tin,
+            'default_vat_rate' => $tax->default_vat_rate,
+            'default_sale_price_mode' => $tax->default_sale_price_mode,
+            'default_purchase_price_mode' => $tax->default_purchase_price_mode,
+            'customer_invoice_vat_display' => $tax->customer_invoice_vat_display,
+            'regular_invoice_vat_note' => $tax->regular_invoice_vat_note,
+            'allow_product_override' => $tax->allow_product_override,
+            'tax_invoice_prefix' => $tax->invoice_prefix,
+            'tax_invoice_starting_number' => $tax->starting_invoice_number,
+            'tax_invoice_next_number' => $tax->next_invoice_number,
+            'tax_branch_code' => $tax->branch_code,
+            'vat_effective_date' => $tax->effective_from?->toDateString(),
+            'tax_template_version' => $tax->active_template_version,
         ];
 
         return view('settings.general', compact('settings'));
@@ -206,6 +224,22 @@ class SettingController extends Controller
      */
     public function save(Request $request)
     {
+        $savingGeneral = $request->hasAny([
+            'currency',
+            'date_format',
+            'default_vat_rate',
+            'vat_effective_date',
+        ]);
+        if ($savingGeneral) {
+            abort_unless($request->user()?->hasPermission('tax.settings.manage'), 403);
+            $request->merge([
+                'vat_enabled' => $request->boolean('vat_enabled'),
+                'vat_registered' => $request->boolean('vat_registered'),
+                'regular_invoice_vat_note' => $request->boolean('regular_invoice_vat_note'),
+                'allow_product_override' => $request->boolean('allow_product_override'),
+            ]);
+        }
+
         $validated = $request->validate([
             'shop_name' => 'nullable|string|max:255',
             'shop_tagline' => 'nullable|string|max:255',
@@ -226,7 +260,25 @@ class SettingController extends Controller
             'low_stock_warning' => 'nullable|boolean',
             // VAT Settings
             'vat_enabled' => 'nullable|boolean',
-            'vat_rate' => 'nullable|numeric|min:0|max:100',
+            'vat_registered' => 'nullable|boolean',
+            'supplier_tin' => [
+                'nullable',
+                'required_if:vat_registered,1',
+                'string',
+                'regex:/^\d{9,12}$/',
+            ],
+            'default_vat_rate' => 'nullable|decimal:0,4|min:0|max:100',
+            'default_sale_price_mode' => 'nullable|in:inclusive,exclusive',
+            'default_purchase_price_mode' => 'nullable|in:inclusive,exclusive',
+            'customer_invoice_vat_display' => 'nullable|in:hide_inclusive,always_show',
+            'regular_invoice_vat_note' => 'nullable|boolean',
+            'allow_product_override' => 'nullable|boolean',
+            'tax_invoice_prefix' => ['nullable', 'string', 'max:30', 'regex:/^\S+$/'],
+            'tax_invoice_starting_number' => 'nullable|integer|min:1',
+            'tax_invoice_next_number' => 'nullable|integer|min:1',
+            'tax_branch_code' => ['nullable', 'string', 'max:20', 'regex:/^\S*$/'],
+            'vat_effective_date' => 'nullable|date',
+            'tax_template_version' => 'nullable|in:sl-vat-2025.1',
 
             // Invoice Settings
             'invoice_prefix' => 'nullable|string|max:20',
@@ -442,7 +494,7 @@ class SettingController extends Controller
                 $type = 'boolean';
             }
 
-            if (in_array($key, ['currency', 'currency_position', 'decimal_places', 'date_format', 'time_format', 'timezone', 'language', 'items_per_page', 'low_stock_warning', 'vat_enabled', 'vat_rate'])) {
+            if (in_array($key, ['currency', 'currency_position', 'decimal_places', 'date_format', 'time_format', 'timezone', 'language', 'items_per_page', 'low_stock_warning', 'vat_enabled'])) {
                 $group = 'general';
             } elseif (in_array($key, ['invoice_prefix', 'invoice_paper_size', 'invoice_show_logo', 'invoice_footer_text', 'invoice_terms'])) {
                 $group = 'invoice';
@@ -458,11 +510,11 @@ class SettingController extends Controller
                 continue;
             }
 
-            if (in_array($key, ['low_stock_warning', 'invoice_show_logo', 'quotation_show_logo', 'vat_enabled', 'use_price_wise_stock', 'show_cost_price_in_pos_popup', 'pos_card_fee_enabled', 'pos_card_fee_record_expense', 'pos_cheque_reminders_enabled', 'pos_cheque_auto_pass_enabled', 'barcode_show_cost_code', 'barcode_enable_selling_secret_code'])) {
+            if (in_array($key, ['low_stock_warning', 'invoice_show_logo', 'quotation_show_logo', 'vat_enabled', 'vat_registered', 'regular_invoice_vat_note', 'allow_product_override', 'use_price_wise_stock', 'show_cost_price_in_pos_popup', 'pos_card_fee_enabled', 'pos_card_fee_record_expense', 'pos_cheque_reminders_enabled', 'pos_cheque_auto_pass_enabled', 'barcode_show_cost_code', 'barcode_enable_selling_secret_code'])) {
                 $type = 'boolean';
             }
 
-            if (in_array($key, ['vat_rate', 'pos_card_fee_rate', 'pos_cheque_reminder_days_before', 'pos_cheque_auto_pass_days_after'])) {
+            if (in_array($key, ['pos_card_fee_rate', 'pos_cheque_reminder_days_before', 'pos_cheque_auto_pass_days_after'])) {
                 $type = 'number';
             }
 
@@ -475,6 +527,82 @@ class SettingController extends Controller
             }
 
             Setting::set($key, $value, $type, $group);
+        }
+
+        if ($savingGeneral) {
+            $taxKeys = [
+                'vat_enabled',
+                'vat_registered',
+                'supplier_tin',
+                'default_vat_rate',
+                'default_sale_price_mode',
+                'default_purchase_price_mode',
+                'customer_invoice_vat_display',
+                'regular_invoice_vat_note',
+                'allow_product_override',
+                'tax_invoice_prefix',
+                'tax_invoice_starting_number',
+                'tax_invoice_next_number',
+                'tax_branch_code',
+                'vat_effective_date',
+                'tax_template_version',
+            ];
+            $taxData = collect($validated)->only($taxKeys)->all();
+
+            DB::transaction(function () use ($taxData, $request) {
+                $current = TaxSetting::current();
+                $old = $current->snapshot();
+                $effectiveFrom = $taxData['vat_effective_date'] ?? now()->toDateString();
+                $nextVersion = ((int) TaxSetting::query()->max('version')) + 1;
+                $previous = TaxSetting::query()
+                    ->whereDate('effective_from', '<=', $effectiveFrom)
+                    ->orderByDesc('effective_from')
+                    ->orderByDesc('version')
+                    ->first();
+                $next = TaxSetting::query()
+                    ->whereDate('effective_from', '>', $effectiveFrom)
+                    ->orderBy('effective_from')
+                    ->first();
+                if ($previous) {
+                    $previous->update([
+                        'effective_to' => \Carbon\Carbon::parse($effectiveFrom)->subDay()->toDateString(),
+                    ]);
+                }
+
+                $created = TaxSetting::create([
+                    'version' => $nextVersion,
+                    'vat_enabled' => (bool) ($taxData['vat_enabled'] ?? false),
+                    'vat_registered' => (bool) ($taxData['vat_registered'] ?? false),
+                    'supplier_tin' => isset($taxData['supplier_tin']) ? trim($taxData['supplier_tin']) : null,
+                    'default_vat_rate' => $taxData['default_vat_rate'] ?? $current->default_vat_rate,
+                    'default_sale_price_mode' => $taxData['default_sale_price_mode'] ?? 'inclusive',
+                    'default_purchase_price_mode' => $taxData['default_purchase_price_mode'] ?? 'inclusive',
+                    'customer_invoice_vat_display' => $taxData['customer_invoice_vat_display'] ?? 'hide_inclusive',
+                    'regular_invoice_vat_note' => (bool) ($taxData['regular_invoice_vat_note'] ?? false),
+                    'allow_product_override' => (bool) ($taxData['allow_product_override'] ?? false),
+                    'invoice_prefix' => $taxData['tax_invoice_prefix'] ?? 'TAX',
+                    'starting_invoice_number' => $taxData['tax_invoice_starting_number'] ?? 1,
+                    'next_invoice_number' => $taxData['tax_invoice_next_number'] ?? $current->next_invoice_number,
+                    'branch_code' => $taxData['tax_branch_code'] ?? null,
+                    'active_template_version' => $taxData['tax_template_version'] ?? 'sl-vat-2025.1',
+                    'effective_from' => $effectiveFrom,
+                    'effective_to' => $next
+                        ? $next->effective_from->copy()->subDay()->toDateString()
+                        : null,
+                    'created_by' => $request->user()?->id,
+                ]);
+
+                Setting::set('vat_enabled', $created->vat_enabled, 'boolean', 'general');
+                Setting::set('vat_rate', $created->default_vat_rate, 'number', 'general');
+                ActivityLog::log(
+                    'update',
+                    "Created Tax Settings version {$created->version}",
+                    $created,
+                    ['old' => $old, 'new' => $created->snapshot()]
+                );
+            });
+
+            Cache::flush();
         }
 
         if ($request->hasFile('shop_logo')) {

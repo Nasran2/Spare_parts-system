@@ -188,7 +188,7 @@
                     <div class="flex justify-between text-slate-600"><span>Items</span><span id="items-count" class="font-semibold">0</span></div>
                     <div class="flex justify-between text-slate-600"><span>Subtotal</span><span id="subtotal" class="font-semibold">{{ $currency }} 0.00</span></div>
                     <div class="flex justify-between text-slate-600 js-cart-discount-row hidden"><span>Discount</span><span id="discount-amount" class="font-semibold text-rose-600">{{ $currency }} 0.00</span></div>
-                    <div class="flex justify-between text-slate-600"><span>Tax</span><span id="tax-amount" class="font-semibold">{{ $currency }} 0.00</span></div>
+                    <div class="flex justify-between text-slate-600 js-vat-breakdown-row hidden"><span>VAT</span><span id="tax-amount" class="font-semibold">{{ $currency }} 0.00</span></div>
                     <div class="flex justify-between font-bold text-slate-800 border-t border-slate-200 pt-1"><span>Total</span><span id="total" class="text-indigo-700">{{ $currency }} 0.00</span></div>
                     <div id="card-fee-row" class="flex justify-between text-slate-600 hidden"><span id="card-fee-label">Card Fee</span><span id="card-fee-amount" class="font-semibold">{{ $currency }} 0.00</span></div>
                     <div id="payable-row" class="flex justify-between font-extrabold text-slate-900 text-base"><span>Payable</span><span id="total-payable">{{ $currency }} 0.00</span></div>
@@ -294,8 +294,8 @@
                         <span class="text-gray-600">Subtotal:</span>
                         <span id="subtotal" class="font-semibold">{{ $currency }} 0.00</span>
                     </div>
-                    <div class="flex justify-between text-sm">
-                        <span class="text-gray-600">Tax (0%):</span>
+                    <div class="flex justify-between text-sm js-vat-breakdown-row hidden">
+                        <span class="text-gray-600">VAT:</span>
                         <span id="tax-amount" class="font-semibold">{{ $currency }} 0.00</span>
                     </div>
                     <div class="flex justify-between text-sm js-cart-discount-row hidden">
@@ -725,10 +725,10 @@
         return '{{ $currency }} ' + Number(v).toFixed(2);
     }
 
-    const POS_LAYOUT = @json($posLayout ?? 'default');
-    const POS_MODE = @json($posMode ?? 'sale');
+    const POS_LAYOUT = {{ \Illuminate\Support\Js::from($posLayout ?? 'default') }};
+    const POS_MODE = {{ \Illuminate\Support\Js::from($posMode ?? 'sale') }};
     const IS_QUOTATION_MODE = POS_MODE === 'quotation';
-    const POS_CARD_FEE = @json($posCardFee ?? ['enabled' => false, 'rate' => 0, 'mode' => 'customer']);
+    const POS_CARD_FEE = {{ \Illuminate\Support\Js::from($posCardFee ?? ['enabled' => false, 'rate' => 0, 'mode' => 'customer']) }};
 
     // Modern sidebar toggle
     (function bindModernSidebar(){
@@ -894,11 +894,11 @@
     })();
 
     // Units map for quick lookup (populated from backend)
-    const UNITS = @json($allUnits ?? []);
+    const UNITS = {{ \Illuminate\Support\Js::from($allUnits ?? []) }};
     window.unitsMap = {};
     UNITS.forEach(u => { window.unitsMap[u.id] = u; });
 
-    const PRELOADED_PRODUCTS = @json($productPayload ?? []);
+    const PRELOADED_PRODUCTS = {{ \Illuminate\Support\Js::from($productPayload ?? []) }};
     const productGridElement = document.getElementById('product-grid');
     const productSearchInput = document.getElementById('product-search');
     const SEARCH_PRODUCTS_URL = '{{ route('pos.search-products') }}';
@@ -1055,6 +1055,9 @@
 
         document.querySelectorAll('#tax-amount').forEach((el) => {
             el.textContent = currency(cart.totals.tax_amount);
+        });
+        document.querySelectorAll('.js-vat-breakdown-row').forEach((row) => {
+            row.classList.toggle('hidden', !cart?.totals?.show_vat_breakdown);
         });
         document.querySelectorAll('#total').forEach((el) => {
             el.textContent = currency(cart.totals.total);
@@ -1819,7 +1822,7 @@
     const recentTransactionsModal = document.getElementById('recent-transactions-modal');
     const recentTransactionsList = document.getElementById('recent-transactions-list');
     const recentSalesEndpoint = '{{ route('pos.recent-sales') }}';
-    const salesBaseUrl = @json(url('sales'));
+    const salesBaseUrl = {{ \Illuminate\Support\Js::from(url('sales')) }};
     const buildSalePrintUrl = (saleId) => `${salesBaseUrl}/${encodeURIComponent(saleId)}/print`;
 
     function closeRecentTransactionsModal(){
@@ -2364,6 +2367,10 @@
                         <input name="phone" class="mt-1 w-full px-3 py-2 border rounded" />
                     </div>
                     <div>
+                        <label class="block text-sm font-medium text-gray-700">TIN Number</label>
+                        <input name="tin" inputmode="numeric" pattern="[0-9]{9,12}" maxlength="12" class="mt-1 w-full px-3 py-2 border rounded" />
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium text-gray-700">Address</label>
                         <textarea name="address" rows="2" class="mt-1 w-full px-3 py-2 border rounded"></textarea>
                     </div>
@@ -2526,7 +2533,7 @@
                     ?? (resolvedSaleId ? String(resolvedSaleId) : ''),
             };
             window.__lastReceiptSaleData = saleForPrint;
-            showPrintReceipt(saleForPrint);
+            openSalePrintChoice(saleForPrint, Boolean(res.official_tax_invoice_available));
             const cart = await postJSON('{{ route('pos.cart.clear') }}');
             renderCart(cart);
             document.getElementById('cash-amount').value = '';
@@ -2743,6 +2750,37 @@
         try { tab.focus(); } catch (_) {}
     }
 
+    let completedSaleForPrint = null;
+    function openSalePrintChoice(saleData, officialAvailable) {
+        completedSaleForPrint = saleData;
+        const modal = document.getElementById('sale-print-choice-modal');
+        const officialButton = document.getElementById('print-official-tax-invoice');
+        if (officialButton) {
+            officialButton.disabled = !officialAvailable;
+            officialButton.classList.toggle('opacity-50', !officialAvailable);
+            officialButton.classList.toggle('cursor-not-allowed', !officialAvailable);
+        }
+        modal?.classList.remove('hidden');
+    }
+    function closeSalePrintChoice() {
+        document.getElementById('sale-print-choice-modal')?.classList.add('hidden');
+    }
+    document.getElementById('print-regular-invoice')?.addEventListener('click', () => {
+        showPrintReceipt(completedSaleForPrint);
+        closeSalePrintChoice();
+    });
+    document.getElementById('print-official-tax-invoice')?.addEventListener('click', (event) => {
+        if (event.currentTarget.disabled) return;
+        const saleId = Number(completedSaleForPrint?.id ?? completedSaleForPrint?.sale_id ?? 0);
+        if (saleId) {
+            window.open(`{{ url('sales') }}/${encodeURIComponent(saleId)}/tax-invoice`, '_blank');
+        }
+        closeSalePrintChoice();
+    });
+    document.querySelectorAll('[data-close-sale-print-choice]').forEach(button => {
+        button.addEventListener('click', closeSalePrintChoice);
+    });
+
     // Initialize: fetch current empty cart by clearing then rendering
     (async function init(){
         try {
@@ -2754,6 +2792,27 @@
     })(); // end IIFE
 </script>
 @endpush
+
+<div id="sale-print-choice-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center px-4" style="z-index: 10000;">
+    <div class="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+        <div class="flex items-center justify-between border-b px-6 py-4">
+            <h3 class="text-lg font-bold text-slate-900">Sale completed - choose invoice</h3>
+            <button type="button" data-close-sale-print-choice class="text-slate-400 hover:text-slate-700"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="grid gap-3 p-6 sm:grid-cols-2">
+            <button id="print-regular-invoice" type="button" class="rounded-xl border border-slate-200 p-5 text-left hover:border-blue-400 hover:bg-blue-50">
+                <i class="fas fa-receipt mb-3 text-2xl text-blue-600"></i>
+                <span class="block font-bold">Regular Customer Invoice</span>
+                <span class="mt-1 block text-xs text-slate-500">Customer receipt using the configured VAT display.</span>
+            </button>
+            <button id="print-official-tax-invoice" type="button" class="rounded-xl border border-slate-200 p-5 text-left hover:border-slate-500 hover:bg-slate-50">
+                <i class="fas fa-file-invoice-dollar mb-3 text-2xl text-slate-800"></i>
+                <span class="block font-bold">Official Tax Invoice</span>
+                <span class="mt-1 block text-xs text-slate-500">Sri Lankan A4 VAT Tax Invoice. Requires complete VAT and purchaser details.</span>
+            </button>
+        </div>
+    </div>
+</div>
 
 <!-- Quotation Print Confirmation Modal -->
 <div id="quotation-print-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center px-4" style="z-index: 9999;">
@@ -2869,12 +2928,12 @@
         const priceModalSearch = document.getElementById('price-modal-search');
         const priceOptionsList = document.getElementById('price-options-list');
         const closePriceModalBtn = document.getElementById('close-price-modal');
-        const productPricesUrlTemplate = @json(route('pos.product-prices', ['product' => '__PRODUCT__']));
+        const productPricesUrlTemplate = {{ \Illuminate\Support\Js::from(route('pos.product-prices', ['product' => '__PRODUCT__'])) }};
     
     let selectedProductId = null;
     let selectedProductPrice = null;
     let selectedUnit = null;
-    let availableUnits = @json($allUnits ?? []);
+    let availableUnits = {{ \Illuminate\Support\Js::from($allUnits ?? []) }};
     let editingCartKey = null;
     
     // Close modal handlers

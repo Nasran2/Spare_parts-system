@@ -12,6 +12,9 @@ class Purchase extends Model
     protected $fillable = [
         'purchase_no',
         'reference_no',
+        'supplier_tax_invoice_number',
+        'supplier_tax_invoice_date',
+        'purchase_vat_mode',
         'supplier_id',
         'store_id',
         'stock_shipment_id',
@@ -22,6 +25,10 @@ class Purchase extends Model
         'discount_amount',
         'tax_id',
         'tax_amount',
+        'taxable_purchase_value',
+        'input_vat_claimable',
+        'tax_period',
+        'tax_snapshot',
         'shipping_cost',
         'shipping_type',
         'payment_method',
@@ -42,6 +49,10 @@ class Purchase extends Model
         'due_amount' => 'decimal:2',
         'discount_amount' => 'decimal:2',
         'tax_amount' => 'decimal:2',
+        'taxable_purchase_value' => 'decimal:4',
+        'input_vat_claimable' => 'boolean',
+        'tax_snapshot' => 'array',
+        'supplier_tax_invoice_date' => 'date',
         'shipping_cost' => 'decimal:2',
     ];
 
@@ -68,6 +79,12 @@ class Purchase extends Model
     public function payments()
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function taxLines()
+    {
+        return $this->hasMany(TransactionTaxLine::class, 'transaction_id')
+            ->where('transaction_type', 'purchase');
     }
 
     protected static function boot()
