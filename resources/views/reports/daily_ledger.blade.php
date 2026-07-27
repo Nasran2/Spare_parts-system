@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
-@section('title', 'Sales Report')
-@section('page-title', 'Sales Report')
+@section('title', 'Daily Ledger')
+@section('page-title', 'Daily Ledger')
 
 @section('content')
 @php
@@ -72,9 +72,9 @@
         </div>
         <div class="flex items-center gap-2">
             <button class="bg-blue-600 text-white px-4 py-2 rounded text-sm">Filter</button>
-            <a href="{{ route('reports.sales') }}" class="text-sm text-gray-600 hover:text-gray-800">Reset</a>
-            <a href="{{ route('reports.sales.csv', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-emerald-600 text-white rounded text-sm"><i class="fas fa-file-excel mr-1"></i>Excel</a>
-            <a href="{{ route('reports.sales.pdf', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-blue-600 text-white rounded text-sm"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
+            <a href="{{ route('reports.daily-ledger') }}" class="text-sm text-gray-600 hover:text-gray-800">Reset</a>
+            <a href="{{ route('reports.daily-ledger.csv', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-emerald-600 text-white rounded text-sm"><i class="fas fa-file-excel mr-1"></i>Excel</a>
+            <a href="{{ route('reports.daily-ledger.pdf', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-blue-600 text-white rounded text-sm"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
         </div>
     </form>
 
@@ -155,64 +155,53 @@
     @endif
 
     @if(empty($controls['hide_tables']))
-    <div class="bg-white rounded shadow overflow-hidden">
-        <table class="min-w-full text-sm">
-            <thead class="bg-gray-50">
-                <tr class="text-left">
-                    <th class="px-3 py-2">Date</th>
-                    <th class="px-3 py-2">Invoice</th>
-                    <th class="px-3 py-2">Customer</th>
-                    <th class="px-3 py-2">Total</th>
-                    <th class="px-3 py-2">Paid</th>
-                    <th class="px-3 py-2">Due</th>
-                    <th class="px-3 py-2">Status</th>
-                </tr>
-            </thead>
-            <tbody>
+    <div class="bg-white rounded shadow p-4">
+        <h4 class="font-semibold mb-2 text-sm">Daily Ledger</h4>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead class="bg-gray-50">
+                    <tr class="text-left">
+                        <th class="px-3 py-2">Date & Time</th>
+                        <th class="px-3 py-2">Invoice</th>
+                        <th class="px-3 py-2">Customer</th>
+                        <th class="px-3 py-2">Total Sales</th>
+                        <th class="px-3 py-2">Cash</th>
+                        <th class="px-3 py-2">Cheque</th>
+                        <th class="px-3 py-2">Due</th>
+                        <th class="px-3 py-2">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @php
+                    $timezone = config('app.timezone', 'Asia/Colombo');
+                @endphp
                 @forelse($sales as $sale)
+                    @php
+                        $cash = 0;
+                        $cheque = 0;
+                        foreach ($sale->payments as $payment) {
+                            if ($payment->payment_method === 'cash') {
+                                $cash += (float) $payment->amount;
+                            } elseif ($payment->payment_method === 'cheque') {
+                                $cheque += (float) $payment->amount;
+                            }
+                        }
+                    @endphp
                     <tr class="border-t">
-                        <td class="px-3 py-2">{{ $sale->sale_date?->toDateString() }}</td>
+                        <td class="px-3 py-2">{{ $sale->created_at ? $sale->created_at->timezone($timezone)->format('Y-m-d H:i:s') : optional($sale->sale_date)->toDateString() }}</td>
                         <td class="px-3 py-2 font-medium">{{ !empty($controls['hide_invoice_details']) ? 'HIDDEN' : \App\Services\PrivacyModeService::displayInvoiceNumber($sale) }}</td>
                         <td class="px-3 py-2">{{ !empty($controls['hide_supplier_names']) ? 'Hidden' : ($sale->customer?->name ?? 'Walk-in') }}</td>
                         <td class="px-3 py-2">{{ $maskMoney($sale->total_amount, !empty($controls['hide_invoice_details']) || !empty($controls['hide_total_sales'])) }}</td>
-                        <td class="px-3 py-2 text-green-600">{{ $maskMoney($sale->paid_amount, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
+                        <td class="px-3 py-2 text-emerald-600">{{ $maskMoney($cash, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
+                        <td class="px-3 py-2 text-blue-600">{{ $maskMoney($cheque, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
                         <td class="px-3 py-2 text-red-600">{{ $maskMoney($sale->due_amount, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
                         <td class="px-3 py-2">
                             <span class="px-2 py-1 rounded text-xs {{ $sale->payment_status === 'paid' ? 'bg-green-100 text-green-700' : ($sale->payment_status === 'partial' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700') }}">{{ ucfirst($sale->payment_status) }}</span>
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="7" class="px-3 py-6 text-center text-gray-500">No sales found for selected range.</td></tr>
+                    <tr><td colspan="8" class="px-3 py-6 text-center text-gray-500">No daily ledger found for selected range.</td></tr>
                 @endforelse
-            </tbody>
-        </table>
-    </div>
-
-    <div class="bg-white rounded shadow p-4">
-        <h4 class="font-semibold mb-2 text-sm">Daily Summary</h4>
-        <div class="overflow-x-auto">
-            <table class="min-w-full text-xs">
-                <thead class="bg-gray-50">
-                    <tr class="text-left">
-                        <th class="px-2 py-1">Date</th>
-                        <th class="px-2 py-1">Invoices</th>
-                        <th class="px-2 py-1">Total Sales</th>
-                        <th class="px-2 py-1">Cash</th>
-                        <th class="px-2 py-1">Cheque</th>
-                        <th class="px-2 py-1">Due</th>
-                    </tr>
-                </thead>
-                <tbody>
-                @foreach($daily as $d)
-                    <tr class="border-t">
-                        <td class="px-2 py-1">{{ $d['date'] }}</td>
-                        <td class="px-2 py-1">{{ !empty($controls['hide_invoice_details']) ? '—' : $d['count'] }}</td>
-                        <td class="px-2 py-1 font-medium">{{ $maskMoney($d['total'], !empty($controls['hide_total_sales'])) }}</td>
-                        <td class="px-2 py-1 text-emerald-600">{{ $maskMoney($d['cash'], !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
-                        <td class="px-2 py-1 text-blue-600">{{ $maskMoney($d['cheque'], !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
-                        <td class="px-2 py-1 text-red-600">{{ $maskMoney($d['due'], !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
-                    </tr>
-                @endforeach
                 </tbody>
             </table>
         </div>

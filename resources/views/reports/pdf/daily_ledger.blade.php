@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Sales Report</title>
+    <title>Daily Ledger</title>
     <style>
         body { font-family: DejaVu Sans, sans-serif; }
         .container { width: 100%; padding: 16px; }
@@ -50,31 +50,47 @@
             <hr>
         </div>
         <div class="header">
-            <div class="title">Sales Report</div>
+            <div class="title">Daily Ledger</div>
             <div class="meta">Date Range: {{ $from ?? '—' }} to {{ $to ?? '—' }}</div>
         </div>
         <table>
             <thead>
                 <tr>
-                    <th>Date</th>
+                    <th>Date & Time</th>
                     <th>Invoice</th>
                     <th>Customer</th>
-                    <th class="right">Total</th>
-                    <th class="right">Paid</th>
+                    <th class="right">Total Sales</th>
+                    <th class="right">Cash</th>
+                    <th class="right">Cheque</th>
                     <th class="right">Due</th>
                     <th>Status</th>
                 </tr>
             </thead>
             <tbody>
-                @foreach($sales as $s)
+                @php
+                    $timezone = config('app.timezone', 'Asia/Colombo');
+                @endphp
+                @foreach($sales as $sale)
+                @php
+                    $cash = 0;
+                    $cheque = 0;
+                    foreach ($sale->payments as $payment) {
+                        if ($payment->payment_method === 'cash') {
+                            $cash += (float) $payment->amount;
+                        } elseif ($payment->payment_method === 'cheque') {
+                            $cheque += (float) $payment->amount;
+                        }
+                    }
+                @endphp
                 <tr>
-                    <td>{{ optional($s->sale_date)->toDateString() }}</td>
-                    <td>{{ !empty($controls['hide_invoice_details']) ? 'HIDDEN' : \App\Services\PrivacyModeService::displayInvoiceNumber($s) }}</td>
-                    <td>{{ !empty($controls['hide_supplier_names']) ? 'Hidden' : ($s->customer?->name ?? 'Walk-in') }}</td>
-                    <td class="right">{{ $maskMoney($s->total_amount, !empty($controls['hide_invoice_details']) || !empty($controls['hide_total_sales'])) }}</td>
-                    <td class="right">{{ $maskMoney($s->paid_amount, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
-                    <td class="right">{{ $maskMoney($s->due_amount, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
-                    <td>{{ ucfirst($s->payment_status) }}</td>
+                    <td>{{ $sale->created_at ? $sale->created_at->timezone($timezone)->format('Y-m-d H:i:s') : optional($sale->sale_date)->toDateString() }}</td>
+                    <td>{{ !empty($controls['hide_invoice_details']) ? 'HIDDEN' : \App\Services\PrivacyModeService::displayInvoiceNumber($sale) }}</td>
+                    <td>{{ !empty($controls['hide_supplier_names']) ? 'Hidden' : ($sale->customer?->name ?? 'Walk-in') }}</td>
+                    <td class="right">{{ $maskMoney($sale->total_amount, !empty($controls['hide_invoice_details']) || !empty($controls['hide_total_sales'])) }}</td>
+                    <td class="right">{{ $maskMoney($cash, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
+                    <td class="right">{{ $maskMoney($cheque, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
+                    <td class="right">{{ $maskMoney($sale->due_amount, !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</td>
+                    <td>{{ ucfirst($sale->payment_status) }}</td>
                 </tr>
                 @endforeach
             </tbody>

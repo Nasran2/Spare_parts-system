@@ -720,6 +720,12 @@
                 </button>
                 <div id="report-menu" class="dropdown-menu ml-4 mt-1 space-y-1 {{ request()->routeIs('reports.*') ? 'open' : '' }}">
                     @if($navUser?->hasPermission('reports.sales'))
+                    <a href="{{ route('reports.daily-ledger') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.daily-ledger') ? 'active' : '' }}">
+                        <i class="fas fa-book w-4"></i>
+                        <span>Daily Ledger</span>
+                    </a>
+                    @endif
+                    @if($navUser?->hasPermission('reports.sales'))
                     <a href="{{ route('reports.sales') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.sales') ? 'active' : '' }}">
                         <i class="fas fa-chart-line w-4"></i>
                         <span>Sales Report</span>

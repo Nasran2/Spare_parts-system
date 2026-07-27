@@ -406,6 +406,9 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
         Route::get('sales', [ReportController::class, 'sales'])->middleware('permission:reports.sales')->name('sales');
         Route::get('sales/pdf', [ReportController::class, 'salesPdf'])->middleware('permission:reports.sales')->name('sales.pdf');
         Route::get('sales/csv', [ReportController::class, 'salesCsv'])->middleware('permission:reports.sales')->name('sales.csv');
+        Route::get('daily-ledger', [ReportController::class, 'dailyLedger'])->middleware('permission:reports.sales')->name('daily-ledger');
+        Route::get('daily-ledger/pdf', [ReportController::class, 'dailyLedgerPdf'])->middleware('permission:reports.sales')->name('daily-ledger.pdf');
+        Route::get('daily-ledger/csv', [ReportController::class, 'dailyLedgerCsv'])->middleware('permission:reports.sales')->name('daily-ledger.csv');
         Route::get('purchase', [ReportController::class, 'purchase'])->middleware('permission:reports.purchase')->name('purchase');
         Route::get('purchase/pdf', [ReportController::class, 'purchasePdf'])->middleware('permission:reports.purchase')->name('purchase.pdf');
         Route::get('purchase/csv', [ReportController::class, 'purchaseCsv'])->middleware('permission:reports.purchase')->name('purchase.csv');

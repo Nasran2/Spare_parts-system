@@ -252,7 +252,7 @@ class ReportController extends Controller
         $subcategoryId = $request->filled('subcategory_id') ? (int) $request->input('subcategory_id') : null;
         $categoryIds = $this->resolveCategoryFilterIds($categoryId, $subcategoryId);
 
-        $query = Sale::with(['customer', 'items.product.category'])
+        $query = Sale::with(['customer', 'items.product.category', 'payments'])
             ->when($from, fn($q) => $q->whereDate('sale_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('sale_date', '<=', $to))
             ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
@@ -277,6 +277,8 @@ class ReportController extends Controller
             'total_sales' => $visible->sum('total_amount'),
             'total_paid' => $visible->sum('paid_amount'),
             'total_due' => $visible->sum('due_amount'),
+            'total_cash' => 0.0,
+            'total_cheque' => 0.0,
             'count' => $visible->count(),
             'filtered_category' => $subcategoryId
                 ? optional(\App\Models\Category::find($subcategoryId))->name
@@ -289,6 +291,8 @@ class ReportController extends Controller
         if (!empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) {
             $summary['total_paid'] = 0;
             $summary['total_due'] = 0;
+            $summary['total_cash'] = 0;
+            $summary['total_cheque'] = 0;
         }
         if (!empty($controls['hide_invoice_details'])) {
             $summary['count'] = 0;
@@ -299,10 +303,25 @@ class ReportController extends Controller
             $key = $s->sale_date ? $s->sale_date->toDateString() : null;
             if (!$key) { continue; }
             if (!isset($dailyMap[$key])) {
-                $dailyMap[$key] = ['date' => $key, 'count' => 0, 'total' => 0.0];
+                $dailyMap[$key] = ['date' => $key, 'count' => 0, 'total' => 0.0, 'cash' => 0.0, 'cheque' => 0.0, 'due' => 0.0];
             }
             $dailyMap[$key]['count'] += 1;
             $dailyMap[$key]['total'] += (float) $s->total_amount;
+            $dailyMap[$key]['due'] += (float) $s->due_amount;
+
+            $cash = 0.0;
+            $cheque = 0.0;
+            foreach ($s->payments as $payment) {
+                if ($payment->payment_method === 'cash') {
+                    $cash += (float) $payment->amount;
+                } elseif ($payment->payment_method === 'cheque') {
+                    $cheque += (float) $payment->amount;
+                }
+            }
+            $dailyMap[$key]['cash'] += $cash;
+            $dailyMap[$key]['cheque'] += $cheque;
+            $summary['total_cash'] += $cash;
+            $summary['total_cheque'] += $cheque;
         }
         $daily = collect(array_values($dailyMap));
         $sales = $visible->values();
@@ -417,6 +436,84 @@ class ReportController extends Controller
         return response(stream_get_contents($csv), 200, [
             'Content-Type' => 'text/csv',
             'Content-Disposition' => 'attachment; filename="sales-report.csv"'
+        ]);
+    }
+
+    public function dailyLedger(Request $request)
+    {
+        $timezone = config('app.timezone', 'Asia/Colombo');
+        
+        if (!$request->has('from') && !$request->has('to')) {
+            $request->merge([
+                'from' => now($timezone)->toDateString(),
+                'to' => now($timezone)->toDateString(),
+            ]);
+        }
+        
+        return view('reports.daily_ledger', $this->sales($request)->getData());
+    }
+
+    public function dailyLedgerPdf(Request $request)
+    {
+        $timezone = config('app.timezone', 'Asia/Colombo');
+        if (!$request->has('from') && !$request->has('to')) {
+            $request->merge([
+                'from' => now($timezone)->toDateString(),
+                'to' => now($timezone)->toDateString(),
+            ]);
+        }
+        $view = $this->sales($request);
+        $data = $view->getData();
+        $pdf = Pdf::loadView('reports.pdf.daily_ledger', $data)->setPaper('a4', 'portrait');
+        return $pdf->download('daily-ledger.pdf');
+    }
+
+    public function dailyLedgerCsv(Request $request)
+    {
+        $timezone = config('app.timezone', 'Asia/Colombo');
+        if (!$request->has('from') && !$request->has('to')) {
+            $request->merge([
+                'from' => now($timezone)->toDateString(),
+                'to' => now($timezone)->toDateString(),
+            ]);
+        }
+        $view = $this->sales($request);
+        $data = $view->getData();
+        $sales = $data['sales'];
+        $controls = $data['controls'];
+        
+        $rows = [['Date & Time', 'Invoice', 'Customer', 'Total Sales', 'Cash', 'Cheque', 'Due', 'Status']];
+        foreach ($sales as $s) {
+            $cash = 0;
+            $cheque = 0;
+            foreach ($s->payments as $payment) {
+                if ($payment->payment_method === 'cash') {
+                    $cash += (float) $payment->amount;
+                } elseif ($payment->payment_method === 'cheque') {
+                    $cheque += (float) $payment->amount;
+                }
+            }
+            
+            $hideInvoice = !empty($controls['hide_invoice_details']);
+            $hidePayments = !empty($controls['hide_supplier_payments']) || $hideInvoice;
+            
+            $dt = $s->created_at ? $s->created_at->timezone($timezone)->format('Y-m-d H:i:s') : optional($s->sale_date)->toDateString();
+            
+            $rows[] = [
+                $dt,
+                $hideInvoice ? 'HIDDEN' : PrivacyModeService::displayInvoiceNumber($s),
+                !empty($controls['hide_supplier_names']) ? 'Hidden' : ($s->customer?->name ?? 'Walk-in'),
+                $this->maskCurrencyForControls((float) $s->total_amount, $controls, $hideInvoice),
+                $this->maskCurrencyForControls($cash, $controls, $hidePayments),
+                $this->maskCurrencyForControls($cheque, $controls, $hidePayments),
+                $this->maskCurrencyForControls((float) $s->due_amount, $controls, $hidePayments),
+                $s->payment_status,
+            ];
+        }
+        $csv = fopen('php://temp','r+'); foreach ($rows as $r) { fputcsv($csv,$r); } rewind($csv);
+        return response(stream_get_contents($csv), 200, [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="daily-ledger.csv"'
         ]);
     }
 
