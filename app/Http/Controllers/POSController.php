@@ -27,6 +27,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class POSController extends Controller
 {
@@ -451,10 +452,25 @@ class POSController extends Controller
             return response()->json(['message' => 'Cart is empty'], 422);
         }
 
+        $billType = (string) $request->input('bill_type', 'normal');
+        if (! in_array($billType, ['normal', 'tax'], true)) {
+            return response()->json(['message' => 'Please select a valid bill type.'], 422);
+        }
+
+        $customerId = $request->integer('customer_id') ?: null;
+        if ($customerId && ! Customer::query()->whereKey($customerId)->where('is_active', true)->exists()) {
+            return response()->json(['message' => 'The selected customer is not available.'], 422);
+        }
+        if ($billType === 'tax' && ! $customerId) {
+            return response()->json(['message' => 'Select a customer first to generate a Tax Bill.'], 422);
+        }
+        if ($billType === 'tax' && ! $request->user()?->hasPermission('tax.invoice.print')) {
+            return response()->json(['message' => 'You do not have permission to print Tax Bills.'], 403);
+        }
+
         DB::beginTransaction();
         try {
             $userId = Auth::id();
-            $customerId = $request->integer('customer_id') ?: null;
             $storeId = $request->integer('store_id') ?: null;
 
             // Separate items
@@ -943,6 +959,11 @@ class POSController extends Controller
                 }
                 $sale->loadMissing(['customer', 'store']);
                 app(TaxPostingService::class)->postSale($sale, $taxPairs, $taxSettings);
+                if ($billType === 'tax') {
+                    app(TaxInvoiceNumberService::class)->issue(
+                        $sale->refresh()->load(['customer', 'taxLines'])
+                    );
+                }
                 $createdSale = $sale;
 
                 // If this transaction included returns, link those return records to this new sale
@@ -979,6 +1000,11 @@ class POSController extends Controller
                 ] : null,
                 'official_tax_invoice_available' => $officialTaxInvoiceAvailable,
             ]);
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            $message = collect($e->errors())->flatten()->first() ?: $e->getMessage();
+
+            return response()->json(['message' => $message], 422);
         } catch (\Throwable $e) {
             DB::rollBack();
             report($e);

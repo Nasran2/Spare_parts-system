@@ -479,6 +479,79 @@
 
 @endif
 
+<!-- Bill Type Modal -->
+<div id="bill-type-modal" class="fixed inset-0 z-[70] hidden flex items-center justify-center bg-slate-950/60 px-4 py-8 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="bill-type-title">
+    <div class="w-full max-w-lg overflow-visible rounded-3xl border border-white/70 bg-white shadow-2xl shadow-slate-950/25">
+        <div class="relative overflow-hidden rounded-t-3xl border-b border-slate-100 bg-gradient-to-br from-indigo-50 via-white to-sky-50 px-6 pb-5 pt-6 sm:px-7">
+            <div class="absolute -right-12 -top-14 h-36 w-36 rounded-full bg-indigo-100/70 blur-2xl"></div>
+            <div class="relative flex items-start gap-4">
+                <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-xl text-white shadow-lg shadow-indigo-600/25">
+                    <i class="fas fa-receipt"></i>
+                </div>
+                <div class="min-w-0 flex-1">
+                    <p class="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Complete sale</p>
+                    <h3 id="bill-type-title" class="mt-1 text-xl font-extrabold text-slate-900">Choose your bill type</h3>
+                    <p class="mt-1 text-sm leading-5 text-slate-500">Select the document you want to generate for this sale.</p>
+                </div>
+                <button id="btn-bill-type-close" type="button" class="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-400 transition hover:border-slate-300 hover:bg-white hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" aria-label="Close bill type selection">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="space-y-4 p-6 sm:p-7">
+            <div id="bill-customer-status" class="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+                <div id="bill-customer-status-icon" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                    <i class="fas fa-user-clock"></i>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Bill customer</p>
+                    <p id="bill-customer-name" class="truncate text-sm font-bold text-slate-800">Walk-in Customer</p>
+                </div>
+            </div>
+
+            <div id="bill-type-options" class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div id="tax-bill-option" class="group relative" title="Select a customer first">
+                    <button id="btn-bill-type-tax" type="button" class="flex min-h-[148px] w-full flex-col items-start rounded-2xl border-2 border-indigo-200 bg-indigo-50/70 p-4 text-left text-slate-900 transition hover:-translate-y-0.5 hover:border-indigo-500 hover:bg-indigo-50 hover:shadow-lg hover:shadow-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 disabled:shadow-none disabled:hover:translate-y-0" aria-describedby="tax-bill-requirement">
+                        <span class="flex w-full items-start justify-between gap-3">
+                            <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm">
+                                <i class="fas fa-file-invoice-dollar"></i>
+                            </span>
+                            <span id="tax-bill-lock" class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-slate-500">
+                                <i class="fas fa-lock text-xs"></i>
+                            </span>
+                        </span>
+                        <span class="mt-4 text-base font-extrabold">Tax Bill</span>
+                        <span class="mt-1 text-xs leading-5 text-slate-500">Generate the official VAT tax invoice for a selected customer.</span>
+                    </button>
+                    <div id="tax-bill-tooltip" class="pointer-events-none absolute -top-12 left-1/2 z-20 w-max max-w-[240px] -translate-x-1/2 rounded-xl bg-slate-900 px-3 py-2 text-center text-xs font-semibold text-white opacity-0 shadow-xl transition group-hover:opacity-100 group-focus-within:opacity-100">
+                        <i class="fas fa-info-circle mr-1 text-amber-300"></i>
+                        <span id="tax-bill-requirement">Select a customer first</span>
+                        <span class="absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-slate-900"></span>
+                    </div>
+                </div>
+
+                <button id="btn-bill-type-normal" type="button" class="flex min-h-[148px] w-full flex-col items-start rounded-2xl border-2 border-emerald-200 bg-emerald-50/70 p-4 text-left text-slate-900 transition hover:-translate-y-0.5 hover:border-emerald-500 hover:bg-emerald-50 hover:shadow-lg hover:shadow-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2">
+                    <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm">
+                        <i class="fas fa-receipt"></i>
+                    </span>
+                    <span class="mt-4 text-base font-extrabold">Normal Bill</span>
+                    <span class="mt-1 text-xs leading-5 text-slate-500">Print the standard customer receipt for this sale.</span>
+                </button>
+            </div>
+
+            <div class="flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2.5 text-xs leading-5 text-slate-500">
+                <i class="fas fa-shield-alt mt-0.5 text-slate-400"></i>
+                <span>Tax bills require a registered customer and valid tax invoice details.</span>
+            </div>
+
+            <div class="flex justify-end border-t border-slate-100 pt-4">
+                <button id="btn-bill-type-cancel" type="button" class="rounded-xl px-5 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Multiple Pay Modal -->
 <div id="multi-pay-modal" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center">
     <div class="bg-white rounded-xl shadow-xl w-full max-w-6xl mx-4 overflow-hidden">
@@ -728,6 +801,7 @@
     const POS_LAYOUT = {{ \Illuminate\Support\Js::from($posLayout ?? 'default') }};
     const POS_MODE = {{ \Illuminate\Support\Js::from($posMode ?? 'sale') }};
     const IS_QUOTATION_MODE = POS_MODE === 'quotation';
+    const CAN_PRINT_TAX_INVOICE = {{ \Illuminate\Support\Js::from((bool) auth()->user()?->hasPermission('tax.invoice.print')) }};
     const POS_CARD_FEE = {{ \Illuminate\Support\Js::from($posCardFee ?? ['enabled' => false, 'rate' => 0, 'mode' => 'customer']) }};
 
     // Modern sidebar toggle
@@ -2460,11 +2534,109 @@
             showToast('warning', 'Checkout is disabled. Use Save Quotation.');
             return;
         }
+
+        const customerId = selectedCustomerId();
+
+        const billChoice = await new Promise((resolve) => {
+            const modal = document.getElementById('bill-type-modal');
+            const btnTax = document.getElementById('btn-bill-type-tax');
+            const btnNormal = document.getElementById('btn-bill-type-normal');
+            const btnCancel = document.getElementById('btn-bill-type-cancel');
+            const btnClose = document.getElementById('btn-bill-type-close');
+            const taxOption = document.getElementById('tax-bill-option');
+            const taxTooltip = document.getElementById('tax-bill-tooltip');
+            const taxRequirement = document.getElementById('tax-bill-requirement');
+            const taxLock = document.getElementById('tax-bill-lock');
+            const billTypeOptions = document.getElementById('bill-type-options');
+            const customerStatus = document.getElementById('bill-customer-status');
+            const customerStatusIcon = document.getElementById('bill-customer-status-icon');
+            const customerName = document.getElementById('bill-customer-name');
+            const customerSearch = getActiveCustomerSelect()?.closest('.pos-customer-picker')?.querySelector('.pos-customer-search');
+            const hasCustomer = Boolean(customerId);
+            const canSelectTax = hasCustomer && CAN_PRINT_TAX_INVOICE;
+            const disabledReason = !hasCustomer
+                ? 'Select a customer first'
+                : 'You do not have permission to print tax invoices';
+
+            btnTax.disabled = !canSelectTax;
+            btnTax.setAttribute('aria-disabled', String(!canSelectTax));
+            taxOption.title = canSelectTax ? 'Generate official VAT tax invoice' : disabledReason;
+            taxTooltip.classList.toggle('hidden', canSelectTax);
+            taxRequirement.textContent = disabledReason;
+            taxLock.classList.toggle('hidden', canSelectTax);
+            billTypeOptions.classList.toggle('pt-8', !canSelectTax);
+            customerName.textContent = hasCustomer ? (customerSearch?.value || 'Selected Customer') : 'Walk-in Customer';
+            customerStatus.classList.toggle('border-amber-200', !hasCustomer);
+            customerStatus.classList.toggle('bg-amber-50', !hasCustomer);
+            customerStatus.classList.toggle('border-emerald-200', hasCustomer);
+            customerStatus.classList.toggle('bg-emerald-50', hasCustomer);
+            customerStatusIcon.classList.toggle('bg-amber-100', !hasCustomer);
+            customerStatusIcon.classList.toggle('text-amber-700', !hasCustomer);
+            customerStatusIcon.classList.toggle('bg-emerald-100', hasCustomer);
+            customerStatusIcon.classList.toggle('text-emerald-700', hasCustomer);
+            customerStatusIcon.innerHTML = hasCustomer
+                ? '<i class="fas fa-user-check"></i>'
+                : '<i class="fas fa-user-clock"></i>';
+
+            modal.classList.remove('hidden');
+            btnNormal.focus();
+
+            const close = () => {
+                modal.classList.add('hidden');
+                cleanup();
+                resolve({ isDismissed: true });
+            };
+            const selectTax = () => {
+                if (!canSelectTax) return;
+                const invoiceWindow = window.open('', '_blank');
+                if (invoiceWindow) {
+                    invoiceWindow.document.title = 'Preparing Tax Invoice';
+                    invoiceWindow.document.body.innerHTML = '<div style="font:600 16px system-ui;padding:32px;color:#334155">Preparing your tax invoice…</div>';
+                }
+                modal.classList.add('hidden');
+                cleanup();
+                resolve({ isConfirmed: true, invoiceWindow });
+            };
+            const selectNormal = () => {
+                modal.classList.add('hidden');
+                cleanup();
+                resolve({ isConfirmed: false, isDismissed: false });
+            };
+            const closeFromBackdrop = (event) => {
+                if (event.target === modal) close();
+            };
+            const closeFromKeyboard = (event) => {
+                if (event.key === 'Escape') close();
+            };
+
+            btnTax.addEventListener('click', selectTax);
+            btnNormal.addEventListener('click', selectNormal);
+            btnCancel.addEventListener('click', close);
+            btnClose.addEventListener('click', close);
+            modal.addEventListener('click', closeFromBackdrop);
+            document.addEventListener('keydown', closeFromKeyboard);
+
+            function cleanup() {
+                btnTax.removeEventListener('click', selectTax);
+                btnNormal.removeEventListener('click', selectNormal);
+                btnCancel.removeEventListener('click', close);
+                btnClose.removeEventListener('click', close);
+                modal.removeEventListener('click', closeFromBackdrop);
+                document.removeEventListener('keydown', closeFromKeyboard);
+            }
+        });
+
+        if (billChoice.isDismissed) {
+            return; // User cancelled checkout
+        }
+
+        const isTaxBill = billChoice.isConfirmed;
+        payloadExtra.bill_type = isTaxBill ? 'tax' : 'normal';
+
         const cashAmount = parseFloat(document.getElementById('cash-amount')?.value || '0');
         const baseTotal = readBaseTotal();
         const payableTotal = computePayableTotal(baseTotal);
         const due = Math.max(0, payableTotal - cashAmount);
-        const customerId = selectedCustomerId();
         const method = getPaymentMethod();
         const hasCheque = method === 'cheque' || (Array.isArray(payloadExtra.payments) && payloadExtra.payments.some(p => p.method === 'cheque'));
         if (due > 0 && !customerId) {
@@ -2488,10 +2660,12 @@
         if (Array.isArray(payloadExtra.payments)) {
             const missingCheque = payloadExtra.payments.find(p => p.method === 'cheque' && (!p.cheque_date || !String(p.cheque_number || '').trim()));
             if (missingCheque) {
+                billChoice.invoiceWindow?.close();
                 showToast('warning', 'Cheque pass date and cheque number are required.');
                 return;
             }
         } else if (hasCheque && (!chequeDate || !chequeNumber.trim())) {
+            billChoice.invoiceWindow?.close();
             showToast('warning', 'Cheque pass date and cheque number are required.');
             return;
         }
@@ -2509,7 +2683,11 @@
                 cheque_name: chequeName || null,
                 ...payloadExtra
             });
-        } catch(err){ showToast('error', err.message || 'Checkout failed'); return; }
+        } catch(err){
+            billChoice.invoiceWindow?.close();
+            showToast('error', err.message || 'Checkout failed');
+            return;
+        }
         
         if(res && res.sale_id){
             // Fetch full receipt data so bill prints correctly
@@ -2546,7 +2724,23 @@
                     ?? (resolvedSaleId ? String(resolvedSaleId) : ''),
             };
             window.__lastReceiptSaleData = saleForPrint;
-            showPrintReceipt(saleForPrint);
+
+            if (payloadExtra.bill_type === 'tax') {
+                const invoiceUrl = `{{ url('sales') }}/${encodeURIComponent(resolvedSaleId)}/tax-invoice`;
+                if (!resolvedSaleId || res.official_tax_invoice_available === false) {
+                    billChoice.invoiceWindow?.close();
+                    showToast('error', res.tax_invoice_error || 'This sale is not eligible for an official Tax Bill.');
+                } else if (billChoice.invoiceWindow && !billChoice.invoiceWindow.closed) {
+                    billChoice.invoiceWindow.location.replace(invoiceUrl);
+                    try { billChoice.invoiceWindow.focus(); } catch (_) {}
+                } else {
+                    const tab = window.open(invoiceUrl, '_blank');
+                    try { tab?.focus(); } catch (_) {}
+                }
+            } else {
+                showPrintReceipt(saleForPrint);
+            }
+
             const cart = await postJSON('{{ route('pos.cart.clear') }}');
             renderCart(cart);
             document.getElementById('cash-amount').value = '';
@@ -2558,7 +2752,11 @@
             dueDisplay?.classList.add('hidden');
             showToast('success', 'Sale completed #' + res.sale_id);
         } else if(res && res.message){
+            billChoice.invoiceWindow?.close();
             showToast('error', res.message);
+        } else {
+            billChoice.invoiceWindow?.close();
+            showToast('error', 'Checkout did not return a completed sale.');
         }
     }
 
