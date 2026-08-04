@@ -723,26 +723,40 @@ class AccountingController extends Controller
         ]);
 
         DB::transaction(function () use ($validated) {
-            $account = ChartAccount::firstOrCreate(
-                ['code' => '1100'],
-                [
-                    'name' => 'Cash',
-                    'type' => 'asset',
-                    'subtype' => 'cash',
-                    'opening_balance' => 0,
-                    'current_balance' => 0,
-                    'is_system' => true,
-                    'is_active' => true,
-                ]
-            );
-            $account->increment('current_balance', (float) $validated['opening_balance']);
+            $lastPettyCode = ChartAccount::where('code', 'like', '111%')->orderBy('code', 'desc')->value('code');
+            $newCode = $lastPettyCode ? (string)((int)$lastPettyCode + 1) : '1110';
+            
+            $account = ChartAccount::create([
+                'code' => $newCode,
+                'name' => 'Petty Cash - ' . $validated['name'],
+                'type' => 'asset',
+                'subtype' => 'cash',
+                'opening_balance' => $validated['opening_balance'],
+                'current_balance' => $validated['opening_balance'],
+                'is_system' => false,
+                'is_active' => true,
+            ]);
 
-            PettyCashFund::create([
+            $fund = PettyCashFund::create([
                 'chart_account_id' => $account->id,
                 'name' => $validated['name'],
                 'opening_balance' => $validated['opening_balance'],
                 'current_balance' => $validated['opening_balance'],
             ]);
+            
+            if ($validated['opening_balance'] > 0) {
+               AccountTransaction::create([
+                   'account_id' => $account->id,
+                   'transaction_date' => now()->toDateString(),
+                   'type' => 'deposit',
+                   'direction' => 'in',
+                   'amount' => $validated['opening_balance'],
+                   'payment_method' => 'cash',
+                   'description' => 'Opening Balance',
+                   'source_type' => 'petty_cash_transfer',
+                   'source_id' => $fund->id,
+               ]);
+            }
         });
 
         return back()->with('success', 'Petty cash fund created.');

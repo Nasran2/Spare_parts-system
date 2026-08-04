@@ -102,6 +102,10 @@ class ExpenseAccountingService
 
     private function pettyCashAccount(): ChartAccount
     {
+        $firstFund = \App\Models\Accounting\PettyCashFund::where('is_active', true)->with('chartAccount')->first();
+        if ($firstFund && $firstFund->chartAccount) {
+            return $firstFund->chartAccount;
+        }
         return $this->account('1110', 'Petty Cash', 'asset', 'petty_cash');
     }
 

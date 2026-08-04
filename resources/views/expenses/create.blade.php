@@ -98,7 +98,7 @@
     </div>
 </div>
 @endsection
-@section('scripts')
+@push('scripts')
 <script>
 function openExpenseCategoryModal() {
     document.getElementById('expenseCategoryModal').classList.remove('hidden');
@@ -112,30 +112,55 @@ function closeExpenseCategoryModal(){
 document.getElementById('expenseCategoryForm').addEventListener('submit', async function(e){
     e.preventDefault();
     const formData = new FormData(this);
+    
+    // Clear previous errors
+    document.getElementById('expense_category_error').classList.add('hidden');
+    document.getElementById('expense_category_error').textContent = '';
+
     try {
         const response = await fetch('{{ route("expense-categories.store") }}', {
             method: 'POST',
             body: formData,
             headers: {
-                'X-Requested-With':'XMLHttpRequest',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content || formData.get('_token')
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content') || formData.get('_token')
             }
         });
+        
         const data = await response.json();
-        if(data.success){
+        
+        if (response.ok && data.success) {
             const select = document.getElementById('expense_category_id');
             const option = new Option(data.category.name, data.category.id, true, true);
             select.add(option);
             closeExpenseCategoryModal();
-            alert('Expense category created successfully!');
+            
+            // Show a simple visual confirmation instead of an alert
+            const btn = e.target.querySelector('button[type="submit"]');
+            const oldText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check mr-2"></i>Saved!';
+            btn.classList.replace('bg-blue-600', 'bg-green-600');
+            setTimeout(() => {
+                btn.innerHTML = oldText;
+                btn.classList.replace('bg-green-600', 'bg-blue-600');
+            }, 2000);
+            
         } else {
-            document.getElementById('expense_category_error').textContent = data.message || 'Error creating category';
+            // Handle validation errors from Laravel
+            if (response.status === 422 && data.errors) {
+                const errorMessages = Object.values(data.errors).flat().join('\n');
+                document.getElementById('expense_category_error').textContent = errorMessages;
+            } else {
+                document.getElementById('expense_category_error').textContent = data.message || 'Error creating category. Please try again.';
+            }
             document.getElementById('expense_category_error').classList.remove('hidden');
         }
-    } catch (err){
-        document.getElementById('expense_category_error').textContent = 'Error creating category';
+    } catch (err) {
+        document.getElementById('expense_category_error').textContent = 'A network error occurred. Please try again.';
         document.getElementById('expense_category_error').classList.remove('hidden');
+        console.error(err);
     }
 });
 </script>
-@endsection
+@endpush

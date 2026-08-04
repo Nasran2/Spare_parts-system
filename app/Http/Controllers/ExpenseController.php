@@ -31,7 +31,7 @@ class ExpenseController extends Controller
     public function create()
     {
         $categories = ExpenseCategory::where('is_active', true)->get();
-        $pettyCashBalance = ChartAccount::where('code', '1110')->value('current_balance') ?? 0;
+        $pettyCashBalance = \App\Models\Accounting\PettyCashFund::where('is_active', true)->sum('current_balance');
         $mainAccountBalance = ChartAccount::where('code', '1100')->value('current_balance') ?? 0;
 
         return view('expenses.create', compact('categories', 'pettyCashBalance', 'mainAccountBalance'));
