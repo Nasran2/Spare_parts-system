@@ -342,7 +342,7 @@
     @endif
 
     @if($section === 'petty-cash')
-        <div class="bg-white rounded-lg shadow p-4">
+        <div class="bg-white rounded-lg shadow p-4 mb-6">
             <form method="GET" class="grid grid-cols-1 md:grid-cols-6 gap-3">
                 <input type="date" name="from" value="{{ request('from') }}" class="border rounded-lg px-3 py-2">
                 <input type="date" name="to" value="{{ request('to') }}" class="border rounded-lg px-3 py-2">
@@ -352,12 +352,146 @@
                 <div class="flex gap-2"><button class="flex-1 bg-gray-800 text-white rounded-lg px-3 py-2">Filter</button><a href="{{ route('accounting.export', ['section' => 'petty-cash', 'format' => 'excel'] + request()->query()) }}" class="flex-1 text-center bg-emerald-600 text-white rounded-lg px-3 py-2">Excel</a><a href="{{ route('accounting.export', ['section' => 'petty-cash', 'format' => 'pdf'] + request()->query()) }}" class="flex-1 text-center bg-blue-600 text-white rounded-lg px-3 py-2">PDF</a></div>
             </form>
         </div>
-        <div class="bg-white rounded-lg shadow p-5">
-            <h3 class="font-semibold text-gray-800 mb-4">Petty Cash</h3>
-            <form method="POST" action="{{ route('accounting.petty-cash.store') }}" class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">@csrf<input name="name" placeholder="Fund name" class="border rounded-lg px-3 py-2" required><input type="number" step="0.01" name="opening_balance" placeholder="Opening balance" class="border rounded-lg px-3 py-2" required><button class="bg-blue-600 text-white rounded-lg px-4 py-2">Create Fund</button></form>
-            <form method="POST" action="{{ route('accounting.petty-cash.expenses.store') }}" class="grid grid-cols-1 md:grid-cols-2 gap-3">@csrf<select name="petty_cash_fund_id" class="border rounded-lg px-3 py-2" required><option value="">Petty cash fund</option>@foreach($pettyFunds as $fund)<option value="{{ $fund->id }}">{{ $fund->name }} - {{ number_format($fund->current_balance, 2) }}</option>@endforeach</select><select name="expense_category_id" class="border rounded-lg px-3 py-2" required><option value="">Expense category</option>@foreach($categories as $category)<option value="{{ $category->id }}">{{ $category->name }}</option>@endforeach</select><input type="date" name="expense_date" value="{{ date('Y-m-d') }}" class="border rounded-lg px-3 py-2" required><input type="number" step="0.01" name="amount" placeholder="Amount" class="border rounded-lg px-3 py-2" required><input name="voucher_no" placeholder="Voucher no" class="border rounded-lg px-3 py-2"><input name="description" placeholder="Description" class="border rounded-lg px-3 py-2"><button class="md:col-span-2 bg-orange-600 text-white rounded-lg px-4 py-2">Record Petty Cash Expense</button></form>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div class="bg-white rounded-xl shadow-sm p-5 border-l-4 border-orange-500 flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-500 mb-1">Total Available Balance</p>
+                    <h3 class="text-2xl font-bold text-gray-800">{{ number_format($pettyFunds->sum('current_balance'), 2) }}</h3>
+                </div>
+                <div class="w-12 h-12 bg-orange-50 text-orange-600 rounded-full flex items-center justify-center text-xl shadow-inner">
+                    <i class="fas fa-wallet"></i>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-5 border-l-4 border-blue-500 flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-500 mb-1">Active Funds</p>
+                    <h3 class="text-2xl font-bold text-gray-800">{{ $pettyFunds->count() }}</h3>
+                </div>
+                <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center text-xl shadow-inner">
+                    <i class="fas fa-layer-group"></i>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-5 border-l-4 border-red-500 flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-500 mb-1">Expense Usage</p>
+                    <h3 class="text-2xl font-bold text-gray-800">{{ number_format($pettyHistory->where('direction', 'out')->sum('amount'), 2) }}</h3>
+                </div>
+                <div class="w-12 h-12 bg-red-50 text-red-600 rounded-full flex items-center justify-center text-xl shadow-inner">
+                    <i class="fas fa-arrow-trend-down"></i>
+                </div>
+            </div>
         </div>
-        <div class="bg-white rounded-lg shadow overflow-hidden"><div class="p-5 border-b"><h3 class="font-semibold text-gray-800">Petty Cash Expense History</h3></div><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50 text-xs uppercase text-gray-500"><tr><th class="px-4 py-3 text-left">Date</th><th class="px-4 py-3 text-left">Fund</th><th class="px-4 py-3 text-left">Category</th><th class="px-4 py-3 text-left">Voucher</th><th class="px-4 py-3 text-left">Description</th><th class="px-4 py-3 text-right">Amount</th></tr></thead><tbody class="divide-y">@forelse($pettyExpenses as $expense)<tr><td class="px-4 py-3">{{ $expense->expense_date->format('M d, Y') }}</td><td class="px-4 py-3">{{ $expense->fund->name ?? '' }}</td><td class="px-4 py-3">{{ $expense->category->name ?? '' }}</td><td class="px-4 py-3">{{ $expense->voucher_no }}</td><td class="px-4 py-3">{{ $expense->description }}</td><td class="px-4 py-3 text-right">{{ number_format($expense->amount, 2) }}</td></tr>@empty<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">No records found.</td></tr>@endforelse</tbody></table></div></div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <div class="xl:col-span-2 bg-white rounded-lg shadow p-5">
+                <h3 class="font-semibold text-gray-800 mb-4 border-b pb-2 text-lg"><i class="fas fa-file-invoice-dollar text-orange-600 mr-2"></i>Record Petty Cash Expense</h3>
+                <form method="POST" action="{{ route('accounting.petty-cash.expenses.store') }}" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    @csrf
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Petty Cash Fund</label>
+                        <select name="petty_cash_fund_id" class="w-full border rounded-lg px-3 py-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition" required>
+                            <option value="">Select fund...</option>
+                            @foreach($pettyFunds as $fund)
+                                <option value="{{ $fund->id }}">{{ $fund->name }} (Bal: {{ number_format($fund->current_balance, 2) }})</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Expense Category</label>
+                        <select name="expense_category_id" class="w-full border rounded-lg px-3 py-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition" required>
+                            <option value="">Select category...</option>
+                            @foreach($categories as $category)
+                                <option value="{{ $category->id }}">{{ $category->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Expense Date</label>
+                        <input type="date" name="expense_date" value="{{ date('Y-m-d') }}" class="w-full border rounded-lg px-3 py-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Amount</label>
+                        <input type="number" step="0.01" name="amount" placeholder="0.00" class="w-full border rounded-lg px-3 py-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Voucher Number</label>
+                        <input name="voucher_no" placeholder="e.g. V-1001" class="w-full border rounded-lg px-3 py-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Description</label>
+                        <input name="description" placeholder="Brief description of expense" class="w-full border rounded-lg px-3 py-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition">
+                    </div>
+                    <div class="md:col-span-2 pt-2">
+                        <button class="w-full bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-lg px-4 py-2.5 transition">Record Expense</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="bg-white rounded-lg shadow p-5 border-t-4 border-blue-600">
+                <h3 class="font-semibold text-gray-800 mb-4 border-b pb-2 text-lg"><i class="fas fa-plus-circle text-blue-600 mr-2"></i>Create New Fund</h3>
+                <form method="POST" action="{{ route('accounting.petty-cash.store') }}" class="flex flex-col gap-4">
+                    @csrf
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Fund Name</label>
+                        <input name="name" placeholder="e.g. Main Office Petty Cash" class="w-full border rounded-lg px-3 py-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Opening Balance</label>
+                        <input type="number" step="0.01" name="opening_balance" placeholder="0.00" class="w-full border rounded-lg px-3 py-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition" required>
+                    </div>
+                    <div class="pt-2">
+                        <button class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg px-4 py-2.5 transition">Create Fund</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div class="bg-white rounded-lg shadow overflow-hidden">
+            <div class="p-5 border-b">
+                <h3 class="font-semibold text-gray-800">Petty Cash History</h3>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                        <tr>
+                            <th class="px-4 py-3 text-left">Date</th>
+                            <th class="px-4 py-3 text-left">Fund Account</th>
+                            <th class="px-4 py-3 text-left">Type</th>
+                            <th class="px-4 py-3 text-left">Reference/Voucher</th>
+                            <th class="px-4 py-3 text-left">Description</th>
+                            <th class="px-4 py-3 text-right">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y">
+                        @forelse($pettyHistory as $transaction)
+                            <tr>
+                                <td class="px-4 py-3">{{ $transaction->transaction_date->format('M d, Y') }}</td>
+                                <td class="px-4 py-3">{{ $transaction->account->name ?? '' }}</td>
+                                <td class="px-4 py-3">
+                                    <span class="px-2 py-1 rounded-full text-xs font-semibold {{ $transaction->direction === 'in' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800' }}">
+                                        {{ ucfirst($transaction->type) }}
+                                        @if($transaction->direction === 'in')
+                                            <i class="fas fa-arrow-down ml-1"></i>
+                                        @else
+                                            <i class="fas fa-arrow-up ml-1"></i>
+                                        @endif
+                                    </span>
+                                </td>
+                                <td class="px-4 py-3">{{ $transaction->reference_no ?? $transaction->source_id }}</td>
+                                <td class="px-4 py-3">{{ $transaction->description }}</td>
+                                <td class="px-4 py-3 text-right font-semibold {{ $transaction->direction === 'in' ? 'text-green-600' : 'text-orange-600' }}">
+                                    {{ $transaction->direction === 'in' ? '+' : '-' }}{{ number_format($transaction->amount, 2) }}
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="6" class="px-4 py-8 text-center text-gray-500">No records found.</td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
     @endif
 
     @if($section === 'ledger')

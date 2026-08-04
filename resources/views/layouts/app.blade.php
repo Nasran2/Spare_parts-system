@@ -551,12 +551,7 @@
                         <span>Bank Reconcile</span>
                     </a>
                     @endif
-                    @if($navUser?->hasPermission('accounting.petty-cash'))
-                    <a href="{{ route('accounting.petty-cash') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('accounting.petty-cash') ? 'active' : '' }}">
-                        <i class="fas fa-wallet w-4"></i>
-                        <span>Petty Cash</span>
-                    </a>
-                    @endif
+
                     @if($navUser?->hasPermission('accounting.ledger'))
                     <a href="{{ route('accounting.ledger') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('accounting.ledger') ? 'active' : '' }}">
                         <i class="fas fa-book w-4"></i>
@@ -593,6 +588,29 @@
                         <span>Cheque Management</span>
                     </a>
                     @endif
+                </div>
+            </div>
+            @endif
+
+            <!-- Petty Cash -->
+            @if($navUser?->hasPermission('accounting.petty-cash'))
+            <div class="nav-group">
+                <button onclick="toggleDropdown('petty-cash-menu')" class="nav-item flex items-center justify-between w-full px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('accounting.petty-cash*') ? 'active' : '' }}">
+                    <div class="flex items-center space-x-3">
+                        <i class="fas fa-wallet w-5"></i>
+                        <span>Petty Cash</span>
+                    </div>
+                    <i class="fas fa-chevron-down transition-transform {{ request()->routeIs('accounting.petty-cash*') ? 'rotate-180' : '' }}" id="petty-cash-menu-icon"></i>
+                </button>
+                <div id="petty-cash-menu" class="dropdown-menu ml-4 mt-1 space-y-1 {{ request()->routeIs('accounting.petty-cash*') ? 'open' : '' }}">
+                    <a href="{{ route('accounting.petty-cash') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('accounting.petty-cash') ? 'active' : '' }}">
+                        <i class="fas fa-list w-4"></i>
+                        <span>Overview</span>
+                    </a>
+                    <a href="{{ route('accounting.petty-cash-transfer.create') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('accounting.petty-cash-transfer.create') ? 'active' : '' }}">
+                        <i class="fas fa-exchange-alt w-4"></i>
+                        <span>Transfer Funds</span>
+                    </a>
                 </div>
             </div>
             @endif

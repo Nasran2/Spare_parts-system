@@ -233,9 +233,10 @@
                 <label class="block text-sm font-semibold text-gray-700 mb-2">Payment Method: <span class="text-red-500">*</span></label>
                 <select name="payment_method" id="payment_method" class="w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500" required>
                     <option value="">Please Select</option>
-                    <option value="cash">Cash</option>
+                    <option value="cash" selected>Main Account (Cash)</option>
+                    <option value="petty_cash">Petty Cash</option>
                     <option value="card">Card</option>
-                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="bank_transfer">Main Account (Bank Transfer)</option>
                     <option value="cheque">Cheque</option>
                     <option value="credit">Credit</option>
                 </select>

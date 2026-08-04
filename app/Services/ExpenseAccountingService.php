@@ -20,7 +20,11 @@ class ExpenseAccountingService
             }
 
             $method = $this->paymentMethod($expense);
-            $assetAccount = $method === 'bank_transfer' ? $this->bankAccount() : $this->cashAccount();
+            $assetAccount = match ($method) {
+                'bank_transfer' => $this->bankAccount(),
+                'petty_cash' => $this->pettyCashAccount(),
+                default => $this->cashAccount(),
+            };
             $expenseAccount = $this->expenseAccount();
             $description = trim('Expense'.($expense->category?->name ? ' - '.$expense->category->name : '').($expense->description ? ' - '.$expense->description : ''));
             $referenceNo = 'EXP-'.$expense->id;
@@ -80,6 +84,9 @@ class ExpenseAccountingService
 
     private function paymentMethod(Expense $expense): string
     {
+        if ($expense->payment_method === 'petty_cash') {
+            return 'petty_cash';
+        }
         return (string) ($expense->payment_method === 'bank_transfer' ? 'bank_transfer' : 'cash');
     }
 
@@ -91,6 +98,11 @@ class ExpenseAccountingService
     private function bankAccount(): ChartAccount
     {
         return $this->account('1200', 'Bank', 'asset', 'bank');
+    }
+
+    private function pettyCashAccount(): ChartAccount
+    {
+        return $this->account('1110', 'Petty Cash', 'asset', 'petty_cash');
     }
 
     private function expenseAccount(): ChartAccount

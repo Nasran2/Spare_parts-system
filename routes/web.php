@@ -22,6 +22,7 @@ use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\PurchaseReturnController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RoleController;
+use App\Http\Controllers\Accounting\PettyCashTransferController;
 use App\Http\Controllers\SaleController;
 use App\Http\Controllers\SaleReturnController;
 use App\Http\Controllers\SettingController;
@@ -351,6 +352,10 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
         Route::post('banks/{bankAccount}/reconcile', [AccountingController::class, 'reconcile'])->middleware('permission:accounting.manage')->name('banks.reconcile');
         Route::post('petty-cash', [AccountingController::class, 'storePettyFund'])->middleware('permission:accounting.manage')->name('petty-cash.store');
         Route::post('petty-cash/expenses', [AccountingController::class, 'storePettyExpense'])->middleware('permission:accounting.manage')->name('petty-cash.expenses.store');
+
+        Route::get('petty-cash-transfer', [PettyCashTransferController::class, 'create'])->middleware('permission:accounting.manage')->name('petty-cash-transfer.create');
+        Route::post('petty-cash-transfer', [PettyCashTransferController::class, 'store'])->middleware('permission:accounting.manage')->name('petty-cash-transfer.store');
+
         Route::post('owner-equity', [AccountingController::class, 'storeOwnerEquity'])
             ->middleware('permission:accounting.owner-equity.create')
             ->name('owner-equity.store');

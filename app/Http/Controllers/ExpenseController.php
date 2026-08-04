@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Accounting\ChartAccount;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Services\ExpenseAccountingService;
@@ -30,8 +31,10 @@ class ExpenseController extends Controller
     public function create()
     {
         $categories = ExpenseCategory::where('is_active', true)->get();
+        $pettyCashBalance = ChartAccount::where('code', '1110')->value('current_balance') ?? 0;
+        $mainAccountBalance = ChartAccount::where('code', '1100')->value('current_balance') ?? 0;
 
-        return view('expenses.create', compact('categories'));
+        return view('expenses.create', compact('categories', 'pettyCashBalance', 'mainAccountBalance'));
     }
 
     /**
@@ -44,7 +47,7 @@ class ExpenseController extends Controller
             'expense_category_id' => 'required|exists:expense_categories,id',
             'expense_date' => 'required|date',
             'amount' => 'required|numeric|min:0',
-            'payment_method' => 'required|in:cash,bank_transfer',
+            'payment_method' => 'required|in:cash,bank_transfer,petty_cash',
             'description' => 'nullable|string',
             'receipt' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
         ]);
@@ -106,8 +109,10 @@ class ExpenseController extends Controller
     public function edit(Expense $expense)
     {
         $categories = ExpenseCategory::where('is_active', true)->get();
+        $pettyCashBalance = ChartAccount::where('code', '1110')->value('current_balance') ?? 0;
+        $mainAccountBalance = ChartAccount::where('code', '1100')->value('current_balance') ?? 0;
 
-        return view('expenses.edit', compact('expense', 'categories'));
+        return view('expenses.edit', compact('expense', 'categories', 'pettyCashBalance', 'mainAccountBalance'));
     }
 
     /**
@@ -120,7 +125,7 @@ class ExpenseController extends Controller
             'expense_category_id' => 'required|exists:expense_categories,id',
             'expense_date' => 'required|date',
             'amount' => 'required|numeric|min:0',
-            'payment_method' => 'required|in:cash,bank_transfer',
+            'payment_method' => 'required|in:cash,bank_transfer,petty_cash',
             'description' => 'nullable|string',
             'receipt' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
         ]);

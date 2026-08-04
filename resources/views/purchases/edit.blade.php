@@ -121,9 +121,10 @@
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-2">Payment Method</label>
                             <select name="payment_method" class="w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500">
-                                <option value="cash" @selected($selectedPaymentMethod === 'cash')>Cash</option>
+                                <option value="cash" @selected($selectedPaymentMethod === 'cash')>Main Account (Cash)</option>
+                                <option value="petty_cash" @selected($selectedPaymentMethod === 'petty_cash')>Petty Cash</option>
                                 <option value="card" @selected($selectedPaymentMethod === 'card')>Card</option>
-                                <option value="bank_transfer" @selected($selectedPaymentMethod === 'bank_transfer')>Bank Transfer</option>
+                                <option value="bank_transfer" @selected($selectedPaymentMethod === 'bank_transfer')>Main Account (Bank Transfer)</option>
                                 <option value="cheque" @selected($selectedPaymentMethod === 'cheque')>Cheque</option>
                                 <option value="credit" @selected($selectedPaymentMethod === 'credit')>Credit</option>
                             </select>

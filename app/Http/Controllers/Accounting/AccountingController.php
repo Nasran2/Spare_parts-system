@@ -94,7 +94,7 @@ class AccountingController extends Controller
         $pettyFunds = PettyCashFund::with('chartAccount')->where('is_active', true)->get();
         $categories = ExpenseCategory::where('is_active', true)->orderBy('name')->get();
         $reconciliations = $this->reconciliationsQuery($request)->take(50)->get();
-        $pettyExpenses = $this->pettyExpensesQuery($request)->take(100)->get();
+        $pettyHistory = $this->pettyHistoryQuery($request)->take(100)->get();
         $tAccounts = $this->tAccountsData($request);
         $trialBalanceRows = $this->trialBalanceRows($request);
         $trialBalanceTotals = [
@@ -154,7 +154,7 @@ class AccountingController extends Controller
             'transactions',
             'banks',
             'pettyFunds',
-            'pettyExpenses',
+            'pettyHistory',
             'categories',
             'reconciliations',
             'totals',
@@ -452,18 +452,26 @@ class AccountingController extends Controller
             ->latest();
     }
 
-    private function pettyExpensesQuery(Request $request)
+    private function pettyHistoryQuery(Request $request)
     {
-        return PettyCashExpense::with(['fund', 'category'])
-            ->when($request->filled('from'), fn ($query) => $query->whereDate('expense_date', '>=', $request->input('from')))
-            ->when($request->filled('to'), fn ($query) => $query->whereDate('expense_date', '<=', $request->input('to')))
-            ->when($request->filled('petty_cash_fund_id'), fn ($query) => $query->where('petty_cash_fund_id', $request->integer('petty_cash_fund_id')))
-            ->when($request->filled('expense_category_id'), fn ($query) => $query->where('expense_category_id', $request->integer('expense_category_id')))
+        // Get all active petty cash fund chart_account_ids
+        $pettyFundAccountIds = PettyCashFund::where('is_active', true)->pluck('chart_account_id')->toArray();
+
+        return AccountTransaction::with(['account', 'relatedAccount'])
+            ->whereIn('account_id', $pettyFundAccountIds)
+            ->when($request->filled('from'), fn ($query) => $query->whereDate('transaction_date', '>=', $request->input('from')))
+            ->when($request->filled('to'), fn ($query) => $query->whereDate('transaction_date', '<=', $request->input('to')))
+            ->when($request->filled('petty_cash_fund_id'), function ($query) use ($request) {
+                $fund = PettyCashFund::find($request->input('petty_cash_fund_id'));
+                if ($fund) {
+                    $query->where('account_id', $fund->chart_account_id);
+                }
+            })
             ->when($request->filled('search'), function ($query) use ($request) {
                 $term = '%'.$request->input('search').'%';
-                $query->where(fn ($q) => $q->where('voucher_no', 'like', $term)->orWhere('description', 'like', $term));
+                $query->where(fn ($q) => $q->where('reference_no', 'like', $term)->orWhere('description', 'like', $term));
             })
-            ->latest('expense_date')
+            ->latest('transaction_date')
             ->latest();
     }
 
@@ -512,16 +520,16 @@ class AccountingController extends Controller
             return ['Bank Reconciliation', ['Date', 'Bank', 'Account', 'Statement', 'System', 'Difference', 'Status', 'Notes'], $rows];
         }
 
-        $rows = $this->pettyExpensesQuery($request)->get()->map(fn ($expense) => [
-            $expense->expense_date?->format('Y-m-d'),
-            $expense->fund?->name,
-            $expense->category?->name,
-            $expense->voucher_no,
-            $expense->description,
-            number_format((float) $expense->amount, 2, '.', ''),
+        $rows = $this->pettyHistoryQuery($request)->get()->map(fn ($transaction) => [
+            $transaction->transaction_date?->format('Y-m-d'),
+            $transaction->account?->name,
+            ucfirst($transaction->type) . ($transaction->direction === 'in' ? ' (In)' : ' (Out)'),
+            $transaction->reference_no,
+            $transaction->description,
+            number_format((float) $transaction->amount, 2, '.', ''),
         ])->all();
 
-        return ['Petty Cash Expenses', ['Date', 'Fund', 'Category', 'Voucher', 'Description', 'Amount'], $rows];
+        return ['Petty Cash History', ['Date', 'Fund Account', 'Type', 'Reference/Voucher', 'Description', 'Amount'], $rows];
     }
 
     public function storeAccount(Request $request)
@@ -757,7 +765,7 @@ class AccountingController extends Controller
                 abort(422, 'Petty cash balance is not enough for this expense.');
             }
 
-            PettyCashExpense::create($validated + ['user_id' => $request->user()?->id]);
+            $expense = PettyCashExpense::create($validated + ['user_id' => $request->user()?->id]);
             $fund->decrement('current_balance', (float) $validated['amount']);
             $this->applyAccountBalance((int) $fund->chart_account_id, 'out', (float) $validated['amount']);
 
@@ -774,6 +782,33 @@ class AccountingController extends Controller
                 ]
             );
             $this->applyAccountBalance((int) $expenseAccount->id, 'in', (float) $validated['amount']);
+
+            // Create ledger transactions
+            AccountTransaction::create([
+                'account_id' => $fund->chart_account_id,
+                'related_account_id' => $expenseAccount->id,
+                'transaction_date' => $validated['expense_date'],
+                'type' => 'expense',
+                'direction' => 'out',
+                'amount' => (float) $validated['amount'],
+                'payment_method' => 'cash',
+                'description' => $validated['description'] ?: 'Petty cash expense',
+                'source_type' => 'petty_cash_expense',
+                'source_id' => $expense->id,
+            ]);
+
+            AccountTransaction::create([
+                'account_id' => $expenseAccount->id,
+                'related_account_id' => $fund->chart_account_id,
+                'transaction_date' => $validated['expense_date'],
+                'type' => 'expense',
+                'direction' => 'in',
+                'amount' => (float) $validated['amount'],
+                'payment_method' => 'cash',
+                'description' => $validated['description'] ?: 'Petty cash expense',
+                'source_type' => 'petty_cash_expense',
+                'source_id' => $expense->id,
+            ]);
         });
 
         return back()->with('success', 'Petty cash expense recorded.');
