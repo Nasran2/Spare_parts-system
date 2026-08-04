@@ -19,8 +19,7 @@ class ExpenseAccountingService
                 return;
             }
 
-            $method = $this->paymentMethod($expense);
-            $assetAccount = match ($method) {
+            $assetAccount = match ($expense->payment_method) {
                 'bank_transfer' => $this->bankAccount(),
                 'petty_cash' => $this->pettyCashAccount(),
                 default => $this->cashAccount(),
@@ -28,6 +27,7 @@ class ExpenseAccountingService
             $expenseAccount = $this->expenseAccount();
             $description = trim('Expense'.($expense->category?->name ? ' - '.$expense->category->name : '').($expense->description ? ' - '.$expense->description : ''));
             $referenceNo = 'EXP-'.$expense->id;
+            $transactionMethod = $this->paymentMethod($expense);
 
             AccountTransaction::create([
                 'account_id' => $assetAccount->id,
@@ -35,7 +35,7 @@ class ExpenseAccountingService
                 'user_id' => $userId ?? $expense->user_id,
                 'transaction_date' => $expense->expense_date?->toDateString() ?? now()->toDateString(),
                 'direction' => 'out',
-                'payment_method' => $method,
+                'payment_method' => $transactionMethod,
                 'amount' => $amount,
                 'reference_no' => $referenceNo,
                 'source_type' => 'expense',
@@ -49,7 +49,7 @@ class ExpenseAccountingService
                 'user_id' => $userId ?? $expense->user_id,
                 'transaction_date' => $expense->expense_date?->toDateString() ?? now()->toDateString(),
                 'direction' => 'in',
-                'payment_method' => $method,
+                'payment_method' => $transactionMethod,
                 'amount' => $amount,
                 'reference_no' => $referenceNo,
                 'source_type' => 'expense',
@@ -59,6 +59,13 @@ class ExpenseAccountingService
 
             $assetAccount->decrement('current_balance', $amount);
             $expenseAccount->increment('current_balance', $amount);
+
+            if ($expense->payment_method === 'petty_cash') {
+                $fund = \App\Models\Accounting\PettyCashFund::where('chart_account_id', $assetAccount->id)->first();
+                if ($fund) {
+                    $fund->decrement('current_balance', $amount);
+                }
+            }
         });
     }
 
@@ -68,7 +75,7 @@ class ExpenseAccountingService
             ->where('source_type', 'expense')
             ->where('source_id', $expense->id)
             ->get()
-            ->each(function (AccountTransaction $transaction) {
+            ->each(function (AccountTransaction $transaction) use ($expense) {
                 $account = ChartAccount::lockForUpdate()->find($transaction->account_id);
                 if ($account) {
                     $signed = $transaction->direction === 'in'
@@ -76,6 +83,13 @@ class ExpenseAccountingService
                         : (float) $transaction->amount;
                     $account->current_balance = round((float) $account->current_balance + $signed, 2);
                     $account->save();
+                    
+                    if ($expense->payment_method === 'petty_cash' && $transaction->direction === 'out') {
+                        $fund = \App\Models\Accounting\PettyCashFund::where('chart_account_id', $account->id)->first();
+                        if ($fund) {
+                            $fund->increment('current_balance', (float) $transaction->amount);
+                        }
+                    }
                 }
 
                 $transaction->delete();
@@ -85,7 +99,7 @@ class ExpenseAccountingService
     private function paymentMethod(Expense $expense): string
     {
         if ($expense->payment_method === 'petty_cash') {
-            return 'petty_cash';
+            return 'cash';
         }
         return (string) ($expense->payment_method === 'bank_transfer' ? 'bank_transfer' : 'cash');
     }
