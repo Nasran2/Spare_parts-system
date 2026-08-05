@@ -439,7 +439,7 @@ class ReportController extends Controller
         ]);
     }
 
-    public function dailyLedger(Request $request)
+    private function dailyLedgerData(Request $request)
     {
         $timezone = config('app.timezone', 'Asia/Colombo');
         
@@ -450,64 +450,82 @@ class ReportController extends Controller
             ]);
         }
         
-        return view('reports.daily_ledger', $this->sales($request)->getData());
+        $from = $request->input('from');
+        $to = $request->input('to');
+
+        // Global Balances
+        $mainAccountBalance = \App\Models\Accounting\ChartAccount::where('code', '1100')->value('current_balance') ?? 0;
+        $pettyCashBalance = \App\Models\Accounting\PettyCashFund::where('is_active', true)->sum('current_balance');
+        
+        // Find asset accounts (cash, bank, petty cash)
+        $assetAccounts = \App\Models\Accounting\ChartAccount::where('type', 'asset')->pluck('id')->toArray();
+
+        // Fetch asset transactions
+        $transactions = \App\Models\Accounting\AccountTransaction::with(['account', 'relatedAccount'])
+            ->whereIn('account_id', $assetAccounts)
+            ->when($from, fn ($q) => $q->whereDate('transaction_date', '>=', $from))
+            ->when($to, fn ($q) => $q->whereDate('transaction_date', '<=', $to))
+            ->orderBy('transaction_date', 'desc')
+            ->orderBy('created_at', 'desc')
+            ->get();
+            
+        // Calculate Totals for the period
+        $totalIn = $transactions->where('direction', 'in')->sum('amount');
+        $totalOut = $transactions->where('direction', 'out')->sum('amount');
+        
+        $expenseAccountIds = \App\Models\Accounting\ChartAccount::where('type', 'expense')->pluck('id')->toArray();
+        $totalExpensePeriod = $transactions->where('direction', 'out')
+                                ->whereIn('related_account_id', $expenseAccountIds)
+                                ->sum('amount');
+
+        return compact(
+            'transactions', 
+            'mainAccountBalance', 
+            'pettyCashBalance', 
+            'totalIn', 
+            'totalOut', 
+            'totalExpensePeriod', 
+            'from', 
+            'to'
+        );
+    }
+
+    public function dailyLedger(Request $request)
+    {
+        return view('reports.daily_ledger', $this->dailyLedgerData($request));
     }
 
     public function dailyLedgerPdf(Request $request)
     {
-        $timezone = config('app.timezone', 'Asia/Colombo');
-        if (!$request->has('from') && !$request->has('to')) {
-            $request->merge([
-                'from' => now($timezone)->toDateString(),
-                'to' => now($timezone)->toDateString(),
-            ]);
-        }
-        $view = $this->sales($request);
-        $data = $view->getData();
+        $data = $this->dailyLedgerData($request);
         $pdf = Pdf::loadView('reports.pdf.daily_ledger', $data)->setPaper('a4', 'portrait');
         return $pdf->download('daily-ledger.pdf');
     }
 
     public function dailyLedgerCsv(Request $request)
     {
-        $timezone = config('app.timezone', 'Asia/Colombo');
-        if (!$request->has('from') && !$request->has('to')) {
-            $request->merge([
-                'from' => now($timezone)->toDateString(),
-                'to' => now($timezone)->toDateString(),
-            ]);
-        }
-        $view = $this->sales($request);
-        $data = $view->getData();
-        $sales = $data['sales'];
-        $controls = $data['controls'];
+        $data = $this->dailyLedgerData($request);
+        $transactions = $data['transactions'];
         
-        $rows = [['Date & Time', 'Invoice', 'Customer', 'Total Sales', 'Cash', 'Cheque', 'Due', 'Status']];
-        foreach ($sales as $s) {
-            $cash = 0;
-            $cheque = 0;
-            foreach ($s->payments as $payment) {
-                if ($payment->payment_method === 'cash') {
-                    $cash += (float) $payment->amount;
-                } elseif ($payment->payment_method === 'cheque') {
-                    $cheque += (float) $payment->amount;
-                }
-            }
+        $rows = [['Date', 'Type', 'Account', 'Related Account', 'Reference', 'Description', 'Money In', 'Money Out']];
+        foreach ($transactions as $t) {
+            $date = $t->transaction_date ? $t->transaction_date->format('Y-m-d') : '';
+            $type = ucfirst($t->source_type);
+            $account = $t->account ? $t->account->name : '';
+            $related = $t->relatedAccount ? $t->relatedAccount->name : '';
             
-            $hideInvoice = !empty($controls['hide_invoice_details']);
-            $hidePayments = !empty($controls['hide_supplier_payments']) || $hideInvoice;
-            
-            $dt = $s->created_at ? $s->created_at->timezone($timezone)->format('Y-m-d H:i:s') : optional($s->sale_date)->toDateString();
+            $moneyIn = $t->direction === 'in' ? number_format((float) $t->amount, 2, '.', '') : '0.00';
+            $moneyOut = $t->direction === 'out' ? number_format((float) $t->amount, 2, '.', '') : '0.00';
             
             $rows[] = [
-                $dt,
-                $hideInvoice ? 'HIDDEN' : PrivacyModeService::displayInvoiceNumber($s),
-                !empty($controls['hide_supplier_names']) ? 'Hidden' : ($s->customer?->name ?? 'Walk-in'),
-                $this->maskCurrencyForControls((float) $s->total_amount, $controls, $hideInvoice),
-                $this->maskCurrencyForControls($cash, $controls, $hidePayments),
-                $this->maskCurrencyForControls($cheque, $controls, $hidePayments),
-                $this->maskCurrencyForControls((float) $s->due_amount, $controls, $hidePayments),
-                $s->payment_status,
+                $date,
+                $type,
+                $account,
+                $related,
+                $t->reference_no,
+                $t->description,
+                $moneyIn,
+                $moneyOut
             ];
         }
         $csv = fopen('php://temp','r+'); foreach ($rows as $r) { fputcsv($csv,$r); } rewind($csv);
