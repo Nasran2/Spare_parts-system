@@ -395,6 +395,8 @@
 
 <script>
 const CURRENCY = @json($currency . ' ');
+const BASE_URL = '{{ url('/') }}';
+
 function openCreateModal() {
     document.getElementById('createModal').classList.remove('hidden');
 }
@@ -431,7 +433,6 @@ function submitCreate(event) {
 }
 
 function viewCustomer(id) {
-    const BASE_URL = '{{ url('/') }}';
     fetch(`${BASE_URL}/customers/${id}`, { headers: { 'Accept': 'application/json' } })
     .then(r => r.json())
     .then(data => {
@@ -566,7 +567,6 @@ function closeViewModal() {
 }
 
 function editCustomer(id) {
-    const BASE_URL = '{{ url('/') }}';
     fetch(`${BASE_URL}/customers/${id}/edit`, {
         headers: {
             'Accept': 'application/json',
@@ -633,7 +633,7 @@ function deleteCustomer(id) {
         return;
     }
     
-    const BASE_URL = '{{ url('/') }}';
+    
     fetch(`${BASE_URL}/customers/${id}`, {
         method: 'DELETE',
         headers: {
@@ -659,6 +659,6 @@ function deleteCustomer(id) {
 @include('customers.payment-reminder-modal')
 
 
-@include('customers.payment-reminder-modal')
+
 
 @endsection

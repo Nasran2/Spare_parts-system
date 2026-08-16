@@ -33,15 +33,15 @@
     <div class="bg-white rounded-lg shadow border">
         <div class="px-4 pt-4">
             <nav class="flex flex-wrap gap-2 border-b border-gray-200">
-                <a class="px-4 py-2 -mb-px border-b-2 border-blue-600 text-blue-600 font-semibold flex items-center gap-2">
-                    <i class="fas fa-book"></i>
-                    Ledger
+                <a href="#" onclick="filterLedger('all'); return false;" id="tab-all" class="ledger-tab px-4 py-2 -mb-px border-b-2 border-blue-600 text-blue-600 font-semibold flex items-center gap-2">
+                    <i class="fas fa-book"></i> Ledger
                 </a>
-                <span class="px-4 py-2 text-gray-500 flex items-center gap-2"><i class="fas fa-shopping-cart"></i>Sales</span>
-                <span class="px-4 py-2 text-gray-500 flex items-center gap-2"><i class="fas fa-file-alt"></i>Documents & Note</span>
-                <span class="px-4 py-2 text-gray-500 flex items-center gap-2"><i class="fas fa-money-bill-wave"></i>Payments</span>
-                <span class="px-4 py-2 text-gray-500 flex items-center gap-2"><i class="fas fa-bolt"></i>Activities</span>
-                <span class="px-4 py-2 text-gray-500 flex items-center gap-2"><i class="fas fa-user-friends"></i>Contact Persons</span>
+                <a href="#" onclick="filterLedger('sell'); return false;" id="tab-sell" class="ledger-tab px-4 py-2 text-gray-500 hover:text-blue-600 border-b-2 border-transparent flex items-center gap-2">
+                    <i class="fas fa-shopping-cart"></i> Sales
+                </a>
+                <a href="#" onclick="filterLedger('payment'); return false;" id="tab-payment" class="ledger-tab px-4 py-2 text-gray-500 hover:text-blue-600 border-b-2 border-transparent flex items-center gap-2">
+                    <i class="fas fa-money-bill-wave"></i> Payments
+                </a>
             </nav>
         </div>
 
@@ -62,14 +62,6 @@
                             <span class="self-center text-gray-500">to</span>
                             <input type="date" name="end_date" value="{{ $end }}" class="px-3 py-2 border rounded w-40">
                             <button class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Apply</button>
-                        </div>
-                    </div>
-                    <div class="hidden md:block">
-                        <label class="block text-xs font-semibold text-gray-600">Ledger format</label>
-                        <div class="flex gap-2 mt-1">
-                            <button type="button" class="px-3 py-1.5 text-sm border rounded bg-gray-100">Format 1</button>
-                            <button type="button" class="px-3 py-1.5 text-sm border rounded">Format 2</button>
-                            <button type="button" class="px-3 py-1.5 text-sm border rounded">Format 3</button>
                         </div>
                     </div>
                 </form>
@@ -148,9 +140,9 @@
                             <th class="px-4 py-2 text-left">Others</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-gray-200">
+                    <tbody class="divide-y divide-gray-200" id="ledger-tbody">
                         @forelse($transactions as $t)
-                            <tr class="hover:bg-gray-50">
+                            <tr class="hover:bg-gray-50 ledger-row" data-type="{{ strtolower($t['type']) }}">
                                 <td class="px-4 py-2">{{ \Carbon\Carbon::parse($t['date'])->format('m/d/Y') }}</td>
                                 <td class="px-4 py-2">{{ $t['reference'] }}</td>
                                 <td class="px-4 py-2">{{ $t['type'] }}</td>
@@ -179,4 +171,31 @@
     </div>
     <p class="text-xs text-gray-400 text-center">Twin Pos - v6.4 | Copyright © {{ now()->year }} All rights reserved.</p>
 </div>
+
+@push('scripts')
+<script>
+    function filterLedger(type) {
+        // Reset all tabs
+        document.querySelectorAll('.ledger-tab').forEach(tab => {
+            tab.classList.remove('border-blue-600', 'text-blue-600', '-mb-px');
+            tab.classList.add('border-transparent', 'text-gray-500');
+        });
+        // Set active tab
+        const activeTab = document.getElementById('tab-' + type);
+        if(activeTab) {
+            activeTab.classList.remove('border-transparent', 'text-gray-500');
+            activeTab.classList.add('border-blue-600', 'text-blue-600', '-mb-px');
+        }
+
+        // Filter rows
+        document.querySelectorAll('.ledger-row').forEach(row => {
+            if (type === 'all' || row.dataset.type === type) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    }
+</script>
+@endpush
 @endsection
