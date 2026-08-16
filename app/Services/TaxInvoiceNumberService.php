@@ -13,12 +13,6 @@ class TaxInvoiceNumberService
     public function issue(Sale $sale): string
     {
         if ($sale->tax_invoice_number) {
-            $snapshotVersion = data_get($sale->tax_snapshot, 'version');
-            $settings = $snapshotVersion
-                ? TaxSetting::query()->where('version', $snapshotVersion)->first()
-                : TaxSetting::current($sale->sale_date);
-            $this->assertEligible($sale, $settings ?? TaxSetting::current($sale->sale_date));
-
             return $sale->tax_invoice_number;
         }
 

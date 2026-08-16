@@ -353,7 +353,7 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
             ->middleware('permission:accounting.owner-equity.view')
             ->name('owner-equity');
         Route::get('export/{section}/{format}', [AccountingController::class, 'export'])
-            ->whereIn('section', ['accounts', 'transactions', 'banks', 'petty-cash', 'ledger'])
+            ->whereIn('section', ['accounts', 'transactions', 'banks', 'petty-cash', 'ledger', 'cash-book'])
             ->whereIn('format', ['pdf', 'excel'])
             ->middleware('permission:accounting.view')
             ->name('export');

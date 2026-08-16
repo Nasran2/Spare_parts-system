@@ -416,15 +416,25 @@ class AccountingController extends Controller
 
     public function export(Request $request, string $section, string $format)
     {
-        abort_unless(in_array($section, ['accounts', 'transactions', 'banks', 'petty-cash', 'ledger'], true), 404);
+        abort_unless(in_array($section, ['accounts', 'transactions', 'banks', 'petty-cash', 'ledger', 'cash-book'], true), 404);
         abort_unless(in_array($format, ['pdf', 'excel'], true), 404);
 
-        [$title, $headers, $rows] = $this->exportRows($request, $section);
-
-        if ($format === 'pdf') {
-            $pdf = Pdf::loadView('accounting.export', compact('title', 'headers', 'rows'))->setPaper('a4', 'landscape');
-
-            return $pdf->download(str_replace(' ', '-', strtolower($title)).'.pdf');
+        if ($section === 'cash-book') {
+            $data = $this->exportCashBook($request);
+            if ($format === 'pdf') {
+                $pdf = Pdf::loadView('accounting.export_cashbook', $data)->setPaper('a4', 'portrait');
+                return $pdf->download(str_replace(' ', '-', strtolower($data['title'])).'.pdf');
+            }
+            // Fallback for Excel: just export main transactions
+            $title = $data['title'];
+            $headers = $data['main_table'][1];
+            $rows = $data['main_table'][2];
+        } else {
+            [$title, $headers, $rows] = $this->exportRows($request, $section);
+            if ($format === 'pdf') {
+                $pdf = Pdf::loadView('accounting.export', compact('title', 'headers', 'rows'))->setPaper('a4', 'landscape');
+                return $pdf->download(str_replace(' ', '-', strtolower($title)).'.pdf');
+            }
         }
 
         $csv = fopen('php://temp', 'r+');
@@ -438,6 +448,56 @@ class AccountingController extends Controller
             'Content-Type' => 'text/csv',
             'Content-Disposition' => 'attachment; filename="'.str_replace(' ', '-', strtolower($title)).'.csv"',
         ]);
+    }
+    
+    private function exportCashBook(Request $request): array
+    {
+        $mainBookTransactions = $this->mainBookTransactions($request)->get();
+        $pettyBookTransactions = $this->pettyBookTransactions($request)->get();
+        
+        $mainOut = (float) $mainBookTransactions->where('direction', 'out')->sum('amount');
+        $mainIn = (float) $mainBookTransactions->where('direction', 'in')->sum('amount');
+        $pettyOut = (float) $pettyBookTransactions->where('direction', 'out')->sum('amount');
+        $pettyIn = (float) $pettyBookTransactions->where('direction', 'in')->sum('amount');
+
+        $totals = [
+            'main_balance' => (float) ChartAccount::where('code', '1100')->sum('current_balance'),
+            'main_out' => $mainOut,
+            'petty_balance' => (float) ChartAccount::where('code', '!=', '1100')->whereIn('subtype', ['cash', 'petty_cash'])->sum('current_balance'),
+            'petty_out' => $pettyOut,
+            'total_out' => $mainOut + $pettyOut,
+            'net_movement' => ($mainIn + $pettyIn) - ($mainOut + $pettyOut),
+        ];
+        
+        $mainRows = $mainBookTransactions->map(fn ($t) => [
+            $t->transaction_date?->format('Y-m-d'),
+            $t->reference_no,
+            $t->description,
+            ucfirst($t->direction),
+            number_format((float) $t->amount, 2, '.', ''),
+        ])->all();
+        
+        $pettyRows = $pettyBookTransactions->map(fn ($t) => [
+            $t->transaction_date?->format('Y-m-d'),
+            $t->reference_no,
+            $t->description,
+            ucfirst($t->direction),
+            number_format((float) $t->amount, 2, '.', ''),
+        ])->all();
+
+        return [
+            'title' => 'Cash Book Report',
+            'shop' => [
+                'name' => \App\Models\Setting::get('store_name', 'Store Name'),
+                'address' => \App\Models\Setting::get('store_address', ''),
+                'phone' => \App\Models\Setting::get('store_phone', ''),
+                'email' => \App\Models\Setting::get('store_email', ''),
+                'logo' => \App\Models\Setting::get('store_logo', null),
+            ],
+            'totals' => $totals,
+            'main_table' => ['Main Account Transactions', ['Date', 'Reference', 'Description', 'Direction', 'Amount'], $mainRows],
+            'petty_table' => ['Petty Cash Transactions', ['Date', 'Reference', 'Description', 'Direction', 'Amount'], $pettyRows],
+        ];
     }
 
     private function accountsQuery(Request $request)

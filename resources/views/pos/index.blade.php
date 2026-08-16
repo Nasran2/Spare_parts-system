@@ -12,7 +12,7 @@
         ->orderBy('name')
         ->get(['id', 'name', 'short_name']);
     $customerList = ($customers ?? collect())->map(function ($c) {
-        return ['id' => $c->id, 'name' => $c->name, 'phone' => $c->phone, 'email' => $c->email];
+        return ['id' => $c->id, 'name' => $c->name, 'phone' => $c->phone, 'email' => $c->email, 'tin' => $c->tin, 'address' => $c->address];
     })->values();
 @endphp
 
@@ -1146,17 +1146,28 @@
     // Expose renderCart to window for use in modal
     window.renderCart = renderCart;
 
-    async function postJSON(url, data){
+    async function postJSON(url, data = {}) {
         const res = await fetch(url, {
             method: 'POST',
             credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' },
-            body: JSON.stringify(data || {})
+            headers: { 
+                'Content-Type': 'application/json', 
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': csrf 
+            },
+            body: JSON.stringify(data)
         });
         if (!res.ok) {
             let message = `Request failed (${res.status})`;
-            try { const j = await res.json(); if (j && j.message) message = j.message; } catch(_) {}
-            throw new Error(message);
+            let errors = null;
+            try { 
+                const j = await res.json(); 
+                if (j && j.message) message = j.message; 
+                if (j && j.errors) errors = j.errors;
+            } catch(_) {}
+            const err = new Error(message);
+            err.errors = errors;
+            throw err;
         }
         return await res.json();
     }
@@ -1972,6 +1983,10 @@
                                         <button type="button" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700" data-action="print" data-sale-id="${escapeAttr(sale.id)}">
                                             <i class="fas fa-print mr-1"></i>Print
                                         </button>
+                                        ${sale.tax_invoice_number
+                                            ? `<a href="${salesBaseUrl}/${sale.id}/tax-invoice" target="_blank" class="text-emerald-600 hover:text-emerald-700 mx-1" title="Print Tax Invoice"><i class="fas fa-file-invoice-dollar"></i></a>`
+                                            : `<button type="button" class="text-blue-600 hover:text-blue-700 mx-1 btn-generate-tax" data-id="${sale.id}" data-customer-id="${sale.customer_id || ''}" title="Generate official VAT tax invoice"><i class="fas fa-file-invoice"></i></button>`
+                                        }
                                     </td>
                                 </tr>
                             `;
@@ -1980,6 +1995,23 @@
                 </table>
             </div>
         `;
+        document.querySelectorAll('.btn-generate-tax').forEach(btn => btn.addEventListener('click', async (e) => {
+            const saleId = e.currentTarget.getAttribute('data-id');
+            const customerId = e.currentTarget.getAttribute('data-customer-id');
+            if(!confirm('Generate a permanent official Tax Invoice for this sale?')) return;
+            try {
+                const res = await postJSON(`{{ url('sales') }}/${saleId}/generate-tax-invoice`);
+                showToast('success', res.message || 'Tax invoice generated');
+                openRecentTransactionsModal();
+            } catch(err) {
+                const msgText = (err.message || '') + ' ' + (err.errors?.tax_invoice?.join(' ') || '');
+                if (customerId && (msgText.includes('Purchaser TIN') || msgText.includes('Purchaser name, address'))) {
+                    openTaxCustomerModal(customerId);
+                    return;
+                }
+                showToast('error', err.message || 'Failed to generate tax invoice');
+            }
+        }));
     }
 
     async function openRecentTransactionsModal(){
@@ -2499,6 +2531,106 @@
         });
         return customerModal;
     }
+    
+    // Tax Customer Modal for missing details
+    let taxCustomerModal = null;
+    function ensureTaxCustomerModal() {
+        if (taxCustomerModal) return;
+        taxCustomerModal = document.createElement('div');
+        taxCustomerModal.className = 'fixed inset-0 z-[100] hidden flex items-center justify-center bg-black/50 p-4';
+        taxCustomerModal.innerHTML = `
+            <div class="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-full">
+                <div class="p-4 border-b bg-amber-50 flex justify-between items-center">
+                    <h3 class="text-lg font-bold text-amber-800">Missing Tax Invoice Details</h3>
+                    <button data-close class="text-amber-500 hover:text-amber-700">&times;</button>
+                </div>
+                <div class="p-4 bg-amber-50 text-amber-700 text-sm border-b">
+                    An official Tax Invoice requires a valid Name, Phone, Address, and Purchaser TIN. Please complete these details to proceed.
+                </div>
+                <form id="tax-customer-form" class="p-4 overflow-y-auto space-y-4">
+                    <input type="hidden" name="_method" value="PUT">
+                    <input type="hidden" id="tax-customer-id" value="">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Customer Name <span class="text-red-500">*</span></label>
+                        <input name="name" id="tax-customer-name" class="mt-1 w-full px-3 py-2 border rounded" required />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Phone <span class="text-red-500">*</span></label>
+                        <input name="phone" id="tax-customer-phone" class="mt-1 w-full px-3 py-2 border rounded" required />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Address <span class="text-red-500">*</span></label>
+                        <textarea name="address" id="tax-customer-address" rows="2" class="mt-1 w-full px-3 py-2 border rounded" required></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Purchaser TIN <span class="text-red-500">*</span></label>
+                        <input name="tin" id="tax-customer-tin" inputmode="numeric" pattern="[0-9]{9,12}" maxlength="12" class="mt-1 w-full px-3 py-2 border rounded" required />
+                    </div>
+                    <div class="flex justify-end space-x-2 pt-2">
+                        <button type="button" data-close class="px-4 py-2 bg-gray-100 text-gray-700 rounded">Cancel</button>
+                        <button type="submit" class="px-4 py-2 bg-emerald-600 text-white rounded">Save & Continue</button>
+                    </div>
+                </form>
+            </div>`;
+        document.body.appendChild(taxCustomerModal);
+        taxCustomerModal.addEventListener('click', e => {
+            if (e.target === taxCustomerModal || e.target.hasAttribute('data-close')) {
+                taxCustomerModal.classList.add('hidden');
+            }
+        });
+        document.getElementById('tax-customer-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.currentTarget;
+            const customerId = document.getElementById('tax-customer-id').value;
+            const formData = new FormData(form);
+            try {
+                const res = await fetch('{{ url('customers') }}/' + customerId, {
+                    method: 'POST', // using POST with _method=PUT
+                    credentials: 'same-origin',
+                    headers: { 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' },
+                    body: formData
+                });
+                if(!res.ok){ 
+                    let message = 'Failed to update customer';
+                    try { const j = await res.json(); if(j.message) message = j.message; } catch(e){}
+                    throw new Error(message); 
+                }
+                const data = await res.json();
+                
+                // Update local customer data
+                const customersDataStr = document.querySelector('.pos-customer-picker')?.getAttribute('data-customers');
+                if (customersDataStr) {
+                    try {
+                        const customersData = JSON.parse(customersDataStr);
+                        const updatedList = customersData.map(c => c.id == customerId ? data.customer : c);
+                        document.querySelectorAll('.pos-customer-picker').forEach(el => el.setAttribute('data-customers', JSON.stringify(updatedList)));
+                    } catch(e){}
+                }
+
+                taxCustomerModal.classList.add('hidden');
+                showToast('success', 'Customer details updated. Please try your action again.');
+                
+            } catch(err){ showToast('error', err.message); }
+        });
+    }
+    
+    window.openTaxCustomerModal = function(customerId) {
+        ensureTaxCustomerModal();
+        const customersDataStr = document.querySelector('.pos-customer-picker')?.getAttribute('data-customers');
+        let c = null;
+        if (customersDataStr) {
+            try {
+                const customersData = JSON.parse(customersDataStr);
+                c = customersData.find(x => x.id == customerId);
+            } catch(e){}
+        }
+        document.getElementById('tax-customer-id').value = customerId;
+        document.getElementById('tax-customer-name').value = c?.name || '';
+        document.getElementById('tax-customer-phone').value = c?.phone || '';
+        document.getElementById('tax-customer-address').value = c?.address || '';
+        document.getElementById('tax-customer-tin').value = c?.tin || '';
+        taxCustomerModal.classList.remove('hidden');
+    };
     newCustomerBtns.forEach(newCustomerBtn => {
         newCustomerBtn.addEventListener('click', () => {
             ensureCustomerModal();
@@ -2689,6 +2821,11 @@
             });
         } catch(err){
             billChoice.invoiceWindow?.close();
+            const msgText = (err.message || '') + ' ' + (err.errors?.tax_invoice?.join(' ') || '');
+            if (customerId && (msgText.includes('Purchaser TIN') || msgText.includes('Purchaser name, address'))) {
+                openTaxCustomerModal(customerId);
+                return;
+            }
             showToast('error', err.message || 'Checkout failed');
             return;
         }
