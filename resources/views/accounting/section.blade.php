@@ -695,7 +695,7 @@
     @if(in_array($section, ['cash-book', 'bank-book'], true))
         @php
             $isCashBook = $section === 'cash-book';
-            $bookRows = $isCashBook ? $cashBookTransactions : $bankBookTransactions;
+            $bookRows = $isCashBook ? [] : $bankBookTransactions;
             $bookTotals = $isCashBook ? $cashBookTotals : $bankBookTotals;
             $resetRoute = $isCashBook ? route('accounting.cash-book') : route('accounting.bank-book');
         @endphp
@@ -724,59 +724,168 @@
             </form>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-green-500">
-                <p class="text-sm text-gray-500">{{ $isCashBook ? 'Cash In' : 'Bank In' }}</p>
-                <div class="text-2xl font-bold text-green-700">{{ number_format((float) ($bookTotals['in'] ?? 0), 2) }}</div>
+        @if($isCashBook)
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-blue-500">
+                    <p class="text-sm text-gray-500">Main Account Balance</p>
+                    <div class="text-2xl font-bold text-blue-700">{{ number_format((float) ($cashBookTotals['main_balance'] ?? 0), 2) }}</div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-red-500">
+                    <p class="text-sm text-gray-500">Main Account Out</p>
+                    <div class="text-2xl font-bold text-red-700">{{ number_format((float) ($cashBookTotals['main_out'] ?? 0), 2) }}</div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-indigo-500">
+                    <p class="text-sm text-gray-500">Petty Cash Balance</p>
+                    <div class="text-2xl font-bold text-indigo-700">{{ number_format((float) ($cashBookTotals['petty_balance'] ?? 0), 2) }}</div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-orange-500">
+                    <p class="text-sm text-gray-500">Petty Cash Out</p>
+                    <div class="text-2xl font-bold text-orange-700">{{ number_format((float) ($cashBookTotals['petty_out'] ?? 0), 2) }}</div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-red-600">
+                    <p class="text-sm text-gray-500">Total Cash Out</p>
+                    <div class="text-2xl font-bold text-red-800">{{ number_format((float) ($cashBookTotals['total_out'] ?? 0), 2) }}</div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-green-500">
+                    <p class="text-sm text-gray-500">Net Movement</p>
+                    <div class="text-2xl font-bold text-gray-900">{{ number_format((float) ($cashBookTotals['net_movement'] ?? 0), 2) }}</div>
+                </div>
             </div>
-            <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-red-500">
-                <p class="text-sm text-gray-500">{{ $isCashBook ? 'Cash Out' : 'Bank Out' }}</p>
-                <div class="text-2xl font-bold text-red-700">{{ number_format((float) ($bookTotals['out'] ?? 0), 2) }}</div>
-            </div>
-            <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-blue-500">
-                <p class="text-sm text-gray-500">Net Movement</p>
-                <div class="text-2xl font-bold text-gray-900">{{ number_format((float) ($bookTotals['net'] ?? 0), 2) }}</div>
-            </div>
-        </div>
 
-        <div class="bg-white rounded-xl shadow-md overflow-hidden">
-            <div class="p-5 border-b">
-                <h3 class="font-semibold text-gray-800">
-                    <i class="fas {{ $isCashBook ? 'fa-cash-register text-green-600' : 'fa-building-columns text-indigo-600' }} mr-2"></i>
-                    {{ $isCashBook ? 'Cash In / Cash Out Transactions' : 'Bank, Card, Transfer, and Online Payment Transactions' }}
-                </h3>
+            <div class="flex flex-col gap-6">
+                <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                    <div class="p-5 border-b">
+                        <h3 class="font-semibold text-gray-800">
+                            <i class="fas fa-cash-register text-blue-600 mr-2"></i>
+                            Main Account Transactions
+                        </h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                                <tr>
+                                    <th class="px-5 py-3 text-left">Date</th>
+                                    <th class="px-5 py-3 text-left">Account</th>
+                                    <th class="px-5 py-3 text-left">Method</th>
+                                    <th class="px-5 py-3 text-left">Reference</th>
+                                    <th class="px-5 py-3 text-left">Note</th>
+                                    <th class="px-5 py-3 text-right">In</th>
+                                    <th class="px-5 py-3 text-right">Out</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y">
+                                @forelse($mainBookTransactions as $transaction)
+                                    <tr>
+                                        <td class="px-5 py-3 whitespace-nowrap">{{ $transaction->transaction_date?->format('M d, Y') }}</td>
+                                        <td class="px-5 py-3">{{ $transaction->account?->name ?? 'Account' }}</td>
+                                        <td class="px-5 py-3">{{ str_replace('_', ' ', ucfirst($transaction->payment_method)) }}</td>
+                                        <td class="px-5 py-3">{{ $transaction->reference_no ?: $transaction->cheque_number ?: '-' }}</td>
+                                        <td class="px-5 py-3 text-gray-600">{{ $transaction->description ?: '-' }}</td>
+                                        <td class="px-5 py-3 text-right font-semibold text-green-700">{{ $transaction->direction === 'in' ? number_format((float) $transaction->amount, 2) : '-' }}</td>
+                                        <td class="px-5 py-3 text-right font-semibold text-red-700">{{ $transaction->direction === 'out' ? number_format((float) $transaction->amount, 2) : '-' }}</td>
+                                    </tr>
+                                @empty
+                                    <tr><td colspan="7" class="px-5 py-10 text-center text-gray-500">No transactions found for Main Account.</td></tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                    <div class="p-5 border-b">
+                        <h3 class="font-semibold text-gray-800">
+                            <i class="fas fa-wallet text-indigo-600 mr-2"></i>
+                            Petty Cash Transactions
+                        </h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                                <tr>
+                                    <th class="px-5 py-3 text-left">Date</th>
+                                    <th class="px-5 py-3 text-left">Account</th>
+                                    <th class="px-5 py-3 text-left">Method</th>
+                                    <th class="px-5 py-3 text-left">Reference</th>
+                                    <th class="px-5 py-3 text-left">Note</th>
+                                    <th class="px-5 py-3 text-right">In</th>
+                                    <th class="px-5 py-3 text-right">Out</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y">
+                                @forelse($pettyBookTransactions as $transaction)
+                                    <tr>
+                                        <td class="px-5 py-3 whitespace-nowrap">{{ $transaction->transaction_date?->format('M d, Y') }}</td>
+                                        <td class="px-5 py-3">{{ $transaction->account?->name ?? 'Account' }}</td>
+                                        <td class="px-5 py-3">{{ str_replace('_', ' ', ucfirst($transaction->payment_method)) }}</td>
+                                        <td class="px-5 py-3">{{ $transaction->reference_no ?: $transaction->cheque_number ?: '-' }}</td>
+                                        <td class="px-5 py-3 text-gray-600">{{ $transaction->description ?: '-' }}</td>
+                                        <td class="px-5 py-3 text-right font-semibold text-green-700">{{ $transaction->direction === 'in' ? number_format((float) $transaction->amount, 2) : '-' }}</td>
+                                        <td class="px-5 py-3 text-right font-semibold text-red-700">{{ $transaction->direction === 'out' ? number_format((float) $transaction->amount, 2) : '-' }}</td>
+                                    </tr>
+                                @empty
+                                    <tr><td colspan="7" class="px-5 py-10 text-center text-gray-500">No transactions found for Petty Cash.</td></tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead class="bg-gray-50 text-xs uppercase text-gray-500">
-                        <tr>
-                            <th class="px-5 py-3 text-left">Date</th>
-                            <th class="px-5 py-3 text-left">Account</th>
-                            <th class="px-5 py-3 text-left">Method</th>
-                            <th class="px-5 py-3 text-left">Reference</th>
-                            <th class="px-5 py-3 text-left">Note</th>
-                            <th class="px-5 py-3 text-right">In</th>
-                            <th class="px-5 py-3 text-right">Out</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y">
-                        @forelse($bookRows as $transaction)
+        @else
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-green-500">
+                    <p class="text-sm text-gray-500">Bank In</p>
+                    <div class="text-2xl font-bold text-green-700">{{ number_format((float) ($bookTotals['in'] ?? 0), 2) }}</div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-red-500">
+                    <p class="text-sm text-gray-500">Bank Out</p>
+                    <div class="text-2xl font-bold text-red-700">{{ number_format((float) ($bookTotals['out'] ?? 0), 2) }}</div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-blue-500">
+                    <p class="text-sm text-gray-500">Net Movement</p>
+                    <div class="text-2xl font-bold text-gray-900">{{ number_format((float) ($bookTotals['net'] ?? 0), 2) }}</div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                <div class="p-5 border-b">
+                    <h3 class="font-semibold text-gray-800">
+                        <i class="fas fa-building-columns text-indigo-600 mr-2"></i>
+                        Bank, Card, Transfer, and Online Payment Transactions
+                    </h3>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-50 text-xs uppercase text-gray-500">
                             <tr>
-                                <td class="px-5 py-3 whitespace-nowrap">{{ $transaction->transaction_date?->format('M d, Y') }}</td>
-                                <td class="px-5 py-3">{{ $transaction->account?->name ?? 'Account' }}</td>
-                                <td class="px-5 py-3">{{ str_replace('_', ' ', ucfirst($transaction->payment_method)) }}</td>
-                                <td class="px-5 py-3">{{ $transaction->reference_no ?: $transaction->cheque_number ?: '-' }}</td>
-                                <td class="px-5 py-3 text-gray-600">{{ $transaction->description ?: '-' }}</td>
-                                <td class="px-5 py-3 text-right font-semibold text-green-700">{{ $transaction->direction === 'in' ? number_format((float) $transaction->amount, 2) : '-' }}</td>
-                                <td class="px-5 py-3 text-right font-semibold text-red-700">{{ $transaction->direction === 'out' ? number_format((float) $transaction->amount, 2) : '-' }}</td>
+                                <th class="px-5 py-3 text-left">Date</th>
+                                <th class="px-5 py-3 text-left">Account</th>
+                                <th class="px-5 py-3 text-left">Method</th>
+                                <th class="px-5 py-3 text-left">Reference</th>
+                                <th class="px-5 py-3 text-left">Note</th>
+                                <th class="px-5 py-3 text-right">In</th>
+                                <th class="px-5 py-3 text-right">Out</th>
                             </tr>
-                        @empty
-                            <tr><td colspan="7" class="px-5 py-10 text-center text-gray-500">No transactions found for this book.</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody class="divide-y">
+                            @forelse($bookRows as $transaction)
+                                <tr>
+                                    <td class="px-5 py-3 whitespace-nowrap">{{ $transaction->transaction_date?->format('M d, Y') }}</td>
+                                    <td class="px-5 py-3">{{ $transaction->account?->name ?? 'Account' }}</td>
+                                    <td class="px-5 py-3">{{ str_replace('_', ' ', ucfirst($transaction->payment_method)) }}</td>
+                                    <td class="px-5 py-3">{{ $transaction->reference_no ?: $transaction->cheque_number ?: '-' }}</td>
+                                    <td class="px-5 py-3 text-gray-600">{{ $transaction->description ?: '-' }}</td>
+                                    <td class="px-5 py-3 text-right font-semibold text-green-700">{{ $transaction->direction === 'in' ? number_format((float) $transaction->amount, 2) : '-' }}</td>
+                                    <td class="px-5 py-3 text-right font-semibold text-red-700">{{ $transaction->direction === 'out' ? number_format((float) $transaction->amount, 2) : '-' }}</td>
+                                </tr>
+                            @empty
+                                <tr><td colspan="7" class="px-5 py-10 text-center text-gray-500">No transactions found for this book.</td></tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
             </div>
-        </div>
+        @endif
     @endif
 
     @if($section === 'owner-equity')

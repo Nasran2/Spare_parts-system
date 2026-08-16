@@ -103,8 +103,23 @@ class AccountingController extends Controller
         ];
         $trialBalanceTotals['difference'] = round($trialBalanceTotals['debit'] - $trialBalanceTotals['credit'], 2);
         $balanceSheet = $this->balanceSheetData();
-        $cashBookTransactions = $this->cashBookTransactions($request)->get();
-        $cashBookTotals = $this->bookTotals($cashBookTransactions);
+        $mainBookTransactions = $this->mainBookTransactions($request)->get();
+        $pettyBookTransactions = $this->pettyBookTransactions($request)->get();
+        
+        $mainOut = (float) $mainBookTransactions->where('direction', 'out')->sum('amount');
+        $mainIn = (float) $mainBookTransactions->where('direction', 'in')->sum('amount');
+        $pettyOut = (float) $pettyBookTransactions->where('direction', 'out')->sum('amount');
+        $pettyIn = (float) $pettyBookTransactions->where('direction', 'in')->sum('amount');
+
+        $cashBookTotals = [
+            'main_balance' => (float) ChartAccount::where('code', '1100')->sum('current_balance'),
+            'main_out' => $mainOut,
+            'petty_balance' => (float) ChartAccount::where('code', '!=', '1100')->whereIn('subtype', ['cash', 'petty_cash'])->sum('current_balance'),
+            'petty_out' => $pettyOut,
+            'total_out' => $mainOut + $pettyOut,
+            'net_movement' => ($mainIn + $pettyIn) - ($mainOut + $pettyOut),
+        ];
+
         $bankBookTransactions = $this->bankBookTransactions($request)->get();
         $bankBookTotals = $this->bookTotals($bankBookTransactions);
         $ownerEquityMovements = $this->ownerEquityQuery($request)->get();
@@ -166,7 +181,8 @@ class AccountingController extends Controller
             'trialBalanceRows',
             'trialBalanceTotals',
             'balanceSheet',
-            'cashBookTransactions',
+            'mainBookTransactions',
+            'pettyBookTransactions',
             'cashBookTotals',
             'bankBookTransactions',
             'bankBookTotals',
@@ -198,13 +214,26 @@ class AccountingController extends Controller
         return ['rows' => $rows, 'totals' => $totals];
     }
 
-    private function cashBookTransactions(Request $request)
+    private function mainBookTransactions(Request $request)
     {
         return AccountTransaction::with(['account', 'relatedAccount', 'bankAccount'])
-            ->where(function ($query) {
-                $query->whereHas('account', fn ($q) => $q->where('code', '1100')->orWhere('subtype', 'cash'))
-                    ->orWhere('payment_method', 'cash');
+            ->whereHas('account', fn ($q) => $q->where('code', '1100'))
+            ->when($request->filled('from'), fn ($query) => $query->whereDate('transaction_date', '>=', $request->input('from')))
+            ->when($request->filled('to'), fn ($query) => $query->whereDate('transaction_date', '<=', $request->input('to')))
+            ->when($request->filled('direction'), fn ($query) => $query->where('direction', $request->input('direction')))
+            ->when($request->filled('search'), function ($query) use ($request) {
+                $term = '%'.$request->input('search').'%';
+                $query->where(fn ($q) => $q->where('reference_no', 'like', $term)->orWhere('description', 'like', $term));
             })
+            ->latest('transaction_date')
+            ->latest()
+            ->take(250);
+    }
+
+    private function pettyBookTransactions(Request $request)
+    {
+        return AccountTransaction::with(['account', 'relatedAccount', 'bankAccount'])
+            ->whereHas('account', fn ($q) => $q->where('code', '!=', '1100')->whereIn('subtype', ['cash', 'petty_cash']))
             ->when($request->filled('from'), fn ($query) => $query->whereDate('transaction_date', '>=', $request->input('from')))
             ->when($request->filled('to'), fn ($query) => $query->whereDate('transaction_date', '<=', $request->input('to')))
             ->when($request->filled('direction'), fn ($query) => $query->where('direction', $request->input('direction')))
@@ -220,10 +249,7 @@ class AccountingController extends Controller
     private function bankBookTransactions(Request $request)
     {
         return AccountTransaction::with(['account', 'relatedAccount'])
-            ->where(function ($query) {
-                $query->whereHas('account', fn ($q) => $q->where('code', '1200')->orWhere('subtype', 'bank'))
-                    ->orWhereIn('payment_method', ['bank_deposit', 'bank_transfer', 'card', 'mobile_payment']);
-            })
+            ->whereHas('account', fn ($q) => $q->where('code', '1200')->orWhere('subtype', 'bank'))
             ->when($request->filled('from'), fn ($query) => $query->whereDate('transaction_date', '>=', $request->input('from')))
             ->when($request->filled('to'), fn ($query) => $query->whereDate('transaction_date', '<=', $request->input('to')))
             ->when($request->filled('direction'), fn ($query) => $query->where('direction', $request->input('direction')))

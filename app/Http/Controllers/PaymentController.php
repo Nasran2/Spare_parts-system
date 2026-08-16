@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Payment;
 use App\Models\Purchase;
 use App\Services\DashboardVisibilityService;
+use App\Services\BulkPaymentAccountingService;
 use App\Support\SecretPos;
 use Illuminate\Http\Request;
 
@@ -53,6 +54,9 @@ class PaymentController extends Controller
             'payment_date' => $request->payment_date,
             'notes' => $request->notes,
         ]);
+        
+        app(BulkPaymentAccountingService::class)->recordSupplierPayment($payment, $request->user()->id ?? null);
+
         // Update paid and due amounts
         $purchase->paid_amount += $payment->amount;
         $purchase->due_amount = max(0, $purchase->total_amount - $purchase->paid_amount);

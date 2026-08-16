@@ -9,6 +9,7 @@ use App\Models\Purchase;
 use App\Models\Payment;
 use Illuminate\Http\Request;
 use App\Services\DashboardVisibilityService;
+use App\Services\BulkPaymentAccountingService;
 use App\Support\SecretPos;
 
 class BulkPaymentController extends Controller
@@ -65,17 +66,18 @@ class BulkPaymentController extends Controller
             if ($amount <= 0) continue;
 
             if ($alloc['type'] === 'opening_balance') {
-                Payment::create([
+                $payment = Payment::create([
                     'customer_id' => $customer->id,
                     'amount' => $amount,
                     'payment_method' => $request->payment_method,
                     'payment_date' => $request->payment_date,
                     'notes' => 'Payment towards Opening Balance',
                 ]);
+                app(BulkPaymentAccountingService::class)->recordCustomerPayment($payment, $request->user()->id ?? null);
             } elseif ($alloc['type'] === 'sale' && !empty($alloc['id'])) {
                 $sale = Sale::where('id', $alloc['id'])->where('customer_id', $customer->id)->first();
                 if ($sale) {
-                    Payment::create([
+                    $payment = Payment::create([
                         'customer_id' => $customer->id,
                         'sale_id' => $sale->id,
                         'amount' => $amount,
@@ -83,6 +85,7 @@ class BulkPaymentController extends Controller
                         'payment_date' => $request->payment_date,
                         'notes' => 'Bulk Payment Allocation',
                     ]);
+                    app(BulkPaymentAccountingService::class)->recordCustomerPayment($payment, $request->user()->id ?? null);
 
                     // Update Sale due amount
                     $sale->paid_amount += $amount;
@@ -146,17 +149,18 @@ class BulkPaymentController extends Controller
             if ($amount <= 0) continue;
 
             if ($alloc['type'] === 'opening_balance') {
-                Payment::create([
+                $payment = Payment::create([
                     'supplier_id' => $supplier->id,
                     'amount' => $amount,
                     'payment_method' => $request->payment_method,
                     'payment_date' => $request->payment_date,
                     'notes' => 'Payment towards Opening Balance',
                 ]);
+                app(BulkPaymentAccountingService::class)->recordSupplierPayment($payment, $request->user()->id ?? null);
             } elseif ($alloc['type'] === 'purchase' && !empty($alloc['id'])) {
                 $purchase = Purchase::where('id', $alloc['id'])->where('supplier_id', $supplier->id)->first();
                 if ($purchase) {
-                    Payment::create([
+                    $payment = Payment::create([
                         'supplier_id' => $supplier->id,
                         'purchase_id' => $purchase->id,
                         'amount' => $amount,
@@ -164,6 +168,7 @@ class BulkPaymentController extends Controller
                         'payment_date' => $request->payment_date,
                         'notes' => 'Bulk Payment Allocation',
                     ]);
+                    app(BulkPaymentAccountingService::class)->recordSupplierPayment($payment, $request->user()->id ?? null);
 
                     // Update Purchase due amount
                     $purchase->paid_amount += $amount;
