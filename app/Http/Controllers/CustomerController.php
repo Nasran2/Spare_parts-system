@@ -172,7 +172,8 @@ class CustomerController extends Controller
             'invoice' => (float) $overallSales->sum('total_amount'),
             'paid' => (float) $overallSales->sum('paid_amount'),
         ];
-        $overallTotals['balance'] = max(0, $overallTotals['invoice'] - $overallTotals['paid']);
+        $genericPayments = (float) $customer->payments()->whereNull('sale_id')->sum('amount');
+        $overallTotals['balance'] = max(0, $overallTotals['invoice'] - $overallTotals['paid']) + (float) $customer->opening_balance - $genericPayments;
         $overallTotals = [
             'invoice' => $customerDisplayValue($overallTotals['invoice']),
             'paid' => $customerDisplayValue($overallTotals['paid']),
@@ -222,6 +223,30 @@ class CustomerController extends Controller
                 ];
             }
         }
+        
+        $genericPaymentsList = $customer->payments()->whereNull('sale_id')->get();
+        foreach ($genericPaymentsList as $gp) {
+            $pDate = optional($gp->payment_date)->toDateString() ?: $gp->created_at->toDateString();
+            $transactions[] = [
+                'date' => $pDate,
+                'reference' => 'PAY-OP',
+                'invoice' => 'Opening Balance Payment',
+                'sale_id' => null,
+                'sale_date' => $pDate,
+                'type' => 'Payment',
+                'location' => config('app.name'),
+                'payment_status' => 'paid',
+                'debit' => 0.0,
+                'credit' => $customerDisplayValue($gp->amount),
+                'payment_method' => $gp->payment_method,
+                'notes' => $gp->notes ?? 'Payment towards Opening Balance',
+            ];
+        }
+
+        // Sort by date ascending
+        usort($transactions, function($a, $b) {
+            return strtotime($a['date']) <=> strtotime($b['date']);
+        });
 
         if (request()->expectsJson()) {
             return response()->json([
@@ -506,7 +531,7 @@ class CustomerController extends Controller
 
         $totalInvoice = $sales->sum('total_amount');
         $totalPaid = $sales->sum('paid_amount');
-        $totalDue = $sales->sum('due_amount');
+        $totalDue = $sales->sum('due_amount') + (float) $customer->opening_balance - (float) $customer->payments()->whereNull('sale_id')->sum('amount');
         $sales->each(function (Sale $sale) {
             $sale->privacy_display_invoice_no = $this->displayInvoiceLabelForSale($sale);
         });

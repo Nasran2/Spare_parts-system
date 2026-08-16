@@ -1785,7 +1785,7 @@ class ReportController extends Controller
                         }
         }])->get();
         $items = $customers->map(function ($c) {
-            $due = $c->sales->sum('due_amount');
+            $due = $c->sales->sum('due_amount') + (float) $c->opening_balance;
             return [
                 'customer' => $c,
                 'due' => $due,
@@ -1822,7 +1822,7 @@ class ReportController extends Controller
                         }
         }])->get();
         $items = $customers->map(function ($c) {
-            $due = $c->sales->sum('due_amount');
+            $due = $c->sales->sum('due_amount') + (float) $c->opening_balance;
             return [
                 'name' => $c->name,
                 'phone' => $c->phone,
@@ -1857,16 +1857,20 @@ class ReportController extends Controller
                         }
         }])->get();
         $items = $customers->map(function ($c) use ($controls) {
+            $dueAmount = $c->sales->sum('due_amount') + (float) $c->opening_balance;
             return [
                 !empty($controls['hide_supplier_names']) ? 'Hidden' : $c->name,
                 $c->phone,
                 $c->sales->count(),
                 $this->maskCurrencyForControls(
-                    (float) $c->sales->sum('due_amount'),
+                    $dueAmount,
                     $controls,
                     !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])
                 ),
             ];
+        })->filter(function ($row) use ($controls) {
+            // Need to filter out 0 due? The previous code didn't filter Csv but let's keep it same or just return it since map does it all.
+            return true;
         });
         $rows = [['Customer','Phone','Invoices','Due']];
         foreach ($items as $r) { $rows[] = $r; }

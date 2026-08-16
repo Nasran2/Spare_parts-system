@@ -181,6 +181,12 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
         ->middlewareFor(['create', 'store'], 'permission:suppliers.create')
         ->middlewareFor(['edit', 'update'], 'permission:suppliers.edit')
         ->middlewareFor(['destroy'], 'permission:suppliers.delete');
+    Route::get('suppliers/{supplier}/bulk-payment', [\App\Http\Controllers\BulkPaymentController::class, 'supplierPayment'])
+        ->middleware('permission:suppliers.edit')
+        ->name('suppliers.bulk-payment');
+    Route::post('suppliers/{supplier}/bulk-payment', [\App\Http\Controllers\BulkPaymentController::class, 'storeSupplierPayment'])
+        ->middleware('permission:suppliers.edit')
+        ->name('suppliers.bulk-payment.store');
 
     // Customers
     Route::resource('customers', CustomerController::class)
@@ -188,6 +194,12 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
         ->middlewareFor(['create', 'store'], 'permission:customers.create')
         ->middlewareFor(['edit', 'update'], 'permission:customers.edit')
         ->middlewareFor(['destroy'], 'permission:customers.delete');
+    Route::get('customers/{customer}/bulk-payment', [\App\Http\Controllers\BulkPaymentController::class, 'customerPayment'])
+        ->middleware('permission:customers.edit')
+        ->name('customers.bulk-payment');
+    Route::post('customers/{customer}/bulk-payment', [\App\Http\Controllers\BulkPaymentController::class, 'storeCustomerPayment'])
+        ->middleware('permission:customers.edit')
+        ->name('customers.bulk-payment.store');
     Route::post('customers/{customer}/send-reminder', [CustomerController::class, 'sendPaymentReminder'])
         ->middleware('permission:customers.edit')
         ->name('customers.send-reminder');

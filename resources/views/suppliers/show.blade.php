@@ -34,11 +34,16 @@
                 <h2 class="text-2xl font-bold flex items-center"><i class="fas fa-truck mr-3"></i>{{ !empty($controls['hide_supplier_names']) ? 'Hidden Supplier' : $supplier->name }}</h2>
                 <p class="text-blue-100">{{ !empty($controls['hide_supplier_names']) ? 'Hidden' : ($supplier->company_name ?? 'Individual Supplier') }}</p>
             </div>
-            <div>
+            <div class="flex items-center">
                 @if($supplier->is_active)
                     <span class="px-3 py-1 bg-green-500 rounded-full text-xs font-semibold"><i class="fas fa-check-circle mr-1"></i>Active</span>
                 @else
                     <span class="px-3 py-1 bg-gray-500 rounded-full text-xs font-semibold"><i class="fas fa-ban mr-1"></i>Inactive</span>
+                @endif
+                @if(isset($purchaseTotals['total_due']) && $purchaseTotals['total_due'] >= 1)
+                    <a href="#" onclick="openBulkPaymentModal('{{ route('suppliers.bulk-payment', $supplier->id) }}'); return false;" class="ml-4 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 transition shadow inline-flex items-center text-sm font-semibold">
+                        <i class="fas fa-money-bill-wave mr-2"></i> Make Payment
+                    </a>
                 @endif
             </div>
         </div>

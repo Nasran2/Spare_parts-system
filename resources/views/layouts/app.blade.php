@@ -1143,9 +1143,57 @@
         // Safety: ensure loader removed if JS fires late
         setTimeout(() => document.body.classList.add('loaded'), 1500);
     </script>
-
     @yield('extra-modals')
 
+    <!-- Global Bulk Payment Modal -->
+    <div id="globalBulkPaymentModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-[100]">
+        <div class="relative top-10 mx-auto p-0 border w-11/12 md:w-5/6 lg:w-4/5 shadow-2xl rounded-xl bg-white max-h-[90vh] overflow-y-auto flex flex-col">
+            <div class="sticky top-0 bg-white z-10 px-6 py-4 border-b flex items-center justify-between shadow-sm">
+                <h3 class="text-xl font-bold text-gray-900">Make Payment</h3>
+                <button onclick="closeBulkPaymentModal()" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">
+                    &times;
+                </button>
+            </div>
+            <div id="globalBulkPaymentModalContent" class="p-0">
+                <!-- Content loaded via AJAX -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openBulkPaymentModal(url) {
+            const container = document.getElementById('globalBulkPaymentModalContent');
+            container.innerHTML = '<div class="p-12 text-center text-gray-500"><i class="fas fa-spinner fa-spin text-3xl mb-4"></i><p>Loading...</p></div>';
+            document.getElementById('globalBulkPaymentModal').classList.remove('hidden');
+
+            fetch(url, {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(res => res.text())
+            .then(html => {
+                container.innerHTML = html;
+                
+                // Execute any scripts found in the injected HTML
+                const scripts = container.querySelectorAll('script');
+                scripts.forEach(script => {
+                    const newScript = document.createElement('script');
+                    newScript.text = script.innerHTML;
+                    document.body.appendChild(newScript);
+                    document.body.removeChild(newScript);
+                });
+            })
+            .catch(err => {
+                container.innerHTML = '<div class="p-12 text-center text-red-500"><i class="fas fa-exclamation-triangle text-3xl mb-4"></i><p>Failed to load payment form.</p></div>';
+            });
+        }
+
+        function closeBulkPaymentModal() {
+            document.getElementById('globalBulkPaymentModal').classList.add('hidden');
+            document.getElementById('globalBulkPaymentModalContent').innerHTML = '';
+        }
+    </script>
     @if(request()->routeIs('pos.index') && isset($privacySettings) && $privacySettings->is_enabled && ($privacySettings->apply_to_pos ?? false) && \App\Services\PrivacyModeService::canToggle(auth()->user()))
     <!-- Keyboard listener and toggle logic for Privacy Mode -->
     <script>

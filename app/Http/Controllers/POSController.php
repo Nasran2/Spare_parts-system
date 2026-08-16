@@ -1606,10 +1606,11 @@ class POSController extends Controller
             abort(404);
         }
 
+        $customer = Customer::find($id);
         $due = Sale::where('customer_id', $id)
             ->where('sale_type', 'sale')
             ->where('due_amount', '>', 0)
-            ->sum('due_amount');
+            ->sum('due_amount') + (float) optional($customer)->opening_balance;
         $controls = DashboardVisibilityService::configForUser(auth()->user());
         $due = DashboardVisibilityService::customerValue((float) $due, $controls);
 

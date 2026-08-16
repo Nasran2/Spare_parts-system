@@ -32,4 +32,19 @@ class Supplier extends Model
     {
         return $this->hasMany(Purchase::class);
     }
+
+    public function payments()
+    {
+        return $this->hasMany(Payment::class);
+    }
+
+    /**
+     * Get the total due amount for this supplier
+     */
+    public function getDueAmountAttribute()
+    {
+        $purchasesDue = $this->purchases()->sum('due_amount') ?? 0;
+        $genericPayments = $this->payments()->whereNull('purchase_id')->sum('amount') ?? 0;
+        return $purchasesDue + ($this->opening_balance ?? 0) - $genericPayments;
+    }
 }

@@ -104,6 +104,11 @@
                         </td>
                         <td class="px-6 py-4 text-center">
                             <div class="flex items-center justify-center space-x-2">
+                                @if(isset($customer->due_amount) && $customer->due_amount >= 1)
+                                    <a href="#" onclick="openBulkPaymentModal('{{ route('customers.bulk-payment', $customer->id) }}'); return false;" class="p-2 text-green-600 hover:bg-green-50 rounded-lg transition" title="Make Payment">
+                                        <i class="fas fa-money-bill-wave"></i>
+                                    </a>
+                                @endif
                                 <button onclick="viewCustomer({{ $customer->id }})" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition" title="View">
                                     <i class="fas fa-eye"></i>
                                 </button>

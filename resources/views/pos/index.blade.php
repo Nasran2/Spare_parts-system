@@ -2461,6 +2461,10 @@
                         <label class="block text-sm font-medium text-gray-700">Address</label>
                         <textarea name="address" rows="2" class="mt-1 w-full px-3 py-2 border rounded"></textarea>
                     </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Opening Balance</label>
+                        <input type="number" step="0.01" name="opening_balance" value="0" class="mt-1 w-full px-3 py-2 border rounded" />
+                    </div>
                     <div class="flex justify-end space-x-2 pt-2">
                         <button type="button" data-close class="px-4 py-2 bg-gray-100 text-gray-700 rounded">Cancel</button>
                         <button type="submit" class="px-4 py-2 bg-emerald-600 text-white rounded">Save</button>

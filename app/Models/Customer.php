@@ -31,11 +31,18 @@ class Customer extends Model
         return $this->hasMany(Sale::class);
     }
 
+    public function payments()
+    {
+        return $this->hasMany(Payment::class);
+    }
+
     /**
      * Get the total due amount for this customer
      */
     public function getDueAmountAttribute()
     {
-        return $this->sales()->sum('due_amount') ?? 0;
+        $salesDue = $this->sales()->sum('due_amount') ?? 0;
+        $genericPayments = $this->payments()->whereNull('sale_id')->sum('amount') ?? 0;
+        return $salesDue + ($this->opening_balance ?? 0) - $genericPayments;
     }
 }

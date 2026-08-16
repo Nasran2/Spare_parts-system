@@ -97,9 +97,10 @@ class SupplierController extends Controller
         $purchasesQuery = SecretPos::excludeHiddenPurchaseRanges($purchasesQuery, 'total_amount');
         $purchases = $purchasesQuery->get();
 
+        $genericPayments = (float) $supplier->payments()->whereNull('purchase_id')->sum('amount');
         $purchaseTotals = [
             'total_purchases' => (float) $purchases->sum('total_amount'),
-            'total_due' => (float) $purchases->sum('due_amount'),
+            'total_due' => (float) $purchases->sum('due_amount') + (float) $supplier->opening_balance - $genericPayments,
         ];
 
         return view('suppliers.show', compact('supplier', 'purchases', 'purchaseTotals', 'controls'));

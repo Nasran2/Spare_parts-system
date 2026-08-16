@@ -70,10 +70,20 @@
             </div>
 
             <div class="mt-4 pt-4 border-t border-gray-200 flex justify-between items-center">
-                <span class="text-xs text-gray-500">
-                    <i class="fas fa-shopping-cart mr-1"></i>0 Purchases
-                </span>
+                <div class="flex flex-col">
+                    <span class="text-xs text-gray-500 mb-1">
+                        <i class="fas fa-shopping-cart mr-1"></i>{{ $supplier->purchases()->count() }} Purchases
+                    </span>
+                    <span class="text-sm font-bold {{ $supplier->due_amount > 0 ? 'text-red-600' : 'text-green-600' }}">
+                        Due: {{ \App\Models\Setting::get('currency_symbol', 'Rs') }} {{ number_format($supplier->due_amount, 2) }}
+                    </span>
+                </div>
                 <div class="flex space-x-2">
+                    @if(isset($supplier->due_amount) && $supplier->due_amount >= 1)
+                        <a href="#" onclick="openBulkPaymentModal('{{ route('suppliers.bulk-payment', $supplier->id) }}'); return false;" class="p-2 text-green-600 hover:bg-green-50 rounded-lg transition" title="Make Payment">
+                            <i class="fas fa-money-bill-wave"></i>
+                        </a>
+                    @endif
                     <a href="{{ route('suppliers.show', $supplier->id) }}" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition" title="View">
                         <i class="fas fa-eye"></i>
                     </a>

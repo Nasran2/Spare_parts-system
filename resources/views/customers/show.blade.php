@@ -16,9 +16,16 @@
             <span>/</span>
             <span class="font-semibold text-gray-800">{{ $customer->name }}</span>
         </div>
-        <div class="text-right">
-            <p class="text-xs text-gray-500">Mobile</p>
-            <p class="font-semibold text-gray-800">{{ $customer->phone ?: '—' }}</p>
+        <div class="text-right flex items-center gap-4">
+            <div>
+                <p class="text-xs text-gray-500">Mobile</p>
+                <p class="font-semibold text-gray-800">{{ $customer->phone ?: '—' }}</p>
+            </div>
+            @if(isset($overallTotals['balance']) && is_numeric(str_replace(',', '', $overallTotals['balance'])) && str_replace(',', '', $overallTotals['balance']) >= 1)
+                <a href="#" onclick="openBulkPaymentModal('{{ route('customers.bulk-payment', $customer->id) }}'); return false;" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition shadow flex items-center gap-2 text-sm font-semibold">
+                    <i class="fas fa-money-bill-wave"></i> Make Payment
+                </a>
+            @endif
         </div>
     </div>
 
