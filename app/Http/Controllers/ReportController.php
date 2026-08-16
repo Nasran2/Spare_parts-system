@@ -324,6 +324,16 @@ class ReportController extends Controller
             $summary['total_cheque'] += $cheque;
         }
         $daily = collect(array_values($dailyMap));
+        $page = $request->input('page', 1);
+        $perPage = 10;
+        $daily = new \Illuminate\Pagination\LengthAwarePaginator(
+            $daily->forPage($page, $perPage)->values(),
+            $daily->count(),
+            $perPage,
+            $page,
+            ['path' => $request->url(), 'query' => $request->query()]
+        );
+
         $sales = $visible->values();
         if (PrivacyModeService::isActiveForUser($request->user()) && PrivacyModeService::shouldMaskForCurrentPage()) {
             PrivacyModeService::applyDailyInvoiceLabels($sales);

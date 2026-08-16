@@ -216,6 +216,9 @@
                 </tbody>
             </table>
         </div>
+        <div class="mt-4">
+            {{ $daily->links() }}
+        </div>
     </div>
     @endif
 </div>
