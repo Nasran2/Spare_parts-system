@@ -344,7 +344,7 @@ class ReportController extends Controller
         $subcategoryId = $request->filled('subcategory_id') ? (int) $request->input('subcategory_id') : null;
         $categoryIds = $this->resolveCategoryFilterIds($categoryId, $subcategoryId);
 
-        $sales = Sale::with(['customer'])
+        $sales = Sale::with(['customer', 'payments'])
             ->when($from, fn($q) => $q->whereDate('sale_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('sale_date', '<=', $to))
             ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
@@ -365,8 +365,24 @@ class ReportController extends Controller
             'total_sales' => $visible->sum('total_amount'),
             'total_paid' => $visible->sum('paid_amount'),
             'total_due' => $visible->sum('due_amount'),
+            'total_cash' => 0.0,
+            'total_cheque' => 0.0,
             'count' => $visible->count(),
         ];
+
+        foreach ($visible as $s) {
+            $cash = 0.0;
+            $cheque = 0.0;
+            foreach ($s->payments as $payment) {
+                if ($payment->payment_method === 'cash') {
+                    $cash += (float) $payment->amount;
+                } elseif ($payment->payment_method === 'cheque') {
+                    $cheque += (float) $payment->amount;
+                }
+            }
+            $summary['total_cash'] += $cash;
+            $summary['total_cheque'] += $cheque;
+        }
 
         if (!empty($controls['hide_total_sales'])) {
             $summary['total_sales'] = 0;
@@ -374,6 +390,8 @@ class ReportController extends Controller
         if (!empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) {
             $summary['total_paid'] = 0;
             $summary['total_due'] = 0;
+            $summary['total_cash'] = 0;
+            $summary['total_cheque'] = 0;
         }
         if (!empty($controls['hide_invoice_details'])) {
             $summary['count'] = 0;
