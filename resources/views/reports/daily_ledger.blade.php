@@ -46,8 +46,8 @@
             <p class="text-2xl font-bold text-gray-800 mt-1">{{ $maskMoney($pettyCashBalance) }}</p>
         </div>
         <div class="bg-white p-4 rounded shadow border-l-4 border-emerald-500">
-            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Period Income (In)</p>
-            <p class="text-2xl font-bold text-emerald-600 mt-1">{{ $maskMoney($totalIn) }}</p>
+            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Sales Revenue</p>
+            <p class="text-2xl font-bold text-emerald-600 mt-1">{{ $maskMoney($salesRevenue) }}</p>
         </div>
         <div class="bg-white p-4 rounded shadow border-l-4 border-red-500">
             <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Period Expenses (Out)</p>
@@ -55,49 +55,116 @@
         </div>
     </div>
 
-    <div class="bg-white rounded shadow p-4">
-        <h4 class="font-semibold mb-4 text-gray-800 text-lg border-b pb-2"><i class="fas fa-book mr-2 text-gray-600"></i>Daily Ledger Transactions</h4>
-        <div class="overflow-x-auto">
-            <table class="min-w-full text-sm">
-                <thead class="bg-gray-50 border-b">
-                    <tr class="text-left text-gray-600">
-                        <th class="px-4 py-3 font-medium">Date</th>
-                        <th class="px-4 py-3 font-medium">Type</th>
-                        <th class="px-4 py-3 font-medium">Account</th>
-                        <th class="px-4 py-3 font-medium">Related Account</th>
-                        <th class="px-4 py-3 font-medium">Reference</th>
-                        <th class="px-4 py-3 font-medium">Description</th>
-                        <th class="px-4 py-3 font-medium text-right text-emerald-700">Money In (Dr)</th>
-                        <th class="px-4 py-3 font-medium text-right text-red-700">Money Out (Cr)</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y">
-                @php
-                    $timezone = config('app.timezone', 'Asia/Colombo');
-                @endphp
-                @forelse($transactions as $t)
-                    <tr class="hover:bg-gray-50 transition-colors">
-                        <td class="px-4 py-3 text-gray-700 whitespace-nowrap">{{ $t->transaction_date ? $t->transaction_date->format('Y-m-d') : '' }}</td>
-                        <td class="px-4 py-3 whitespace-nowrap">
-                            <span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-700 border">{{ ucfirst(str_replace('_', ' ', $t->source_type)) }}</span>
-                        </td>
-                        <td class="px-4 py-3 text-gray-700 font-medium">{{ $t->account?->name }}</td>
-                        <td class="px-4 py-3 text-gray-600">{{ $t->relatedAccount?->name ?? '—' }}</td>
-                        <td class="px-4 py-3 text-gray-600">{{ $t->reference_no ?? '—' }}</td>
-                        <td class="px-4 py-3 text-gray-600 text-xs">{{ $t->description ?? '—' }}</td>
-                        <td class="px-4 py-3 text-right text-emerald-600 font-medium whitespace-nowrap">
-                            {{ $t->direction === 'in' ? $maskMoney($t->amount) : '—' }}
-                        </td>
-                        <td class="px-4 py-3 text-right text-red-600 font-medium whitespace-nowrap">
-                            {{ $t->direction === 'out' ? $maskMoney($t->amount) : '—' }}
-                        </td>
-                    </tr>
-                @empty
-                    <tr><td colspan="8" class="px-4 py-8 text-center text-gray-500 bg-gray-50 rounded"><i class="fas fa-folder-open text-3xl mb-3 text-gray-300 block"></i>No transactions found for the selected date range.</td></tr>
-                @endforelse
-                </tbody>
-            </table>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+        <div class="bg-white p-4 rounded shadow border-l-4 border-indigo-500">
+            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Sales</p>
+            <p class="text-xl font-bold text-gray-800 mt-1">{{ $maskMoney($totalSales) }}</p>
+        </div>
+        <div class="bg-white p-4 rounded shadow border-l-4 border-green-500">
+            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Cash Received</p>
+            <p class="text-xl font-bold text-gray-800 mt-1">{{ $maskMoney($totalCashReceived) }}</p>
+        </div>
+        <div class="bg-white p-4 rounded shadow border-l-4 border-purple-500">
+            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Cheque Received</p>
+            <p class="text-xl font-bold text-gray-800 mt-1">{{ $maskMoney($totalChequeReceived) }}</p>
+        </div>
+        <div class="bg-white p-4 rounded shadow border-l-4 border-rose-500">
+            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Due Amount</p>
+            <p class="text-xl font-bold text-gray-800 mt-1">{{ $maskMoney($totalDueAmount) }}</p>
         </div>
     </div>
+
+    @php
+        $timezone = config('app.timezone', 'Asia/Colombo');
+        
+        $renderTable = function($transactions, $title, $iconClass, $openingBalance, $closingBalance) use ($maskMoney, $from, $to) {
+            $html = '<div class="bg-white rounded shadow p-4 mt-6">';
+            $html .= '<h4 class="font-semibold mb-4 text-gray-800 text-lg border-b pb-2"><i class="' . $iconClass . ' mr-2"></i>' . $title . '</h4>';
+            $html .= '<div class="overflow-x-auto"><table class="min-w-full text-sm">';
+            $html .= '<thead class="bg-gray-50 border-b"><tr class="text-left text-gray-600">';
+            $html .= '<th class="px-4 py-3 font-medium">Date</th>';
+            $html .= '<th class="px-4 py-3 font-medium">Type</th>';
+            $html .= '<th class="px-4 py-3 font-medium">Account</th>';
+            $html .= '<th class="px-4 py-3 font-medium">Related Account</th>';
+            $html .= '<th class="px-4 py-3 font-medium">Reference</th>';
+            $html .= '<th class="px-4 py-3 font-medium">Description & Details</th>';
+            $html .= '<th class="px-4 py-3 font-medium text-right text-emerald-700">Money In (Dr)</th>';
+            $html .= '<th class="px-4 py-3 font-medium text-right text-red-700">Money Out (Cr)</th>';
+            $html .= '<th class="px-4 py-3 font-medium text-right text-blue-700">Balance</th>';
+            $html .= '</tr></thead><tbody class="divide-y">';
+            
+            // Opening Balance Row
+            $html .= '<tr class="bg-blue-50/50">';
+            $html .= '<td class="px-4 py-3 text-gray-700 whitespace-nowrap">' . ($from ?? '') . '</td>';
+            $html .= '<td class="px-4 py-3 whitespace-nowrap"><span class="px-2 py-1 rounded text-xs bg-blue-100 text-blue-700 font-medium">Balance</span></td>';
+            $html .= '<td class="px-4 py-3 text-gray-500">—</td>';
+            $html .= '<td class="px-4 py-3 text-gray-500">—</td>';
+            $html .= '<td class="px-4 py-3 text-gray-500">—</td>';
+            $html .= '<td class="px-4 py-3 text-gray-800 font-medium italic">Opening Balance</td>';
+            $html .= '<td class="px-4 py-3 text-center text-gray-400">—</td>';
+            $html .= '<td class="px-4 py-3 text-center text-gray-400">—</td>';
+            $html .= '<td class="px-4 py-3 text-right text-blue-700 font-bold whitespace-nowrap">' . $maskMoney($openingBalance) . '</td>';
+            $html .= '</tr>';
+
+            if ($transactions->isEmpty()) {
+                $html .= '<tr><td colspan="9" class="px-4 py-8 text-center text-gray-500 bg-gray-50"><i class="fas fa-folder-open text-3xl mb-3 text-gray-300 block"></i>No transactions found.</td></tr>';
+            } else {
+                foreach ($transactions as $t) {
+                    $date = $t->transaction_date ? $t->transaction_date->format('Y-m-d') : '';
+                    $type = ucfirst(str_replace('_', ' ', $t->source_type));
+                    $accName = $t->account?->name ?? '—';
+                    $relAccName = $t->relatedAccount?->name ?? '—';
+                    $refNo = $t->reference_no ?? '—';
+                    $moneyIn = $t->direction === 'in' ? $maskMoney($t->amount) : '—';
+                    $moneyOut = $t->direction === 'out' ? $maskMoney($t->amount) : '—';
+                    $balance = $maskMoney($t->running_balance);
+                    
+                    $desc = htmlspecialchars($t->description ?? '—');
+                    
+                    if ($t->source_type === 'payment' && $t->cheque_details && $t->cheque_details->count() > 0) {
+                        $desc .= '<div class="mt-2 space-y-1">';
+                        foreach ($t->cheque_details as $cheque) {
+                            $desc .= '<div class="text-xs bg-purple-50 text-purple-700 border border-purple-100 p-1 rounded">';
+                            $desc .= '<i class="fas fa-money-check mr-1"></i> <strong>' . htmlspecialchars($cheque->bank_name) . '</strong> - ' . htmlspecialchars($cheque->cheque_number) . ' - ' . $maskMoney($cheque->amount);
+                            $desc .= '</div>';
+                        }
+                        $desc .= '</div>';
+                    }
+                    
+                    $html .= '<tr class="hover:bg-gray-50 transition-colors">';
+                    $html .= '<td class="px-4 py-3 text-gray-700 whitespace-nowrap">' . $date . '</td>';
+                    $html .= '<td class="px-4 py-3 whitespace-nowrap"><span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-700 border">' . $type . '</span></td>';
+                    $html .= '<td class="px-4 py-3 text-gray-700 font-medium">' . $accName . '</td>';
+                    $html .= '<td class="px-4 py-3 text-gray-600">' . $relAccName . '</td>';
+                    $html .= '<td class="px-4 py-3 text-gray-600">' . $refNo . '</td>';
+                    $html .= '<td class="px-4 py-3 text-gray-600">' . $desc . '</td>';
+                    $html .= '<td class="px-4 py-3 text-right text-emerald-600 font-medium whitespace-nowrap">' . $moneyIn . '</td>';
+                    $html .= '<td class="px-4 py-3 text-right text-red-600 font-medium whitespace-nowrap">' . $moneyOut . '</td>';
+                    $html .= '<td class="px-4 py-3 text-right text-blue-600 font-bold whitespace-nowrap">' . $balance . '</td>';
+                    $html .= '</tr>';
+                }
+            }
+            
+            // Closing Balance Row
+            $html .= '<tr class="bg-gray-100/50 border-t-2 border-gray-200">';
+            $html .= '<td class="px-4 py-3 text-gray-700 whitespace-nowrap">' . ($to ?? '') . '</td>';
+            $html .= '<td class="px-4 py-3 whitespace-nowrap"><span class="px-2 py-1 rounded text-xs bg-gray-200 text-gray-800 font-medium">Balance</span></td>';
+            $html .= '<td class="px-4 py-3 text-gray-500">—</td>';
+            $html .= '<td class="px-4 py-3 text-gray-500">—</td>';
+            $html .= '<td class="px-4 py-3 text-gray-500">—</td>';
+            $html .= '<td class="px-4 py-3 text-gray-800 font-medium italic">Closing Balance</td>';
+            $html .= '<td class="px-4 py-3 text-center text-gray-400">—</td>';
+            $html .= '<td class="px-4 py-3 text-center text-gray-400">—</td>';
+            $html .= '<td class="px-4 py-3 text-right text-blue-700 font-bold whitespace-nowrap text-lg">' . $maskMoney($closingBalance) . '</td>';
+            $html .= '</tr>';
+
+            $html .= '</tbody></table></div></div>';
+            return $html;
+        };
+    @endphp
+
+    {!! $renderTable($mainTransactions, 'Main Account (Cash) Transactions', 'fas fa-wallet text-blue-600', $mainOpeningBalance, $mainClosingBalance) !!}
+    {!! $renderTable($pettyTransactions, 'Petty Cash Transactions', 'fas fa-cash-register text-orange-600', $pettyOpeningBalance, $pettyClosingBalance) !!}
+
 </div>
 @endsection

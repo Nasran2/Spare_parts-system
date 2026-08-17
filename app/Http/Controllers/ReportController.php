@@ -482,37 +482,131 @@ class ReportController extends Controller
         $to = $request->input('to');
 
         // Global Balances
-        $mainAccountBalance = \App\Models\Accounting\ChartAccount::where('code', '1100')->value('current_balance') ?? 0;
-        $pettyCashBalance = \App\Models\Accounting\PettyCashFund::where('is_active', true)->sum('current_balance');
+        $mainAccount = \App\Models\Accounting\ChartAccount::where('code', '1100')->first();
+        $mainAccountBalance = $mainAccount ? (float) $mainAccount->current_balance : 0;
         
-        // Find asset accounts (cash, bank, petty cash)
-        $assetAccounts = \App\Models\Accounting\ChartAccount::where('type', 'asset')->pluck('id')->toArray();
+        $pettyCashAccounts = \App\Models\Accounting\PettyCashFund::where('is_active', true)->get();
+        $pettyCashBalance = $pettyCashAccounts->sum('current_balance');
+        $pettyCashAccountIds = $pettyCashAccounts->pluck('chart_account_id')->filter()->toArray();
 
-        // Fetch asset transactions
-        $transactions = \App\Models\Accounting\AccountTransaction::with(['account', 'relatedAccount'])
-            ->whereIn('account_id', $assetAccounts)
+        // 1. Fetch transactions for Main Account
+        $mainTransactions = \App\Models\Accounting\AccountTransaction::with(['account', 'relatedAccount'])
+            ->where('account_id', $mainAccount->id ?? 0)
             ->when($from, fn ($q) => $q->whereDate('transaction_date', '>=', $from))
             ->when($to, fn ($q) => $q->whereDate('transaction_date', '<=', $to))
-            ->orderBy('transaction_date', 'desc')
-            ->orderBy('created_at', 'desc')
+            ->orderBy('transaction_date', 'asc')
+            ->orderBy('id', 'asc')
             ->get();
             
-        // Calculate Totals for the period
-        $totalIn = $transactions->where('direction', 'in')->sum('amount');
-        $totalOut = $transactions->where('direction', 'out')->sum('amount');
-        
+        // 2. Fetch transactions for Petty Cash
+        $pettyTransactions = collect();
+        if (!empty($pettyCashAccountIds)) {
+            $pettyTransactions = \App\Models\Accounting\AccountTransaction::with(['account', 'relatedAccount'])
+                ->whereIn('account_id', $pettyCashAccountIds)
+                ->when($from, fn ($q) => $q->whereDate('transaction_date', '>=', $from))
+                ->when($to, fn ($q) => $q->whereDate('transaction_date', '<=', $to))
+                ->orderBy('transaction_date', 'asc')
+                ->orderBy('id', 'asc')
+                ->get();
+        }
+
+        // Calculate opening balances based on net change AFTER the 'from' date
+        $mainNetChangeFrom = \App\Models\Accounting\AccountTransaction::where('account_id', $mainAccount->id ?? 0)
+            ->when($from, fn ($q) => $q->whereDate('transaction_date', '>=', $from))
+            ->sum(\Illuminate\Support\Facades\DB::raw("CASE WHEN direction = 'in' THEN amount ELSE -amount END"));
+        $mainOpeningBalance = $mainAccountBalance - (float) $mainNetChangeFrom;
+
+        $pettyNetChangeFrom = 0;
+        if (!empty($pettyCashAccountIds)) {
+            $pettyNetChangeFrom = \App\Models\Accounting\AccountTransaction::whereIn('account_id', $pettyCashAccountIds)
+                ->when($from, fn ($q) => $q->whereDate('transaction_date', '>=', $from))
+                ->sum(\Illuminate\Support\Facades\DB::raw("CASE WHEN direction = 'in' THEN amount ELSE -amount END"));
+        }
+        $pettyOpeningBalance = $pettyCashBalance - (float) $pettyNetChangeFrom;
+
+        // Apply running balances (Top is oldest, Bottom is newest)
+        $currentRunningMain = $mainOpeningBalance;
+        foreach ($mainTransactions as $t) {
+            $currentRunningMain += ($t->direction === 'in' ? (float) $t->amount : -(float) $t->amount);
+            $t->running_balance = $currentRunningMain;
+        }
+        $mainClosingBalance = $currentRunningMain;
+
+        $currentRunningPetty = $pettyOpeningBalance;
+        foreach ($pettyTransactions as $t) {
+            $currentRunningPetty += ($t->direction === 'in' ? (float) $t->amount : -(float) $t->amount);
+            $t->running_balance = $currentRunningPetty;
+        }
+        $pettyClosingBalance = $currentRunningPetty;
+
+        // 3. Cheque Details for Payments
+        $paymentIds = $mainTransactions->concat($pettyTransactions)
+            ->where('source_type', 'payment')
+            ->pluck('source_id')
+            ->unique()
+            ->toArray();
+            
+        $chequesByPayment = [];
+        if (!empty($paymentIds)) {
+            $chequesByPayment = \App\Models\ChequePayment::whereIn('payment_id', $paymentIds)
+                ->get()
+                ->groupBy('payment_id');
+        }
+
+        // Assign cheque details to transactions
+        foreach ([$mainTransactions, $pettyTransactions] as $txnList) {
+            foreach ($txnList as $t) {
+                if ($t->source_type === 'payment' && isset($chequesByPayment[$t->source_id])) {
+                    $t->cheque_details = $chequesByPayment[$t->source_id];
+                } else {
+                    $t->cheque_details = collect();
+                }
+            }
+        }
+
+        // 4. Metrics Calculation
+        $salesRevenueAccountId = \App\Models\Accounting\ChartAccount::where('code', '4100')->value('id');
+        $salesRevenue = $mainTransactions->concat($pettyTransactions)
+            ->where('direction', 'in')
+            ->where('related_account_id', $salesRevenueAccountId)
+            ->sum('amount');
+            
         $expenseAccountIds = \App\Models\Accounting\ChartAccount::where('type', 'expense')->pluck('id')->toArray();
-        $totalExpensePeriod = $transactions->where('direction', 'out')
-                                ->whereIn('related_account_id', $expenseAccountIds)
-                                ->sum('amount');
+        $totalExpensePeriod = $mainTransactions->concat($pettyTransactions)
+            ->where('direction', 'out')
+            ->whereIn('related_account_id', $expenseAccountIds)
+            ->sum('amount');
+
+        // New Metrics based on Sales and Payments
+        $salesInPeriod = \App\Models\Sale::when($from, fn ($q) => $q->whereDate('sale_date', '>=', $from))
+            ->when($to, fn ($q) => $q->whereDate('sale_date', '<=', $to))
+            ->get();
+            
+        $totalSales = $salesInPeriod->sum('total_amount');
+        $totalDueAmount = $salesInPeriod->sum('due_amount');
+
+        $paymentsInPeriod = \App\Models\Payment::when($from, fn ($q) => $q->whereDate('payment_date', '>=', $from))
+            ->when($to, fn ($q) => $q->whereDate('payment_date', '<=', $to))
+            ->get();
+            
+        $totalCashReceived = $paymentsInPeriod->where('payment_method', 'cash')->sum('amount');
+        $totalChequeReceived = $paymentsInPeriod->where('payment_method', 'cheque')->sum('amount');
 
         return compact(
-            'transactions', 
+            'mainTransactions', 
+            'pettyTransactions', 
             'mainAccountBalance', 
             'pettyCashBalance', 
-            'totalIn', 
-            'totalOut', 
-            'totalExpensePeriod', 
+            'salesRevenue', 
+            'totalExpensePeriod',
+            'totalSales',
+            'totalCashReceived',
+            'totalChequeReceived',
+            'totalDueAmount',
+            'mainOpeningBalance',
+            'mainClosingBalance',
+            'pettyOpeningBalance',
+            'pettyClosingBalance',
             'from', 
             'to'
         );
@@ -533,29 +627,77 @@ class ReportController extends Controller
     public function dailyLedgerCsv(Request $request)
     {
         $data = $this->dailyLedgerData($request);
-        $transactions = $data['transactions'];
+        $mainTransactions = $data['mainTransactions'];
+        $pettyTransactions = $data['pettyTransactions'];
         
-        $rows = [['Date', 'Type', 'Account', 'Related Account', 'Reference', 'Description', 'Money In', 'Money Out']];
-        foreach ($transactions as $t) {
-            $date = $t->transaction_date ? $t->transaction_date->format('Y-m-d') : '';
-            $type = ucfirst($t->source_type);
-            $account = $t->account ? $t->account->name : '';
-            $related = $t->relatedAccount ? $t->relatedAccount->name : '';
+        $rows = [];
+        
+        $addTransactions = function($title, $transactions, $openingBalance, $closingBalance) use (&$rows, $from, $to) {
+            $rows[] = [$title];
+            $rows[] = ['Date', 'Type', 'Account', 'Related Account', 'Reference', 'Description & Details', 'Money In', 'Money Out', 'Balance'];
             
-            $moneyIn = $t->direction === 'in' ? number_format((float) $t->amount, 2, '.', '') : '0.00';
-            $moneyOut = $t->direction === 'out' ? number_format((float) $t->amount, 2, '.', '') : '0.00';
-            
+            // Add Opening Balance Row
             $rows[] = [
-                $date,
-                $type,
-                $account,
-                $related,
-                $t->reference_no,
-                $t->description,
-                $moneyIn,
-                $moneyOut
+                $from ?? '',
+                'Balance',
+                '—',
+                '—',
+                '—',
+                'Opening Balance',
+                '—',
+                '—',
+                number_format((float) $openingBalance, 2, '.', '')
             ];
-        }
+            
+            foreach ($transactions as $t) {
+                $date = $t->transaction_date ? $t->transaction_date->format('Y-m-d') : '';
+                $type = ucfirst($t->source_type);
+                $account = $t->account ? $t->account->name : '';
+                $related = $t->relatedAccount ? $t->relatedAccount->name : '';
+                
+                $moneyIn = $t->direction === 'in' ? number_format((float) $t->amount, 2, '.', '') : '0.00';
+                $moneyOut = $t->direction === 'out' ? number_format((float) $t->amount, 2, '.', '') : '0.00';
+                $balance = number_format((float) $t->running_balance, 2, '.', '');
+                
+                $desc = $t->description ?? '';
+                if ($t->source_type === 'payment' && $t->cheque_details && $t->cheque_details->count() > 0) {
+                    foreach ($t->cheque_details as $cheque) {
+                        $desc .= " | Cheque: {$cheque->bank_name} - {$cheque->cheque_number} - " . number_format((float) $cheque->amount, 2, '.', '');
+                    }
+                }
+                
+                $rows[] = [
+                    $date,
+                    $type,
+                    $account,
+                    $related,
+                    $t->reference_no,
+                    $desc,
+                    $moneyIn,
+                    $moneyOut,
+                    $balance
+                ];
+            }
+            
+            // Add Closing Balance Row
+            $rows[] = [
+                $to ?? '',
+                'Balance',
+                '—',
+                '—',
+                '—',
+                'Closing Balance',
+                '—',
+                '—',
+                number_format((float) $closingBalance, 2, '.', '')
+            ];
+            
+            $rows[] = []; // Empty row spacing
+        };
+        
+        $addTransactions('Main Account (Cash) Transactions', $mainTransactions, $data['mainOpeningBalance'], $data['mainClosingBalance']);
+        $addTransactions('Petty Cash Transactions', $pettyTransactions, $data['pettyOpeningBalance'], $data['pettyClosingBalance']);
+
         $csv = fopen('php://temp','r+'); foreach ($rows as $r) { fputcsv($csv,$r); } rewind($csv);
         return response(stream_get_contents($csv), 200, [
             'Content-Type' => 'text/csv',
