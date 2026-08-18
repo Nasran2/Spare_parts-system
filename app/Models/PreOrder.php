@@ -15,6 +15,7 @@ class PreOrder extends Model
         'document_type', 'vehicle_name', 'registration_number', 'chassis_number',
         'vehicle_description', 'vehicle_image', 'instructions', 'notes',
         'expected_delivery_date', 'bill_discount_type', 'bill_discount_value',
+        'custom_tax_rate', 'pdf_tax_display',
         'subtotal', 'discount_amount', 'tax_amount', 'rounding_adjustment',
         'grand_total', 'paid_amount', 'held_cheque_amount', 'due_amount', 'status',
         'payment_status', 'completed_at', 'completed_by', 'cancelled_at',

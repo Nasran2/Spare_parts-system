@@ -38,14 +38,14 @@ class PreOrderService
 
             $old = $preOrder->exists ? $preOrder->only([
                 'customer_id', 'store_id', 'pre_order_date', 'document_type', 'vehicle_name',
-                'registration_number', 'chassis_number', 'expected_delivery_date', 'grand_total',
+                'vehicle_description', 'expected_delivery_date', 'grand_total', 'custom_tax_rate', 'pdf_tax_display',
             ]) : null;
 
             $preOrder->fill(Arr::only($data, [
                 'customer_id', 'store_id', 'pre_order_date', 'document_type', 'vehicle_name',
-                'registration_number', 'chassis_number', 'vehicle_description', 'vehicle_image',
+                'vehicle_description', 'vehicle_image',
                 'instructions', 'notes', 'expected_delivery_date', 'bill_discount_type',
-                'bill_discount_value',
+                'bill_discount_value', 'custom_tax_rate', 'pdf_tax_display'
             ]));
             $preOrder->updated_by = $userId;
             $preOrder->save();
@@ -53,15 +53,33 @@ class PreOrderService
             $calculated = $this->calculateInputItems(
                 $data['items'],
                 $data['bill_discount_type'] ?? 'fixed',
-                $data['bill_discount_value'] ?? 0
+                $data['bill_discount_value'] ?? 0,
+                $data['custom_tax_rate'] ?? null,
+                $data['pdf_tax_display'] ?? 'separate'
             );
 
-            $oldItems = $preOrder->items()->get()->map(fn ($item) => $item->only([
+            $oldItemModels = $preOrder->items()->get();
+            foreach ($oldItemModels as $oldItem) {
+                if ($oldItem->product_id) {
+                    $this->restorePreOrderStock($preOrder, $oldItem);
+                }
+            }
+            $oldItems = $oldItemModels->map(fn ($item) => $item->only([
                 'id', 'product_id', 'original_product_name', 'quantity', 'quoted_price', 'final_price',
             ]))->values()->all();
             $preOrder->items()->delete();
             foreach ($calculated['items'] as $itemData) {
-                $preOrder->items()->create($itemData);
+                if (empty($itemData['product_id'])) {
+                    $match = Product::where('name', $itemData['original_product_name'])->where('is_active', true)->first();
+                    if ($match) {
+                        $itemData['product_id'] = $match->id;
+                        $itemData['sync_status'] = 'linked';
+                    }
+                }
+                $newItem = $preOrder->items()->create($itemData);
+                if ($newItem->product_id) {
+                    $this->deductStock($preOrder, $newItem);
+                }
             }
             $newItems = $preOrder->items()->get();
 
@@ -98,7 +116,7 @@ class PreOrderService
                 $old ? array_merge($old, ['items' => $oldItems]) : null,
                 array_merge($preOrder->only([
                     'customer_id', 'store_id', 'pre_order_date', 'document_type', 'vehicle_name',
-                    'registration_number', 'chassis_number', 'expected_delivery_date', 'grand_total',
+                    'vehicle_description', 'expected_delivery_date', 'grand_total', 'custom_tax_rate', 'pdf_tax_display'
                 ]), ['items' => $newItems->toArray()])
             );
 
@@ -143,6 +161,7 @@ class PreOrderService
                 'final_price' => $newPrice,
                 'sync_status' => 'linked',
             ]);
+            $this->deductStock($preOrder, $item);
             $this->recalculate($preOrder);
             $this->activity($preOrder, $userId, 'product_synced',
                 'Linked “'.$item->original_product_name.'” to product “'.$product->name.'”.',
@@ -197,6 +216,11 @@ class PreOrderService
                 'status' => 'cancelled', 'cancelled_at' => now(), 'cancelled_by' => $userId,
                 'cancellation_reason' => $reason, 'updated_by' => $userId,
             ]);
+            foreach ($preOrder->items as $item) {
+                if ($item->product_id) {
+                    $this->restorePreOrderStock($preOrder, $item);
+                }
+            }
             $this->activity($preOrder, $userId, 'cancelled', 'Pre-Order cancelled.'.($reason ? ' Reason: '.$reason : ''), ['status' => 'pending'], ['status' => 'cancelled']);
 
             return $preOrder->fresh();
@@ -212,6 +236,11 @@ class PreOrderService
                     'status' => 'pending', 'cancelled_at' => null, 'cancelled_by' => null,
                     'cancellation_reason' => null, 'updated_by' => $userId,
                 ]);
+                foreach ($preOrder->items as $item) {
+                    if ($item->product_id) {
+                        $this->deductStock($preOrder, $item);
+                    }
+                }
                 $this->activity($preOrder, $userId, 'reopened', 'Cancelled Pre-Order reopened.'.($reason ? ' Reason: '.$reason : ''), ['status' => 'cancelled'], ['status' => 'pending']);
 
                 return $preOrder->fresh();
@@ -249,6 +278,11 @@ class PreOrderService
                 'held_cheque_amount' => 0, 'due_amount' => $preOrder->grand_total,
                 'completed_at' => null, 'completed_by' => null, 'updated_by' => $userId,
             ]);
+            foreach ($preOrder->items as $item) {
+                if ($item->product_id) {
+                    $this->deductStock($preOrder, $item);
+                }
+            }
             $this->activity($preOrder, $userId, 'completion_reversed',
                 'Completed Pre-Order reopened and sale '.$saleNumber.' safely reversed.'.($reason ? ' Reason: '.$reason : ''),
                 ['status' => 'completed', 'sale_no' => $saleNumber, 'payments' => $paymentSnapshot, 'cheques' => $chequeSnapshot],
@@ -274,10 +308,6 @@ class PreOrderService
             $cashPaid = collect($normalized)->where('method', '!=', 'cheque')->sum('amount');
             $held = collect($normalized)->where('method', 'cheque')->sum('amount');
             $due = max(0, round((float) $preOrder->grand_total - $cashPaid - $held, 2));
-
-            foreach ($preOrder->items as $item) {
-                $this->assertStockAvailable($preOrder, $item);
-            }
 
             $firstMethod = $normalized[0]['method'] ?? 'credit';
             $sale = Sale::create([
@@ -312,7 +342,6 @@ class PreOrderService
                     'total' => $item->line_total,
                 ]);
                 $taxPairs[] = ['model' => $saleItem, 'tax' => $item->tax_snapshot];
-                $this->deductStock($preOrder, $item);
             }
 
             $accounting = app(SalePaymentAccountingService::class);
@@ -450,11 +479,11 @@ class PreOrderService
                 if ($stock !== null) {
                     $available[] = (float) $stock;
                 } else {
-                    $fallback = (clone $query)->whereNull('product_price_id')->value('quantity');
+                    $fallback = (clone $query)->whereNull('product_price_id')->sum('quantity');
                     $available[] = (float) ($fallback ?? 0);
                 }
             } else {
-                $stock = (clone $query)->whereNull('product_price_id')->value('quantity');
+                $stock = (clone $query)->sum('quantity');
                 $available[] = (float) ($stock ?? 0);
             }
         }
@@ -471,7 +500,7 @@ class PreOrderService
         return (float) ($item->product?->selling_price ?? $item->final_price);
     }
 
-    private function calculateInputItems(array $items, string $billDiscountType, float|string $billDiscountValue): array
+    private function calculateInputItems(array $items, string $billDiscountType, float|string $billDiscountValue, ?float $customTaxRate = null, string $pdfTaxDisplay = 'separate'): array
     {
         $calculator = app(TaxCalculationService::class);
         $settings = TaxSetting::current();
@@ -486,14 +515,20 @@ class PreOrderService
                 throw ValidationException::withMessages(['items' => 'One of the selected products is not active.']);
             }
             $rules = $calculator->productRules($product, $settings, 'sale');
+            
+            $vatRate = $customTaxRate !== null ? $customTaxRate : $rules['vat_rate'];
+            $priceMode = $pdfTaxDisplay === 'inclusive' ? 'inclusive' : $rules['price_mode'];
+            $vatAllowed = true;
+            $taxStatus = $customTaxRate !== null ? 'standard' : $rules['tax_status'];
+
             $inputs[] = [
                 'unit_price' => (string) $item['unit_price'],
                 'quantity' => (string) $item['quantity'],
                 'line_discount_type' => $item['discount_type'] === 'percentage' ? 'percentage' : 'fixed',
                 'line_discount_value' => (string) $item['discount_value'],
-                'tax_status' => $rules['tax_status'], 'vat_rate' => $rules['vat_rate'],
-                'price_mode' => $rules['price_mode'], 'vat_allowed' => $rules['vat_allowed'],
-                'vat_enabled' => $settings->vat_enabled,
+                'tax_status' => $taxStatus, 'vat_rate' => $vatRate,
+                'price_mode' => $priceMode, 'vat_allowed' => $vatAllowed,
+                'vat_enabled' => true,
             ];
             $normalized[] = compact('item', 'product');
         }
@@ -530,14 +565,24 @@ class PreOrderService
         $calculator = app(TaxCalculationService::class);
         $settings = TaxSetting::current();
         $inputs = [];
+        
+        $customTaxRate = $preOrder->custom_tax_rate;
+        $pdfTaxDisplay = $preOrder->pdf_tax_display;
+
         foreach ($preOrder->items as $item) {
             $rules = $calculator->productRules($item->product, $settings, 'sale');
+            
+            $vatRate = $customTaxRate !== null ? (float) $customTaxRate : $rules['vat_rate'];
+            $priceMode = $pdfTaxDisplay === 'inclusive' ? 'inclusive' : $rules['price_mode'];
+            $vatAllowed = true;
+            $taxStatus = $customTaxRate !== null ? 'standard' : $rules['tax_status'];
+
             $inputs[] = [
                 'unit_price' => (string) $item->final_price, 'quantity' => (string) $item->quantity,
                 'line_discount_type' => $item->discount_type, 'line_discount_value' => (string) $item->discount_value,
-                'tax_status' => $rules['tax_status'], 'vat_rate' => $rules['vat_rate'],
-                'price_mode' => $rules['price_mode'], 'vat_allowed' => $rules['vat_allowed'],
-                'vat_enabled' => $settings->vat_enabled,
+                'tax_status' => $taxStatus, 'vat_rate' => $vatRate,
+                'price_mode' => $priceMode, 'vat_allowed' => $vatAllowed,
+                'vat_enabled' => true,
             ];
         }
         $invoice = $calculator->calculateInvoice($inputs, $preOrder->bill_discount_type, $preOrder->bill_discount_value);
@@ -620,6 +665,34 @@ class PreOrderService
         $product->decrement('stock_quantity', $item->quantity);
         $product->refresh();
         StockAlertService::check($product);
+    }
+
+    private function restorePreOrderStock(PreOrder $preOrder, PreOrderItem $item): void
+    {
+        Product::whereKey($item->product_id)->increment('stock_quantity', $item->quantity);
+        if ((bool) Setting::get('use_price_wise_stock', true) && $item->product_price_id) {
+            ProductPrice::whereKey($item->product_price_id)->increment('stock_qty', $item->quantity);
+        }
+        if ($preOrder->store_id) {
+            $priceId = (bool) Setting::get('use_price_wise_stock', true) ? $item->product_price_id : null;
+            $stock = StoreStock::withoutGlobalScopes()->where('store_id', $preOrder->store_id)
+                ->where('product_id', $item->product_id)->where('product_price_id', $priceId)->first();
+            if (! $stock && $priceId) {
+                $stock = StoreStock::withoutGlobalScopes()->where('store_id', $preOrder->store_id)
+                    ->where('product_id', $item->product_id)->whereNull('product_price_id')->first();
+            }
+            if ($stock) {
+                $stock->increment('quantity', $item->quantity);
+            } else {
+                StoreStock::create([
+                    'store_id' => $preOrder->store_id,
+                    'product_id' => $item->product_id,
+                    'product_price_id' => $priceId,
+                    'quantity' => $item->quantity,
+                ]);
+            }
+        }
+        StockAlertService::check(Product::find($item->product_id));
     }
 
     private function restoreStock(Sale $sale, SaleItem $item): void

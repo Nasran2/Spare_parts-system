@@ -48,8 +48,8 @@
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-2">Document Type *</label>
                 <select name="document_type" class="w-full px-3 py-2.5 border border-gray-300 rounded-lg">
-                    <option value="quotation" @selected(old('document_type', $editing ? $preOrder->document_type : 'quotation') === 'quotation')>Quotation</option>
-                    <option value="invoice" @selected(old('document_type', $editing ? $preOrder->document_type : '') === 'invoice')>Invoice / Pre-Order Invoice</option>
+                    <option value="invoice" @selected(old('document_type', $editing ? $preOrder->document_type : 'invoice') === 'invoice')>Invoice / Pre-Order Invoice</option>
+                    <option value="quotation" @selected(old('document_type', $editing ? $preOrder->document_type : '') === 'quotation')>Quotation</option>
                 </select>
             </div>
             <div>
@@ -74,21 +74,19 @@
                 <button type="button" onclick="openCustomerModal()" class="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100"><i class="fas fa-user-plus mr-2"></i>Quick Create Customer</button>
             @endif
         </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Search customer</label>
-                <input type="search" id="customer-filter" placeholder="Name or phone..." class="w-full px-3 py-2.5 border border-gray-300 rounded-lg">
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Customer *</label>
-                <select name="customer_id" id="customer_id" required class="w-full px-3 py-2.5 border border-gray-300 rounded-lg">
-                    <option value="">Select customer</option>
+        <div class="max-w-2xl">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Customer *</label>
+            <div class="relative" id="customer-dropdown-wrapper">
+                <input type="text" id="customer-search-input" placeholder="Search and select customer..." class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" autocomplete="off" required>
+                <input type="hidden" name="customer_id" id="customer_id" required value="{{ old('customer_id', $editing ? $preOrder->customer_id : '') }}">
+                <div id="customer-options" class="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg hidden max-h-60 overflow-y-auto">
                     @foreach($customers as $customer)
-                        <option value="{{ $customer->id }}" data-search="{{ strtolower($customer->name.' '.$customer->phone) }}" @selected((string)old('customer_id', $editing ? $preOrder->customer_id : '') === (string)$customer->id)>
+                        <div class="px-4 py-2 cursor-pointer hover:bg-blue-50 customer-option" data-id="{{ $customer->id }}" data-search="{{ strtolower($customer->name.' '.$customer->phone) }}" data-name="{{ $customer->name }}{{ $customer->phone ? ' — '.$customer->phone : '' }}">
                             {{ $customer->name }}{{ $customer->phone ? ' — '.$customer->phone : '' }}
-                        </option>
+                        </div>
                     @endforeach
-                </select>
+                    <div id="customer-no-results" class="px-4 py-3 text-sm text-gray-500 hidden text-center">No customer found. <a href="#" onclick="openCustomerModal(); return false;" class="text-blue-600 hover:underline">Quick Create</a></div>
+                </div>
             </div>
         </div>
     </div>
@@ -97,8 +95,6 @@
         <h3 class="text-lg font-semibold text-gray-800 mb-5"><i class="fas fa-car-side text-blue-600 mr-2"></i>Vehicle Information</h3>
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
             <div><label class="block text-sm font-medium text-gray-700 mb-2">Vehicle Name / Model *</label><input name="vehicle_name" required value="{{ old('vehicle_name', $editing ? $preOrder->vehicle_name : '') }}" class="w-full px-3 py-2.5 border border-gray-300 rounded-lg"></div>
-            <div><label class="block text-sm font-medium text-gray-700 mb-2">Registration Number</label><input name="registration_number" value="{{ old('registration_number', $editing ? $preOrder->registration_number : '') }}" class="w-full px-3 py-2.5 border border-gray-300 rounded-lg"></div>
-            <div><label class="block text-sm font-medium text-gray-700 mb-2">Chassis Number</label><input name="chassis_number" value="{{ old('chassis_number', $editing ? $preOrder->chassis_number : '') }}" class="w-full px-3 py-2.5 border border-gray-300 rounded-lg"></div>
             <div class="md:col-span-2"><label class="block text-sm font-medium text-gray-700 mb-2">Vehicle Description</label><textarea name="vehicle_description" rows="3" class="w-full px-3 py-2.5 border border-gray-300 rounded-lg">{{ old('vehicle_description', $editing ? $preOrder->vehicle_description : '') }}</textarea></div>
             <div><label class="block text-sm font-medium text-gray-700 mb-2">Vehicle Image</label><input type="file" name="vehicle_image" accept="image/jpeg,image/png,image/webp" class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"><p class="text-xs text-gray-500 mt-1">JPG, PNG or WebP; maximum 5 MB.</p>@if($editing && $preOrder->vehicle_image_url)<img src="{{ $preOrder->vehicle_image_url }}" alt="Vehicle" class="mt-3 h-24 rounded-lg object-cover border">@endif</div>
             <div class="md:col-span-2"><label class="block text-sm font-medium text-gray-700 mb-2">Boss / Customer Instructions</label><textarea name="instructions" rows="3" class="w-full px-3 py-2.5 border border-gray-300 rounded-lg">{{ old('instructions', $editing ? $preOrder->instructions : '') }}</textarea></div>
@@ -122,9 +118,22 @@
         </div>
         <div id="empty-items" class="p-10 text-center text-gray-500"><i class="fas fa-box-open text-3xl mb-3"></i><p>Search a product or add an unlinked part.</p></div>
         <div class="p-6 bg-gray-50 grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div class="flex gap-3 items-end">
-                <div><label class="block text-sm font-medium text-gray-700 mb-2">Order Discount</label><select name="bill_discount_type" id="bill_discount_type" class="px-3 py-2.5 border rounded-lg"><option value="fixed" @selected(old('bill_discount_type', $editing ? $preOrder->bill_discount_type : 'fixed') === 'fixed')>Fixed</option><option value="percentage" @selected(old('bill_discount_type', $editing ? $preOrder->bill_discount_type : '') === 'percentage')>Percentage</option></select></div>
-                <div><label class="block text-sm font-medium text-gray-700 mb-2">Value</label><input type="number" min="0" step="0.01" name="bill_discount_value" id="bill_discount_value" value="{{ old('bill_discount_value', $editing ? $preOrder->bill_discount_value : 0) }}" class="w-40 px-3 py-2.5 border rounded-lg"></div>
+            <div class="space-y-4">
+                <div class="flex gap-3 items-end">
+                    <div><label class="block text-sm font-medium text-gray-700 mb-2">Order Discount</label><select name="bill_discount_type" id="bill_discount_type" class="px-3 py-2.5 border rounded-lg"><option value="fixed" @selected(old('bill_discount_type', $editing ? $preOrder->bill_discount_type : 'fixed') === 'fixed')>Fixed</option><option value="percentage" @selected(old('bill_discount_type', $editing ? $preOrder->bill_discount_type : '') === 'percentage')>Percentage</option></select></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-2">Value</label><input type="number" min="0" step="0.01" name="bill_discount_value" id="bill_discount_value" value="{{ old('bill_discount_value', $editing ? $preOrder->bill_discount_value : 0) }}" class="w-40 px-3 py-2.5 border rounded-lg"></div>
+                </div>
+                <div class="flex gap-3 items-end border-t pt-4">
+                    <div class="flex-1"><label class="block text-sm font-medium text-gray-700 mb-2">Tax Percentage (%)</label><input type="number" min="0" step="0.01" name="custom_tax_rate" id="custom_tax_rate" value="{{ old('custom_tax_rate', $editing && $preOrder->custom_tax_rate !== null ? (float)$preOrder->custom_tax_rate : (float)$taxSettings->default_vat_rate) }}" class="w-full px-3 py-2.5 border rounded-lg"></div>
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">PDF Tax Display</label>
+                        <select name="pdf_tax_display" id="pdf_tax_display" class="w-full px-3 py-2.5 border rounded-lg">
+                            <option value="separate" @selected(old('pdf_tax_display', $editing ? $preOrder->pdf_tax_display : 'separate') === 'separate')>Show Tax Separately</option>
+                            <option value="exclusive_hidden" @selected(old('pdf_tax_display', $editing ? $preOrder->pdf_tax_display : '') === 'exclusive_hidden')>Hide Tax / Add to Price</option>
+                            <option value="inclusive" @selected(old('pdf_tax_display', $editing ? $preOrder->pdf_tax_display : '') === 'inclusive')>Hide Tax / Inclusive Price</option>
+                        </select>
+                    </div>
+                </div>
             </div>
             <div class="bg-white rounded-xl border p-4 space-y-2 text-sm">
                 <div class="flex justify-between"><span>Subtotal</span><strong id="summary-subtotal">{{ $currency }}0.00</strong></div>
@@ -212,35 +221,53 @@ function recalculate() {
         const gross = qty * price;
         const discount = Math.min(gross, type === 'percentage' ? gross * value / 100 : value);
         grossTotal += gross; lineDiscountTotal += discount;
-        return {row, gross, after: gross - discount, tax: JSON.parse(row.dataset.tax || '{}')};
+        return {row, gross, after: gross - discount};
     });
     const afterLines = lines.reduce((s,l) => s + l.after, 0);
     const billType = document.getElementById('bill_discount_type').value;
     const billValue = Number(document.getElementById('bill_discount_value').value || 0);
     const billDiscount = Math.min(afterLines, billType === 'percentage' ? afterLines * billValue / 100 : billValue);
+    
+    const taxRate = Number(document.getElementById('custom_tax_rate').value || 0) / 100;
+    const isInclusive = document.getElementById('pdf_tax_display').value === 'inclusive';
+    const isExclusiveHidden = document.getElementById('pdf_tax_display').value === 'exclusive_hidden';
+
     let taxTotal = 0, grand = 0;
     lines.forEach(line => {
         const allocated = afterLines > 0 ? billDiscount * line.after / afterLines : 0;
         const discounted = Math.max(0, line.after - allocated);
-        const t = line.tax;
-        const taxable = t.vat_enabled && t.vat_allowed !== false && !['exempt','out_of_scope'].includes(t.tax_status);
-        const rate = Number(t.vat_rate || 0) / 100;
         let tax = 0, total = discounted;
-        if (taxable && rate > 0) {
-            if (t.price_mode === 'exclusive') { tax = discounted * rate; total += tax; }
-            else { tax = discounted - discounted / (1 + rate); }
+        if (taxRate > 0) {
+            if (isInclusive) {
+                tax = discounted - (discounted / (1 + taxRate));
+            } else {
+                tax = discounted * taxRate;
+                total += tax;
+            }
         }
         taxTotal += tax; grand += total;
         line.row.querySelector('.line-total').textContent = money(total);
     });
-    document.getElementById('summary-subtotal').textContent = money(grossTotal);
-    document.getElementById('summary-discount').textContent = money(lineDiscountTotal + billDiscount);
-    document.getElementById('summary-tax').textContent = money(taxTotal);
+    
+    // Adjust summary
+    document.getElementById('summary-subtotal').textContent = money(isExclusiveHidden ? grossTotal * (1 + taxRate) : grossTotal);
+    document.getElementById('summary-discount').textContent = money(isExclusiveHidden ? (lineDiscountTotal + billDiscount) * (1 + taxRate) : lineDiscountTotal + billDiscount);
+    if (isInclusive) {
+        document.getElementById('summary-tax').innerHTML = `Included <span>(${money(taxTotal)})</span>`;
+        document.getElementById('summary-tax').parentElement.classList.remove('hidden');
+    } else if (isExclusiveHidden) {
+        document.getElementById('summary-tax').parentElement.classList.add('hidden');
+    } else {
+        document.getElementById('summary-tax').textContent = money(taxTotal);
+        document.getElementById('summary-tax').parentElement.classList.remove('hidden');
+    }
     document.getElementById('summary-total').textContent = money(grand);
 }
 
 document.getElementById('bill_discount_type').addEventListener('change', recalculate);
 document.getElementById('bill_discount_value').addEventListener('input', recalculate);
+document.getElementById('custom_tax_rate').addEventListener('input', recalculate);
+document.getElementById('pdf_tax_display').addEventListener('change', recalculate);
 initialItems.forEach(item => addRow(item));
 
 let searchTimer;
@@ -269,16 +296,87 @@ searchInput.addEventListener('input', () => {
     }, 250);
 });
 
-document.getElementById('customer-filter').addEventListener('input', function () {
-    const term = this.value.toLowerCase();
-    [...document.getElementById('customer_id').options].forEach((option, index) => { if (index) option.hidden = !option.dataset.search.includes(term); });
-});
+const customerInput = document.getElementById('customer-search-input');
+const customerId = document.getElementById('customer_id');
+const customerOptions = document.getElementById('customer-options');
+
+function setupCustomerDropdown() {
+    let customerOptionElements = document.querySelectorAll('.customer-option');
+
+    if (customerId.value) {
+        const selectedOption = Array.from(customerOptionElements).find(opt => opt.dataset.id === customerId.value);
+        if (selectedOption) customerInput.value = selectedOption.dataset.name;
+    }
+
+    customerInput.addEventListener('focus', () => customerOptions.classList.remove('hidden'));
+    
+    customerInput.addEventListener('input', function() {
+        customerOptions.classList.remove('hidden');
+        const term = this.value.toLowerCase();
+        let hasResults = false;
+        customerId.value = ''; // clear hidden input if they type
+        customerOptionElements = document.querySelectorAll('.customer-option');
+        customerOptionElements.forEach(opt => {
+            if (opt.dataset.search.includes(term)) {
+                opt.classList.remove('hidden');
+                hasResults = true;
+            } else {
+                opt.classList.add('hidden');
+            }
+        });
+        document.getElementById('customer-no-results').classList.toggle('hidden', !hasResults);
+    });
+
+    customerOptionElements.forEach(opt => {
+        // Prevent multiple listeners if re-setup
+        opt.removeEventListener('mousedown', selectCustomerOption);
+        opt.addEventListener('mousedown', selectCustomerOption);
+    });
+
+    customerInput.addEventListener('blur', function() {
+        setTimeout(() => {
+            customerOptions.classList.add('hidden');
+            if (!customerId.value) {
+                this.value = '';
+            } else {
+                const selectedOption = Array.from(document.querySelectorAll('.customer-option')).find(opt => opt.dataset.id === customerId.value);
+                if (selectedOption) this.value = selectedOption.dataset.name;
+            }
+        }, 150); // small delay to allow mousedown on options to fire
+    });
+}
+
+function selectCustomerOption(e) {
+    e.preventDefault();
+    customerId.value = this.dataset.id;
+    customerInput.value = this.dataset.name;
+    customerOptions.classList.add('hidden');
+}
+
+setupCustomerDropdown();
+
 function openCustomerModal(){ const m=document.getElementById('customer-modal'); m.classList.remove('hidden'); m.classList.add('flex'); }
 function closeCustomerModal(){ const m=document.getElementById('customer-modal'); m.classList.add('hidden'); m.classList.remove('flex'); }
 document.getElementById('quick-customer-form')?.addEventListener('submit', async function(e){
     e.preventDefault(); const error=document.getElementById('customer-modal-error'); error.classList.add('hidden');
     const response=await fetch(@json(route('preorders.quick-customer')), {method:'POST', headers:{'X-CSRF-TOKEN':@json(csrf_token()),'Accept':'application/json'}, body:new FormData(this)});
     const data=await response.json(); if(!response.ok){ error.textContent=Object.values(data.errors||{}).flat()[0]||data.message; error.classList.remove('hidden'); return; }
-    const select=document.getElementById('customer_id'); const option=new Option(`${data.name} — ${data.phone||''}`, data.id, true, true); option.dataset.search=(data.name+' '+(data.phone||'')).toLowerCase(); select.add(option); closeCustomerModal(); this.reset();
+    
+    const newName = `${data.name} ${data.phone ? ' — '+data.phone : ''}`;
+    const newDiv = document.createElement('div');
+    newDiv.className = 'px-4 py-2 cursor-pointer hover:bg-blue-50 customer-option';
+    newDiv.dataset.id = data.id;
+    newDiv.dataset.search = (data.name+' '+(data.phone||'')).toLowerCase();
+    newDiv.dataset.name = newName;
+    newDiv.textContent = newName;
+    
+    newDiv.addEventListener('mousedown', selectCustomerOption);
+    document.getElementById('customer-no-results').before(newDiv);
+    
+    customerId.value = data.id;
+    customerInput.value = newName;
+    customerOptions.classList.add('hidden');
+    
+    closeCustomerModal(); this.reset();
 });
 </script>

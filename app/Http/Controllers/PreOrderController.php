@@ -83,6 +83,27 @@ class PreOrderController extends Controller
     public function show(Request $request, PreOrder $preOrder)
     {
         $this->authorizeStore($request, $preOrder->store_id);
+        
+        $needsReload = false;
+        if ($preOrder->status === 'pending') {
+            foreach ($preOrder->items as $item) {
+                if (!$item->product_id) {
+                    $match = \App\Models\Product::where('name', $item->original_product_name)
+                        ->where('is_active', true)->first();
+                    if ($match) {
+                        try {
+                            $this->service->syncProduct($preOrder, $item, $match, null, (int) $request->user()->id, 'keep');
+                            $needsReload = true;
+                        } catch (\Exception $e) {}
+                    }
+                }
+            }
+        }
+        
+        if ($needsReload) {
+            $preOrder->refresh();
+        }
+
         $preOrder->load([
             'customer', 'store', 'creator', 'updater', 'completer', 'canceller',
             'items.product.activePrices', 'items.productPrice', 'activities.user',
@@ -326,7 +347,6 @@ class PreOrderController extends Controller
             $query->where(function ($q) use ($term) {
                 $q->where('pre_order_number', 'like', "%{$term}%")
                     ->orWhere('vehicle_name', 'like', "%{$term}%")
-                    ->orWhere('registration_number', 'like', "%{$term}%")
                     ->orWhereHas('customer', fn ($customer) => $customer->where('name', 'like', "%{$term}%")->orWhere('phone', 'like', "%{$term}%"))
                     ->orWhereHas('items', fn ($item) => $item->where('original_product_name', 'like', "%{$term}%"))
                     ->orWhereHas('sale', fn ($sale) => $sale->where('sale_no', 'like', "%{$term}%"));
