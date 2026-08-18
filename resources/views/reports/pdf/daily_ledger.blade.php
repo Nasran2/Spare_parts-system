@@ -158,6 +158,7 @@
         @endphp
 
         {!! $renderPdfTable($mainTransactions, 'Main Account (Cash) Transactions', $mainOpeningBalance, $mainClosingBalance) !!}
+        {!! $renderPdfTable($chequeTransactions, 'Customer Receivable (Cheques)', $chequeOpeningBalance, $chequeClosingBalance) !!}
         {!! $renderPdfTable($pettyTransactions, 'Petty Cash Transactions', $pettyOpeningBalance, $pettyClosingBalance) !!}
     </div>
 </body>

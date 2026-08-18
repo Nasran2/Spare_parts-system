@@ -164,6 +164,7 @@
     @endphp
 
     {!! $renderTable($mainTransactions, 'Main Account (Cash) Transactions', 'fas fa-wallet text-blue-600', $mainOpeningBalance, $mainClosingBalance) !!}
+    {!! $renderTable($chequeTransactions, 'Customer Receivable (Cheques)', 'fas fa-money-check text-purple-600', $chequeOpeningBalance, $chequeClosingBalance) !!}
     {!! $renderTable($pettyTransactions, 'Petty Cash Transactions', 'fas fa-cash-register text-orange-600', $pettyOpeningBalance, $pettyClosingBalance) !!}
 
 </div>

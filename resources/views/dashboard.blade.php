@@ -444,27 +444,27 @@
             Quick Actions
         </h3>
         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-            <a href="{{ route('pos.index') }}" class="flex flex-col items-center p-4 bg-gradient-blue text-white rounded-lg hover:opacity-90 transition">
+            <a href="{{ route('pos.index') }}" class="flex flex-col items-center p-4 bg-blue-50 text-blue-700 rounded-lg border border-blue-100 hover:bg-blue-100 transition">
                 <i class="fas fa-cash-register text-3xl mb-2"></i>
                 <span class="text-sm font-medium">New Sale</span>
             </a>
-            <a href="{{ route('purchases.create') }}" class="flex flex-col items-center p-4 bg-gradient-orange text-white rounded-lg hover:opacity-90 transition">
+            <a href="{{ route('purchases.create') }}" class="flex flex-col items-center p-4 bg-orange-50 text-orange-700 rounded-lg border border-orange-100 hover:bg-orange-100 transition">
                 <i class="fas fa-cart-plus text-3xl mb-2"></i>
                 <span class="text-sm font-medium">Add Purchase</span>
             </a>
-            <a href="{{ route('products.create') }}" class="flex flex-col items-center p-4 bg-gradient-green text-white rounded-lg hover:opacity-90 transition">
+            <a href="{{ route('products.create') }}" class="flex flex-col items-center p-4 bg-green-50 text-green-700 rounded-lg border border-green-100 hover:bg-green-100 transition">
                 <i class="fas fa-plus-circle text-3xl mb-2"></i>
                 <span class="text-sm font-medium">Add Product</span>
             </a>
-            <a href="{{ route('expenses.create') }}" class="flex flex-col items-center p-4 bg-gradient-purple text-white rounded-lg hover:opacity-90 transition">
+            <a href="{{ route('expenses.create') }}" class="flex flex-col items-center p-4 bg-purple-50 text-purple-700 rounded-lg border border-purple-100 hover:bg-purple-100 transition">
                 <i class="fas fa-wallet text-3xl mb-2"></i>
                 <span class="text-sm font-medium">Add Expense</span>
             </a>
-            <a href="{{ route('customers.create') }}" class="flex flex-col items-center p-4 bg-gradient-indigo text-white rounded-lg hover:opacity-90 transition">
+            <a href="{{ route('customers.create') }}" class="flex flex-col items-center p-4 bg-indigo-50 text-indigo-700 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition">
                 <i class="fas fa-user-plus text-3xl mb-2"></i>
                 <span class="text-sm font-medium">Add Customer</span>
             </a>
-            <a href="{{ route('suppliers.create') }}" class="flex flex-col items-center p-4 bg-gray-600 text-white rounded-lg hover:opacity-90 transition">
+            <a href="{{ route('suppliers.create') }}" class="flex flex-col items-center p-4 bg-gray-50 text-gray-700 rounded-lg border border-gray-200 hover:bg-gray-100 transition">
                 <i class="fas fa-truck text-3xl mb-2"></i>
                 <span class="text-sm font-medium">Add Supplier</span>
             </a>

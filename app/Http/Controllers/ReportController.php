@@ -498,6 +498,21 @@ class ReportController extends Controller
             ->orderBy('id', 'asc')
             ->get();
             
+        // Fetch Cheque/Customer Receivable Account
+        $chequeAccount = \App\Models\Accounting\ChartAccount::where('code', '1300')->first();
+        $chequeAccountBalance = $chequeAccount ? (float) $chequeAccount->current_balance : 0;
+        
+        $chequeTransactions = collect();
+        if ($chequeAccount) {
+            $chequeTransactions = \App\Models\Accounting\AccountTransaction::with(['account', 'relatedAccount'])
+                ->where('account_id', $chequeAccount->id)
+                ->when($from, fn ($q) => $q->whereDate('transaction_date', '>=', $from))
+                ->when($to, fn ($q) => $q->whereDate('transaction_date', '<=', $to))
+                ->orderBy('transaction_date', 'asc')
+                ->orderBy('id', 'asc')
+                ->get();
+        }
+            
         // 2. Fetch transactions for Petty Cash
         $pettyTransactions = collect();
         if (!empty($pettyCashAccountIds)) {
@@ -516,6 +531,14 @@ class ReportController extends Controller
             ->sum(\Illuminate\Support\Facades\DB::raw("CASE WHEN direction = 'in' THEN amount ELSE -amount END"));
         $mainOpeningBalance = $mainAccountBalance - (float) $mainNetChangeFrom;
 
+        $chequeNetChangeFrom = 0;
+        if ($chequeAccount) {
+            $chequeNetChangeFrom = \App\Models\Accounting\AccountTransaction::where('account_id', $chequeAccount->id)
+                ->when($from, fn ($q) => $q->whereDate('transaction_date', '>=', $from))
+                ->sum(\Illuminate\Support\Facades\DB::raw("CASE WHEN direction = 'in' THEN amount ELSE -amount END"));
+        }
+        $chequeOpeningBalance = $chequeAccountBalance - (float) $chequeNetChangeFrom;
+
         $pettyNetChangeFrom = 0;
         if (!empty($pettyCashAccountIds)) {
             $pettyNetChangeFrom = \App\Models\Accounting\AccountTransaction::whereIn('account_id', $pettyCashAccountIds)
@@ -532,6 +555,13 @@ class ReportController extends Controller
         }
         $mainClosingBalance = $currentRunningMain;
 
+        $currentRunningCheque = $chequeOpeningBalance;
+        foreach ($chequeTransactions as $t) {
+            $currentRunningCheque += ($t->direction === 'in' ? (float) $t->amount : -(float) $t->amount);
+            $t->running_balance = $currentRunningCheque;
+        }
+        $chequeClosingBalance = $currentRunningCheque;
+
         $currentRunningPetty = $pettyOpeningBalance;
         foreach ($pettyTransactions as $t) {
             $currentRunningPetty += ($t->direction === 'in' ? (float) $t->amount : -(float) $t->amount);
@@ -540,7 +570,7 @@ class ReportController extends Controller
         $pettyClosingBalance = $currentRunningPetty;
 
         // 3. Cheque Details for Payments
-        $paymentIds = $mainTransactions->concat($pettyTransactions)
+        $paymentIds = $mainTransactions->concat($pettyTransactions)->concat($chequeTransactions)
             ->where('source_type', 'payment')
             ->pluck('source_id')
             ->unique()
@@ -553,11 +583,24 @@ class ReportController extends Controller
                 ->groupBy('payment_id');
         }
 
+        $chequePaymentIds = $chequeTransactions
+            ->whereIn('source_type', ['cheque_payment_hold', 'cheque_payment'])
+            ->pluck('source_id')
+            ->unique()
+            ->toArray();
+            
+        $chequesById = [];
+        if (!empty($chequePaymentIds)) {
+            $chequesById = \App\Models\ChequePayment::whereIn('id', $chequePaymentIds)->get()->keyBy('id');
+        }
+
         // Assign cheque details to transactions
-        foreach ([$mainTransactions, $pettyTransactions] as $txnList) {
+        foreach ([$mainTransactions, $pettyTransactions, $chequeTransactions] as $txnList) {
             foreach ($txnList as $t) {
                 if ($t->source_type === 'payment' && isset($chequesByPayment[$t->source_id])) {
                     $t->cheque_details = $chequesByPayment[$t->source_id];
+                } elseif (in_array($t->source_type, ['cheque_payment_hold', 'cheque_payment']) && isset($chequesById[$t->source_id])) {
+                    $t->cheque_details = collect([$chequesById[$t->source_id]]);
                 } else {
                     $t->cheque_details = collect();
                 }
@@ -566,13 +609,13 @@ class ReportController extends Controller
 
         // 4. Metrics Calculation
         $salesRevenueAccountId = \App\Models\Accounting\ChartAccount::where('code', '4100')->value('id');
-        $salesRevenue = $mainTransactions->concat($pettyTransactions)
+        $salesRevenue = $mainTransactions->concat($pettyTransactions)->concat($chequeTransactions)
             ->where('direction', 'in')
             ->where('related_account_id', $salesRevenueAccountId)
             ->sum('amount');
             
         $expenseAccountIds = \App\Models\Accounting\ChartAccount::where('type', 'expense')->pluck('id')->toArray();
-        $totalExpensePeriod = $mainTransactions->concat($pettyTransactions)
+        $totalExpensePeriod = $mainTransactions->concat($pettyTransactions)->concat($chequeTransactions)
             ->where('direction', 'out')
             ->whereIn('related_account_id', $expenseAccountIds)
             ->sum('amount');
@@ -590,13 +633,18 @@ class ReportController extends Controller
             ->get();
             
         $totalCashReceived = $paymentsInPeriod->where('payment_method', 'cash')->sum('amount');
-        $totalChequeReceived = $paymentsInPeriod->where('payment_method', 'cheque')->sum('amount');
+        
+        $totalChequeReceived = \App\Models\ChequePayment::when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))
+            ->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to))
+            ->sum('amount');
 
         return compact(
             'mainTransactions', 
             'pettyTransactions', 
+            'chequeTransactions',
             'mainAccountBalance', 
             'pettyCashBalance', 
+            'chequeAccountBalance',
             'salesRevenue', 
             'totalExpensePeriod',
             'totalSales',
@@ -607,6 +655,8 @@ class ReportController extends Controller
             'mainClosingBalance',
             'pettyOpeningBalance',
             'pettyClosingBalance',
+            'chequeOpeningBalance',
+            'chequeClosingBalance',
             'from', 
             'to'
         );
@@ -696,6 +746,7 @@ class ReportController extends Controller
         };
         
         $addTransactions('Main Account (Cash) Transactions', $mainTransactions, $data['mainOpeningBalance'], $data['mainClosingBalance']);
+        $addTransactions('Customer Receivable (Cheques)', $data['chequeTransactions'], $data['chequeOpeningBalance'], $data['chequeClosingBalance']);
         $addTransactions('Petty Cash Transactions', $pettyTransactions, $data['pettyOpeningBalance'], $data['pettyClosingBalance']);
 
         $csv = fopen('php://temp','r+'); foreach ($rows as $r) { fputcsv($csv,$r); } rewind($csv);
