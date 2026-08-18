@@ -18,6 +18,7 @@ use App\Http\Controllers\PrivacyModeController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductPriceController;
 use App\Http\Controllers\ProductWriteOffController;
+use App\Http\Controllers\PreOrderController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\PurchaseReturnController;
 use App\Http\Controllers\ReportController;
@@ -212,6 +213,41 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
         ->middlewareFor(['destroy'], 'permission:purchases.delete');
 
     // Sales
+
+    // Pre-Order Management
+    Route::get('preorders/search-products', [PreOrderController::class, 'searchProducts'])
+        ->middleware('permission:preorder_view')->name('preorders.search-products');
+    Route::post('preorders/quick-customer', [PreOrderController::class, 'quickCustomer'])
+        ->middleware('permission:preorder_create')->name('preorders.quick-customer');
+    Route::get('preorders/report', [PreOrderController::class, 'report'])
+        ->middleware('permission:preorder_reports')->name('preorders.report');
+    Route::get('preorders/status/{status}', [PreOrderController::class, 'index'])
+        ->whereIn('status', ['pending', 'completed', 'cancelled'])
+        ->middleware('permission:preorder_view')->name('preorders.status');
+    Route::resource('preorders', PreOrderController::class)->except(['destroy'])
+        ->parameters(['preorders' => 'preOrder'])
+        ->middlewareFor(['index', 'show'], 'permission:preorder_view')
+        ->middlewareFor(['create', 'store'], 'permission:preorder_create')
+        ->middlewareFor(['edit', 'update'], 'permission:preorder_edit');
+    Route::post('preorders/{preOrder}/cancel', [PreOrderController::class, 'cancel'])
+        ->middleware('permission:preorder_cancel')->name('preorders.cancel');
+    Route::post('preorders/{preOrder}/reopen', [PreOrderController::class, 'reopen'])
+        ->middleware('permission:preorder_reopen')->name('preorders.reopen');
+    Route::post('preorders/{preOrder}/complete', [PreOrderController::class, 'complete'])
+        ->middleware('permission:preorder_complete')->name('preorders.complete');
+    Route::post('preorders/{preOrder}/items/{item}/sync', [PreOrderController::class, 'syncProduct'])
+        ->middleware('permission:preorder_sync_product')->name('preorders.items.sync');
+    Route::post('preorders/{preOrder}/items/{item}/price', [PreOrderController::class, 'changePrice'])
+        ->middleware('permission:preorder_change_price')->name('preorders.items.price');
+    Route::post('preorders/{preOrder}/payments', [PreOrderController::class, 'addPayment'])
+        ->middleware('permission:preorder_payment_create')->name('preorders.payments.store');
+    Route::delete('preorders/{preOrder}/payments/{payment}', [PreOrderController::class, 'deletePayment'])
+        ->middleware('permission:preorder_payment_edit')->name('preorders.payments.destroy');
+    Route::get('preorders/{preOrder}/quotation.pdf', [PreOrderController::class, 'quotationPdf'])
+        ->middleware('permission:preorder_print_quotation')->name('preorders.quotation-pdf');
+    Route::get('preorders/{preOrder}/invoice.pdf', [PreOrderController::class, 'invoicePdf'])
+        ->middleware('permission:preorder_print_invoice')->name('preorders.invoice-pdf');
+
     Route::resource('sales', SaleController::class)
         ->middlewareFor(['index', 'show'], 'permission:sales.view')
         ->middlewareFor(['create', 'store'], 'permission:sales.create')

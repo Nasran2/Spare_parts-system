@@ -36,6 +36,11 @@ class Customer extends Model
         return $this->hasMany(Payment::class);
     }
 
+    public function preOrders()
+    {
+        return $this->hasMany(PreOrder::class);
+    }
+
     /**
      * Get the total due amount for this customer
      */
@@ -43,6 +48,7 @@ class Customer extends Model
     {
         $salesDue = $this->sales()->sum('due_amount') ?? 0;
         $genericPayments = $this->payments()->whereNull('sale_id')->sum('amount') ?? 0;
+
         return $salesDue + ($this->opening_balance ?? 0) - $genericPayments;
     }
 }

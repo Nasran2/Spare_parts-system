@@ -76,6 +76,11 @@ class Sale extends Model
         return $this->hasMany(ChequePayment::class);
     }
 
+    public function preOrder()
+    {
+        return $this->hasOne(PreOrder::class);
+    }
+
     public function returns()
     {
         return $this->hasMany(SaleReturn::class);
@@ -119,10 +124,10 @@ class Sale extends Model
         static::addGlobalScope('hiddenStores', function (\Illuminate\Database\Eloquent\Builder $builder) {
             if (auth()->hasUser()) {
                 $hiddenStoreIds = \App\Services\DashboardVisibilityService::hiddenStoreIdsForUser(auth()->user());
-                if (!empty($hiddenStoreIds)) {
+                if (! empty($hiddenStoreIds)) {
                     $builder->where(function ($q) use ($hiddenStoreIds) {
                         $q->whereNotIn('sales.store_id', $hiddenStoreIds)
-                          ->orWhereNull('sales.store_id');
+                            ->orWhereNull('sales.store_id');
                     });
                 }
             }

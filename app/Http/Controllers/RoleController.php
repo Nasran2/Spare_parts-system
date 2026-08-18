@@ -18,11 +18,11 @@ class RoleController extends Controller
         return ['Super Admin', 'superadmin', 'super_admin'];
     }
 
-    private function isReservedSuperAdminName(string $name): bool
+    private function isReservedSystemRoleName(string $name): bool
     {
-        $normalized = strtolower(str_replace([' ', '-'], ['_', '_'], trim($name)));
+        $normalized = strtolower(str_replace([' ', '-'], '_', trim($name)));
 
-        return in_array($normalized, ['super_admin', 'superadmin'], true);
+        return in_array($normalized, ['admin', 'super_admin', 'superadmin'], true);
     }
 
     private function visibleRolesQuery()
@@ -92,7 +92,7 @@ class RoleController extends Controller
             'is_active' => 'boolean',
         ]);
 
-        if (! $this->canSeeSuperAdmin() && $this->isReservedSuperAdminName($validated['name'])) {
+        if ($this->isReservedSystemRoleName($validated['name'])) {
             return back()->withErrors(['name' => 'This role name is not available.'])->withInput();
         }
 
@@ -135,6 +135,17 @@ class RoleController extends Controller
         $role = Role::findOrFail($id);
         $this->abortIfHiddenSuperAdminRole($role);
 
+        if ($role->isProtectedSystemRole()) {
+            $validated = $request->validate(['description' => 'nullable|string']);
+            $role->update([
+                'description' => $validated['description'] ?? $role->description,
+                'is_active' => true,
+            ]);
+
+            return redirect()->route('roles.index')
+                ->with('success', $role->name.' metadata updated. Full System Access remains protected.');
+        }
+
         $validated = $request->validate([
             'name' => [
                 'required',
@@ -149,7 +160,7 @@ class RoleController extends Controller
             'is_active' => 'boolean',
         ]);
 
-        if (! $this->canSeeSuperAdmin() && $this->isReservedSuperAdminName($validated['name'])) {
+        if ($this->isReservedSystemRoleName($validated['name'])) {
             return back()->withErrors(['name' => 'This role name is not available.'])->withInput();
         }
 
@@ -169,6 +180,11 @@ class RoleController extends Controller
     {
         $role = Role::withCount('users')->findOrFail($id);
         $this->abortIfHiddenSuperAdminRole($role);
+
+        if ($role->isProtectedSystemRole()) {
+            return redirect()->route('roles.index')
+                ->with('error', $role->name.' is a protected system role and cannot be deleted.');
+        }
 
         if ($role->users_count > 0) {
             return redirect()->route('roles.index')

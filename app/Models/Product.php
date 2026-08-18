@@ -125,6 +125,11 @@ class Product extends Model
         return $this->hasMany(SaleItem::class);
     }
 
+    public function preOrderItems()
+    {
+        return $this->hasMany(PreOrderItem::class);
+    }
+
     public function storeStocks()
     {
         return $this->hasMany(StoreStock::class);

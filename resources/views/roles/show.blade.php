@@ -57,7 +57,7 @@
                     <div class="flex items-center justify-between">
                         <div>
                             <p class="text-sm text-gray-600 mb-1">Total Permissions</p>
-                            <h3 class="text-2xl font-bold text-gray-800">{{ count($role->permissions ?? []) }}</h3>
+                            <h3 class="text-lg font-bold text-gray-800">{{ $role->isProtectedSystemRole() ? 'Full System Access' : count($role->permissions ?? []) }}</h3>
                         </div>
                         <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
                             <i class="fas fa-key text-green-600 text-xl"></i>
@@ -83,10 +83,15 @@
             <!-- Permissions List -->
             <div>
                 <h3 class="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">
-                    <i class="fas fa-key text-blue-600 mr-2"></i>Permissions ({{ count($role->permissions ?? []) }})
+                    <i class="fas fa-key text-blue-600 mr-2"></i>{{ $role->isProtectedSystemRole() ? 'Full System Access' : 'Permissions ('.count($role->permissions ?? []).')' }}
                 </h3>
 
-                @if(!empty($role->permissions))
+                @if($role->isProtectedSystemRole())
+                    <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-emerald-800">
+                        <div class="text-lg font-bold"><i class="fas fa-shield-halved mr-2"></i>All current and future permissions are granted automatically.</div>
+                        <p class="text-sm mt-2">Permission checkboxes are not used for this protected role, and it cannot be disabled or deleted.</p>
+                    </div>
+                @elseif(!empty($role->permissions))
                     @php
                         $groupedPermissions = collect($role->permissions)->groupBy(function($permission) {
                             return ucfirst(explode('.', $permission)[0] ?? 'Other');
@@ -157,7 +162,7 @@
                     </a>
                 @endif
                 
-                @if(auth()->user()?->hasPermission('roles.delete') && $role->users_count === 0)
+                @if(auth()->user()?->hasPermission('roles.delete') && $role->users_count === 0 && !$role->isProtectedSystemRole())
                     <form action="{{ route('roles.destroy', $role->id) }}" method="POST" class="flex-1 md:flex-none" onsubmit="return confirm('Are you sure you want to delete this role? This action cannot be undone.')">
                         @csrf
                         @method('DELETE')

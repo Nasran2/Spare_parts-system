@@ -709,7 +709,7 @@ class SaleController extends Controller
                 $clone = clone $query;
                 $salesData = $clone->get(['id', 'sale_date', 'created_at', 'total_amount']);
                 $allowedIds = collect();
-                $grouped = $salesData->groupBy(function($s) {
+                $grouped = $salesData->groupBy(function ($s) {
                     return $s->sale_date?->toDateString() ?? $s->created_at?->toDateString() ?? 'unknown';
                 });
                 foreach ($grouped as $date => $daySales) {
@@ -848,6 +848,7 @@ class SaleController extends Controller
             'amount' => 'required|numeric|min:0.01',
             'payment_method' => 'required|string',
             'payment_date' => 'required|date',
+            'reference_no' => 'nullable|string|max:191',
             'notes' => 'nullable|string',
         ]);
 
@@ -866,8 +867,10 @@ class SaleController extends Controller
         $payment = \App\Models\Payment::create([
             'sale_id' => $sale->id,
             'customer_id' => $sale->customer_id,
+            'user_id' => Auth::id(),
             'amount' => $validated['amount'],
             'payment_method' => $validated['payment_method'],
+            'reference_no' => $validated['reference_no'] ?? null,
             'payment_date' => $validated['payment_date'],
             'notes' => $validated['notes'],
         ]);
@@ -884,6 +887,14 @@ class SaleController extends Controller
         }
 
         $sale->save();
+
+        \App\Models\PreOrder::query()->where('sale_id', $sale->id)->update([
+            'paid_amount' => $sale->paid_amount,
+            'held_cheque_amount' => $sale->held_cheque_amount,
+            'due_amount' => $sale->due_amount,
+            'payment_status' => $sale->payment_status,
+            'updated_at' => now(),
+        ]);
 
         // Log activity
         \App\Models\ActivityLog::create([

@@ -42,7 +42,7 @@
                         <i class="fas fa-users mr-2"></i>{{ $role->users_count }} Users
                     </span>
                     <span class="flex items-center">
-                        <i class="fas fa-key mr-2"></i>{{ count($role->permissions ?? []) }} Permissions
+                        <i class="fas fa-key mr-2"></i>{{ $role->isProtectedSystemRole() ? 'Full System Access' : count($role->permissions ?? []).' Permissions' }}
                     </span>
                 </div>
             </div>
@@ -53,7 +53,9 @@
                     <i class="fas fa-lock text-blue-600 mr-2"></i>Permissions
                 </h4>
                 <div class="space-y-2 max-h-48 overflow-y-auto">
-                    @if(!empty($role->permissions))
+                    @if($role->isProtectedSystemRole())
+                        <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800"><i class="fas fa-shield-halved mr-2"></i>All current and future permissions</div>
+                    @elseif(!empty($role->permissions))
                         @foreach(array_slice($role->permissions, 0, 8) as $permission)
                         <div class="flex items-center text-sm">
                             <i class="fas fa-check text-green-500 mr-2"></i>
@@ -102,7 +104,7 @@
                                 <i class="fas fa-edit"></i>
                             </a>
                         @endif
-                        @if(auth()->user()?->hasPermission('roles.delete') && $role->users_count === 0)
+                        @if(auth()->user()?->hasPermission('roles.delete') && $role->users_count === 0 && !$role->isProtectedSystemRole())
                             <form action="{{ route('roles.destroy', $role->id) }}" method="POST" class="inline" onsubmit="return confirm('Are you sure you want to delete this role?')">
                                 @csrf
                                 @method('DELETE')

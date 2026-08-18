@@ -63,19 +63,27 @@ class User extends Authenticatable
 
     public function hasStoreAccess($storeId): bool
     {
-        if ($this->hasRole(['Admin', 'Super Admin'])) {
+        if ($this->isSystemAdministrator()) {
             return true;
         }
+
         return $this->stores()->where('store_id', $storeId)->exists();
     }
 
     public function hasPermission($permission)
     {
-        if ($this->isSuperAdmin()) {
+        if ($this->isSystemAdministrator()) {
             return true;
         }
 
         return $this->role && $this->role->hasPermission($permission);
+    }
+
+    public function isSystemAdministrator(): bool
+    {
+        $roleName = strtolower(trim((string) ($this->role?->name ?? '')));
+
+        return in_array($roleName, ['admin', 'super admin', 'superadmin', 'super_admin'], true);
     }
 
     public function isSuperAdmin(): bool
@@ -98,5 +106,10 @@ class User extends Authenticatable
     public function expenses()
     {
         return $this->hasMany(Expense::class);
+    }
+
+    public function preOrders()
+    {
+        return $this->hasMany(PreOrder::class, 'created_by');
     }
 }

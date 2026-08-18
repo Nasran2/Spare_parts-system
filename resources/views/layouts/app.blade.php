@@ -204,6 +204,9 @@
         $canPurchaseMenu = $navUser?->hasPermission('purchases.view')
             || $navUser?->hasPermission('purchases.create')
             || $navUser?->hasPermission('purchases.edit');
+        $canPreOrderMenu = $navUser?->hasPermission('preorder_view')
+            || $navUser?->hasPermission('preorder_create')
+            || $navUser?->hasPermission('preorder_reports');
         $canSalesMenu = $navUser?->hasPermission('sales.view')
             || $navUser?->hasPermission('sales.create')
             || $navUser?->hasPermission('sales.edit')
@@ -446,6 +449,33 @@
                         <i class="fas fa-undo w-4"></i>
                         <span>Purchase Returns</span>
                     </a>
+                    @endif
+                </div>
+            </div>
+            @endif
+
+            <!-- Pre-Order Management -->
+            @if($canPreOrderMenu)
+            <div class="nav-group">
+                <button onclick="toggleDropdown('preorder-menu')" class="nav-item flex items-center justify-between w-full px-4 py-3 rounded-lg text-gray-700 {{ request()->routeIs('preorders.*') ? 'active' : '' }}">
+                    <div class="flex items-center space-x-3">
+                        <i class="fas fa-clipboard-list w-5"></i>
+                        <span class="text-sm">Pre-Order Management</span>
+                    </div>
+                    <i class="fas fa-chevron-down transition-transform {{ request()->routeIs('preorders.*') ? 'rotate-180' : '' }}" id="preorder-menu-icon"></i>
+                </button>
+                <div id="preorder-menu" class="dropdown-menu ml-4 mt-1 space-y-1 {{ request()->routeIs('preorders.*') ? 'open' : '' }}">
+                    @if($navUser?->hasPermission('preorder_create'))
+                    <a href="{{ route('preorders.create') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('preorders.create') ? 'active' : '' }}"><i class="fas fa-plus-circle w-4"></i><span>Create Pre-Order</span></a>
+                    @endif
+                    @if($navUser?->hasPermission('preorder_view'))
+                    <a href="{{ route('preorders.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('preorders.index') ? 'active' : '' }}"><i class="fas fa-list w-4"></i><span>All Pre-Orders</span></a>
+                    <a href="{{ route('preorders.status','pending') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600"><i class="fas fa-clock w-4 text-amber-500"></i><span>Pending</span></a>
+                    <a href="{{ route('preorders.status','completed') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600"><i class="fas fa-circle-check w-4 text-green-500"></i><span>Completed</span></a>
+                    <a href="{{ route('preorders.status','cancelled') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600"><i class="fas fa-circle-xmark w-4 text-red-500"></i><span>Cancelled</span></a>
+                    @endif
+                    @if($navUser?->hasPermission('preorder_reports'))
+                    <a href="{{ route('preorders.report') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('preorders.report') ? 'active' : '' }}"><i class="fas fa-chart-column w-4"></i><span>Pre-Order Report</span></a>
                     @endif
                 </div>
             </div>

@@ -50,6 +50,7 @@
                             class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent @error('name') border-red-500 @enderror"
                             placeholder="e.g., Manager, Cashier, Supervisor"
                             required
+                            {{ $role->isProtectedSystemRole() ? 'readonly' : '' }}
                         >
                     </div>
                     @error('name')
@@ -79,6 +80,12 @@
                     @enderror
                 </div>
 
+                @if($role->isProtectedSystemRole())
+                <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+                    <div class="text-lg font-bold text-emerald-800"><i class="fas fa-shield-halved mr-2"></i>Full System Access</div>
+                    <p class="text-sm text-emerald-700 mt-2">This protected role automatically receives every current and future permission. It cannot be disabled or deleted.</p>
+                </div>
+                @else
                 <!-- Active Status -->
                 <div>
                     <label class="flex items-center cursor-pointer">
@@ -95,9 +102,11 @@
                     </label>
                     <p class="ml-8 text-xs text-gray-500 mt-1">Users can be assigned to active roles only</p>
                 </div>
+                @endif
             </div>
 
             <!-- Permissions Section -->
+            @if(!$role->isProtectedSystemRole())
             <div class="space-y-6">
                 <h3 class="text-lg font-semibold text-gray-800 border-b pb-2">
                     <i class="fas fa-key text-blue-600 mr-2"></i>Permissions <span class="text-red-500">*</span>
@@ -118,6 +127,7 @@
                         'Purchases' => ['purchases.view', 'purchases.create', 'purchases.edit', 'purchases.delete'],
                         'Sales' => ['sales.view', 'sales.create', 'sales.edit', 'sales.delete'],
                         'Quotations' => ['quotations.view', 'quotations.create', 'quotations.edit', 'quotations.delete'],
+                        'Pre-Orders' => ['preorder_view', 'preorder_create', 'preorder_edit', 'preorder_cancel', 'preorder_complete', 'preorder_reopen', 'preorder_payment_view', 'preorder_payment_create', 'preorder_payment_edit', 'preorder_sync_product', 'preorder_change_price', 'preorder_print_quotation', 'preorder_print_invoice', 'preorder_view_cost', 'preorder_view_profit', 'preorder_reports'],
                         'POS' => ['pos.access'],
                         'Accounting' => ['accounting.view', 'accounting.manage', 'accounting.accounts', 'accounting.transactions', 'accounting.cash-book', 'accounting.bank-book', 'accounting.banks', 'accounting.petty-cash', 'accounting.ledger', 'accounting.t-accounts', 'accounting.trial-balance', 'accounting.balance-sheet', 'accounting.owner-equity.view', 'accounting.owner-equity.create', 'accounting.owner-equity.edit', 'accounting.owner-equity.delete'],
                         'Store Stock' => ['stores.view', 'stores.manage', 'stores.stores', 'stores.allocations', 'stores.transfers', 'stores.transfer-report', 'stores.report'],
@@ -165,6 +175,7 @@
                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                 @enderror
             </div>
+            @endif
 
             <!-- Helper Tools -->
             <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">

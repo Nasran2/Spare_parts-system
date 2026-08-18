@@ -117,6 +117,7 @@
                         'Purchases' => ['purchases.view', 'purchases.create', 'purchases.edit', 'purchases.delete'],
                         'Sales' => ['sales.view', 'sales.create', 'sales.edit', 'sales.delete'],
                         'Quotations' => ['quotations.view', 'quotations.create', 'quotations.edit', 'quotations.delete'],
+                        'Pre-Orders' => ['preorder_view', 'preorder_create', 'preorder_edit', 'preorder_cancel', 'preorder_complete', 'preorder_reopen', 'preorder_payment_view', 'preorder_payment_create', 'preorder_payment_edit', 'preorder_sync_product', 'preorder_change_price', 'preorder_print_quotation', 'preorder_print_invoice', 'preorder_view_cost', 'preorder_view_profit', 'preorder_reports'],
                         'POS' => ['pos.access'],
                         'Accounting' => ['accounting.view', 'accounting.manage', 'accounting.accounts', 'accounting.transactions', 'accounting.cash-book', 'accounting.bank-book', 'accounting.banks', 'accounting.petty-cash', 'accounting.ledger', 'accounting.t-accounts', 'accounting.trial-balance', 'accounting.balance-sheet', 'accounting.owner-equity.view', 'accounting.owner-equity.create', 'accounting.owner-equity.edit', 'accounting.owner-equity.delete'],
                         'Store Stock' => ['stores.view', 'stores.manage', 'stores.stores', 'stores.allocations', 'stores.transfers', 'stores.transfer-report', 'stores.report'],

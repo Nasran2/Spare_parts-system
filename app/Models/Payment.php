@@ -14,11 +14,12 @@ class Payment extends Model
         'supplier_id',
         'sale_id',
         'customer_id',
+        'user_id',
         'amount',
         'payment_method',
+        'reference_no',
         'payment_date',
         'notes',
-        'reference_no',
         'store_id',
     ];
 
@@ -52,15 +53,20 @@ class Payment extends Model
         return $this->belongsTo(Customer::class);
     }
 
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
     protected static function booted()
     {
         static::addGlobalScope('hiddenStores', function (\Illuminate\Database\Eloquent\Builder $builder) {
             if (auth()->hasUser()) {
                 $hiddenStoreIds = \App\Services\DashboardVisibilityService::hiddenStoreIdsForUser(auth()->user());
-                if (!empty($hiddenStoreIds)) {
+                if (! empty($hiddenStoreIds)) {
                     $builder->where(function ($q) use ($hiddenStoreIds) {
                         $q->whereNotIn('payments.store_id', $hiddenStoreIds)
-                          ->orWhereNull('payments.store_id');
+                            ->orWhereNull('payments.store_id');
                     });
                 }
             }

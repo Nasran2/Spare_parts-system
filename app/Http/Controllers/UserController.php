@@ -48,6 +48,22 @@ class UserController extends Controller
         }
     }
 
+    private function wouldRemoveLastAdministrator(User $user, int $newRoleId, bool $newActive): bool
+    {
+        $user->loadMissing('role');
+        if (! $user->isSystemAdministrator() || ! $user->is_active) {
+            return false;
+        }
+        $newRole = Role::find($newRoleId);
+        if ($newActive && $newRole?->isProtectedSystemRole()) {
+            return false;
+        }
+
+        return User::query()->whereKeyNot($user->id)->where('is_active', true)
+            ->whereHas('role', fn ($q) => $q->whereIn('name', ['Admin', 'admin', 'Super Admin', 'superadmin', 'super_admin']))
+            ->doesntExist();
+    }
+
     /**
      * Display a listing of the resource.
      */
@@ -98,7 +114,7 @@ class UserController extends Controller
         $validated['is_active'] = $request->has('is_active');
 
         $user = User::create($validated);
-        
+
         if ($request->has('stores')) {
             $user->stores()->sync($request->stores);
         }
@@ -169,8 +185,12 @@ class UserController extends Controller
 
         $validated['is_active'] = $request->has('is_active');
 
+        if ($this->wouldRemoveLastAdministrator($user, (int) $validated['role_id'], (bool) $validated['is_active'])) {
+            return back()->withErrors(['is_active' => 'The last active administrator cannot be disabled or assigned to another role.'])->withInput();
+        }
+
         $user->update($validated);
-        
+
         if ($request->has('stores')) {
             $user->stores()->sync($request->stores);
         } else {
@@ -192,6 +212,13 @@ class UserController extends Controller
         if ($user->id === auth()->id()) {
             return redirect()->route('users.index')
                 ->with('error', 'You cannot delete your own account!');
+        }
+
+        if ($user->isSystemAdministrator() && $user->is_active && User::query()->whereKeyNot($user->id)->where('is_active', true)
+            ->whereHas('role', fn ($q) => $q->whereIn('name', ['Admin', 'admin', 'Super Admin', 'superadmin', 'super_admin']))
+            ->doesntExist()) {
+            return redirect()->route('users.index')
+                ->with('error', 'The last active administrator account cannot be deleted.');
         }
 
         $user->delete();

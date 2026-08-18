@@ -22,6 +22,7 @@ class ChequePaymentService
             $payment = Payment::create([
                 'sale_id' => $sale->id,
                 'customer_id' => $cheque->customer_id,
+                'user_id' => $userId,
                 'amount' => $cheque->amount,
                 'payment_method' => 'cheque',
                 'payment_date' => now()->toDateString(),
@@ -42,6 +43,7 @@ class ChequePaymentService
             $sale->save();
 
             app(SalePaymentAccountingService::class)->recordChequePass($cheque, $sale, $userId);
+            $this->syncPreOrder($sale);
 
             return $cheque->refresh();
         });
@@ -66,6 +68,13 @@ class ChequePaymentService
             $sale->held_cheque_amount = max(0, round((float) $sale->held_cheque_amount - (float) $cheque->amount, 2));
             $this->refreshSaleBalance($sale);
             $sale->save();
+            app(SalePaymentAccountingService::class)->reverseChequeHold(
+                $cheque,
+                $sale,
+                $userId,
+                'Returned cheque hold reversed'
+            );
+            $this->syncPreOrder($sale);
 
             return $cheque->refresh();
         });
@@ -101,5 +110,16 @@ class ChequePaymentService
         $sale->payment_status = ((float) $sale->due_amount <= 0 && (float) $sale->held_cheque_amount <= 0)
             ? 'paid'
             : (((float) $sale->paid_amount > 0 || (float) $sale->held_cheque_amount > 0) ? 'partial' : 'unpaid');
+    }
+
+    private function syncPreOrder(Sale $sale): void
+    {
+        \App\Models\PreOrder::query()->where('sale_id', $sale->id)->update([
+            'paid_amount' => $sale->paid_amount,
+            'held_cheque_amount' => $sale->held_cheque_amount,
+            'due_amount' => $sale->due_amount,
+            'payment_status' => $sale->payment_status,
+            'updated_at' => now(),
+        ]);
     }
 }

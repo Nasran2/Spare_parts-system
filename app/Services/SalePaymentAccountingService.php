@@ -105,6 +105,111 @@ class SalePaymentAccountingService
         $receivableAccount->decrement('current_balance', $amount);
     }
 
+    public function reversePayment(Payment $payment, Sale $sale, ?int $userId = null, string $reason = 'Payment reversed'): void
+    {
+        if ($this->transactionExists('payment_reversal', (int) $payment->id)) {
+            return;
+        }
+
+        $source = AccountTransaction::query()
+            ->where('source_type', 'payment')
+            ->where('source_id', $payment->id)
+            ->first();
+        if (! $source) {
+            return;
+        }
+
+        AccountTransaction::create([
+            'account_id' => $source->account_id,
+            'related_account_id' => $source->related_account_id,
+            'user_id' => $userId,
+            'transaction_date' => now()->toDateString(),
+            'direction' => 'out',
+            'payment_method' => $source->payment_method,
+            'amount' => $source->amount,
+            'reference_no' => $sale->sale_no,
+            'source_type' => 'payment_reversal',
+            'source_id' => $payment->id,
+            'description' => $reason.' for sale '.$sale->sale_no,
+        ]);
+        ChartAccount::whereKey($source->account_id)->decrement('current_balance', $source->amount);
+    }
+
+    public function reverseCheque(ChequePayment $cheque, Sale $sale, ?int $userId = null, string $reason = 'Cheque reversed'): void
+    {
+        $pass = AccountTransaction::query()
+            ->where('source_type', 'cheque_payment')
+            ->where('source_id', $cheque->id)
+            ->first();
+        if ($pass && ! $this->transactionExists('cheque_payment_reversal', (int) $cheque->id)) {
+            AccountTransaction::create([
+                'account_id' => $pass->account_id,
+                'related_account_id' => $pass->related_account_id,
+                'user_id' => $userId,
+                'transaction_date' => now()->toDateString(),
+                'direction' => 'out',
+                'payment_method' => 'cheque',
+                'amount' => $pass->amount,
+                'cheque_number' => $cheque->cheque_number,
+                'reference_no' => $sale->sale_no,
+                'source_type' => 'cheque_payment_reversal',
+                'source_id' => $cheque->id,
+                'description' => $reason.' (bank) for sale '.$sale->sale_no,
+            ]);
+            ChartAccount::whereKey($pass->account_id)->decrement('current_balance', $pass->amount);
+
+            if ($pass->related_account_id) {
+                AccountTransaction::create([
+                    'account_id' => $pass->related_account_id,
+                    'related_account_id' => $pass->account_id,
+                    'user_id' => $userId,
+                    'transaction_date' => now()->toDateString(),
+                    'direction' => 'in',
+                    'payment_method' => 'cheque',
+                    'amount' => $pass->amount,
+                    'cheque_number' => $cheque->cheque_number,
+                    'reference_no' => $sale->sale_no,
+                    'source_type' => 'cheque_payment_receivable_reversal',
+                    'source_id' => $cheque->id,
+                    'description' => $reason.' (receivable) for sale '.$sale->sale_no,
+                ]);
+                ChartAccount::whereKey($pass->related_account_id)->increment('current_balance', $pass->amount);
+            }
+        }
+
+        $this->reverseChequeHold($cheque, $sale, $userId, $reason);
+    }
+
+    public function reverseChequeHold(ChequePayment $cheque, Sale $sale, ?int $userId = null, string $reason = 'Cheque hold reversed'): void
+    {
+        if ($this->transactionExists('cheque_payment_hold_reversal', (int) $cheque->id)) {
+            return;
+        }
+        $hold = AccountTransaction::query()
+            ->where('source_type', 'cheque_payment_hold')
+            ->where('source_id', $cheque->id)
+            ->first();
+        if (! $hold) {
+            return;
+        }
+
+        AccountTransaction::create([
+            'account_id' => $hold->account_id,
+            'related_account_id' => $hold->related_account_id,
+            'user_id' => $userId,
+            'transaction_date' => now()->toDateString(),
+            'direction' => 'out',
+            'payment_method' => 'cheque',
+            'amount' => $hold->amount,
+            'cheque_number' => $cheque->cheque_number,
+            'reference_no' => $sale->sale_no,
+            'source_type' => 'cheque_payment_hold_reversal',
+            'source_id' => $cheque->id,
+            'description' => $reason.' for sale '.$sale->sale_no,
+        ]);
+        ChartAccount::whereKey($hold->account_id)->decrement('current_balance', $hold->amount);
+    }
+
     private function assetAccountForPaymentMethod(string $method): ChartAccount
     {
         return match ($method) {

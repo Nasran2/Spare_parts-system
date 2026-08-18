@@ -28,7 +28,18 @@ class Role extends Model
 
     public function hasPermission($permission)
     {
+        if ($this->isProtectedSystemRole()) {
+            return true;
+        }
+
         return in_array($permission, $this->permissions ?? []);
+    }
+
+    public function isProtectedSystemRole(): bool
+    {
+        $name = strtolower(trim((string) $this->name));
+
+        return in_array($name, ['admin', 'super admin', 'superadmin', 'super_admin'], true);
     }
 
     public function isSuperAdminRole(): bool

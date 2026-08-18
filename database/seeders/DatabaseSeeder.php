@@ -79,6 +79,13 @@ class DatabaseSeeder extends Seeder
             'quotations.view', 'quotations.create', 'quotations.edit', 'quotations.delete',
             'pos.access',
 
+            // Pre-Orders
+            'preorder_view', 'preorder_create', 'preorder_edit', 'preorder_cancel',
+            'preorder_complete', 'preorder_reopen', 'preorder_payment_view',
+            'preorder_payment_create', 'preorder_payment_edit', 'preorder_sync_product',
+            'preorder_change_price', 'preorder_print_quotation', 'preorder_print_invoice',
+            'preorder_view_cost', 'preorder_view_profit', 'preorder_reports',
+
             // Expenses
             'expenses.view', 'expenses.create', 'expenses.edit', 'expenses.delete',
 
@@ -138,6 +145,11 @@ class DatabaseSeeder extends Seeder
                     'purchases.view', 'purchases.create', 'purchases.edit',
                     'sales.view', 'sales.create', 'sales.edit',
                     'pos.access',
+                    'preorder_view', 'preorder_create', 'preorder_edit', 'preorder_cancel',
+                    'preorder_complete', 'preorder_reopen', 'preorder_payment_view',
+                    'preorder_payment_create', 'preorder_payment_edit', 'preorder_sync_product',
+                    'preorder_change_price', 'preorder_print_quotation', 'preorder_print_invoice',
+                    'preorder_view_cost', 'preorder_view_profit', 'preorder_reports',
                     'privacy_mode.view', 'privacy_mode.toggle',
                     'expenses.view', 'expenses.create',
                     'accounting.view', 'accounting.manage', 'accounting.t-accounts', 'accounting.trial-balance',
@@ -160,6 +172,9 @@ class DatabaseSeeder extends Seeder
                     'pos.access',
                     'cheque_payments.create',
                     'sales.view', 'sales.create',
+                    'preorder_view', 'preorder_create', 'preorder_edit',
+                    'preorder_payment_view', 'preorder_payment_create',
+                    'preorder_print_quotation', 'preorder_print_invoice',
                     'privacy_mode.view', 'privacy_mode.toggle',
                     'customers.view', 'customers.create',
                     'products.view',
