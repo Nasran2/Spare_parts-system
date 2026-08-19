@@ -246,7 +246,12 @@ function recalculate() {
             }
         }
         taxTotal += tax; grand += total;
-        line.row.querySelector('.line-total').textContent = money(total);
+        
+        let displayTotal = total;
+        if (!isInclusive && !isExclusiveHidden) {
+            displayTotal = discounted;
+        }
+        line.row.querySelector('.line-total').textContent = money(displayTotal);
     });
     
     // Adjust summary
