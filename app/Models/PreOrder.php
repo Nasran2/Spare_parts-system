@@ -123,6 +123,12 @@ class PreOrder extends Model
         }
         $path = public_path($this->vehicle_image);
 
-        return is_file($path) ? $path : null;
+        if (is_file($path)) {
+            $type = pathinfo($path, PATHINFO_EXTENSION);
+            $data = file_get_contents($path);
+            return 'data:image/' . $type . ';base64,' . base64_encode($data);
+        }
+
+        return null;
     }
 }
