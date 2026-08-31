@@ -18,6 +18,7 @@
         <option value="yesterday">Yesterday</option>
         <option value="this_week">This Week</option>
         <option value="this_month">This Month</option>
+        <option value="all_time">All Time</option>
     </select>
 @else
     <div>
@@ -32,6 +33,7 @@
             <option value="yesterday">Yesterday</option>
             <option value="this_week">This Week</option>
             <option value="this_month">This Month</option>
+            <option value="all_time">All Time</option>
         </select>
     </div>
 @endif
@@ -92,6 +94,9 @@
                     if (value === 'today') {
                         start = fmt(today);
                         end = fmt(today);
+                    } else if (value === 'all_time') {
+                        start = '';
+                        end = '';
                     } else if (value === 'yesterday') {
                         const y = new Date(today);
                         y.setDate(y.getDate() - 1);

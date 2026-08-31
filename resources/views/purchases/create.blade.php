@@ -227,31 +227,33 @@
             </div>
         </div>
 
-        <!-- Payment Section -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 bg-blue-50 p-4 rounded-lg">
-            <div>
-                <label class="block text-sm font-semibold text-gray-700 mb-2">Payment Method: <span class="text-red-500">*</span></label>
-                <select name="payment_method" id="payment_method" class="w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500" required>
-                    <option value="">Please Select</option>
-                    <option value="cash" selected>Main Account (Cash)</option>
-                    <option value="petty_cash">Petty Cash</option>
-                    <option value="card">Card</option>
-                    <option value="bank_transfer">Main Account (Bank Transfer)</option>
-                    <option value="cheque">Cheque</option>
-                    <option value="credit">Credit</option>
-                </select>
+                <!-- Multiple Payments Section -->
+        <div class="mb-6 bg-blue-50 p-4 rounded-lg">
+            <div class="flex justify-between items-center mb-4 border-b pb-2 border-blue-200">
+                <h3 class="text-lg font-semibold text-gray-800">Payments</h3>
+                <button type="button" onclick="addPaymentRow()" class="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700">
+                    <i class="fas fa-plus mr-1"></i> Add Payment
+                </button>
             </div>
-            <div>
-                <label class="block text-sm font-semibold text-gray-700 mb-2">Payment Amount:</label>
-                <input type="number" name="payment_amount" id="payment_amount" value="0" step="0.01" oninput="recalcPayment()" class="w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500">
+            
+            <div id="payments-container">
+                <!-- Payment rows injected here -->
             </div>
-            <div class="flex items-end">
-                <div class="text-right w-full">
-                    <label class="block text-sm font-semibold text-gray-700 mb-2">Grand Total:</label>
-                    <span id="grandTotal" class="text-xl font-bold text-blue-600">0.00</span>
-                    <br>
-                    <label class="block text-sm font-semibold text-gray-700 mb-2">Due Amount:</label>
-                    <span id="dueAmount" class="text-xl font-bold text-red-600">0.00</span>
+
+            <div class="flex justify-end mt-4">
+                <div class="text-right w-64 bg-white p-4 rounded shadow-sm border border-blue-100">
+                    <div class="flex justify-between mb-2">
+                        <span class="text-sm font-semibold text-gray-700">Grand Total:</span>
+                        <span id="grandTotal" class="text-lg font-bold text-blue-600">0.00</span>
+                    </div>
+                    <div class="flex justify-between mb-2">
+                        <span class="text-sm font-semibold text-gray-700">Total Paid:</span>
+                        <span id="totalPaid" class="text-lg font-bold text-green-600">0.00</span>
+                    </div>
+                    <div class="flex justify-between border-t pt-2 mt-2 border-gray-200">
+                        <span class="text-sm font-semibold text-gray-700">Due Amount:</span>
+                        <span id="dueAmount" class="text-xl font-bold text-red-600">0.00</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1122,7 +1124,113 @@ function recalcGrandTotal() {
     document.getElementById('dueAmount').textContent = formatMoney(dueAmount);
 }
 
-function recalcPayment() {
+    const pendingCustomerCheques = @json($pendingCustomerCheques ?? []);
+    let paymentIndex = 0;
+
+    function addPaymentRow() {
+        const container = document.getElementById('payments-container');
+        const index = paymentIndex++;
+        
+        let chequeOptions = '<option value="">Select Party Cheque...</option>';
+        pendingCustomerCheques.forEach(c => {
+            chequeOptions += `<option value="${c.id}">${c.bank_name} - ${c.cheque_number} - Rs ${parseFloat(c.amount).toFixed(2)} (${c.customer ? c.customer.name : 'Unknown'})</option>`;
+        });
+
+        const rowHtml = `
+            <div class="flex items-start gap-4 mb-3 pb-3 border-b border-gray-200 payment-row" id="payment-row-${index}">
+                <div class="w-1/4">
+                    <select name="payments[${index}][method]" onchange="handlePaymentMethodChange(this, ${index})" class="w-full border border-gray-300 rounded px-2 py-1.5 focus:ring-2 focus:ring-blue-500" required>
+                        <option value="cash">Cash</option>
+                        <option value="bank_transfer">Bank Transfer</option>
+                        <option value="card">Card</option>
+                        <option value="customer_cheque">Party Cheque</option>
+                        <option value="own_cheque">Own Cheque</option>
+                    </select>
+                </div>
+                
+                <div class="w-2/4" id="payment-details-${index}">
+                    <!-- Dynamic details injected here -->
+                </div>
+
+                <div class="w-1/4 flex gap-2">
+                    <input type="number" name="payments[${index}][amount]" step="0.01" value="0" class="w-full border border-gray-300 rounded px-2 py-1.5 focus:ring-2 focus:ring-blue-500 payment-amount" oninput="recalcPayment()">
+                    <button type="button" onclick="removePaymentRow(${index})" class="px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        container.insertAdjacentHTML('beforeend', rowHtml);
+        handlePaymentMethodChange(document.querySelector(`select[name="payments[${index}][method]"]`), index);
+    }
+
+    function handlePaymentMethodChange(select, index) {
+        const method = select.value;
+        const detailsContainer = document.getElementById(`payment-details-${index}`);
+        const amountInput = document.querySelector(`input[name="payments[${index}][amount]"]`);
+        
+        detailsContainer.innerHTML = '';
+        amountInput.readOnly = false;
+
+        if (method === 'customer_cheque') {
+            let chequeOptions = '<option value="">Select Party Cheque...</option>';
+            pendingCustomerCheques.forEach(c => {
+                chequeOptions += `<option value="${c.id}" data-amount="${c.amount}">${c.bank_name} - ${c.cheque_number} - Rs ${parseFloat(c.amount).toFixed(2)} (${c.customer ? c.customer.name : 'Unknown'})</option>`;
+            });
+            detailsContainer.innerHTML = `
+                <select name="payments[${index}][cheque_id]" class="w-full border border-gray-300 rounded px-2 py-1.5 focus:ring-2 focus:ring-blue-500" onchange="partyChequeSelected(this, ${index})" required>
+                    ${chequeOptions}
+                </select>
+            `;
+            amountInput.readOnly = true;
+            amountInput.value = 0;
+            recalcPayment();
+        } else if (method === 'own_cheque') {
+            detailsContainer.innerHTML = `
+                <div class="flex gap-2">
+                    <input type="date" name="payments[${index}][cheque_date]" class="w-1/3 border border-gray-300 rounded px-2 py-1.5" required>
+                    <input type="text" name="payments[${index}][bank_name]" placeholder="Bank Name" class="w-1/3 border border-gray-300 rounded px-2 py-1.5" required>
+                    <input type="text" name="payments[${index}][cheque_number]" placeholder="Cheque No" class="w-1/3 border border-gray-300 rounded px-2 py-1.5" required>
+                </div>
+            `;
+        }
+    }
+
+    function partyChequeSelected(select, index) {
+        const option = select.options[select.selectedIndex];
+        const amountInput = document.querySelector(`input[name="payments[${index}][amount]"]`);
+        if (option && option.dataset.amount) {
+            amountInput.value = option.dataset.amount;
+        } else {
+            amountInput.value = 0;
+        }
+        recalcPayment();
+    }
+
+    function removePaymentRow(index) {
+        document.getElementById(`payment-row-${index}`).remove();
+        recalcPayment();
+    }
+
+    // Override existing recalcPayment
+    window.recalcPayment = function() {
+        let grandTotal = parseFloat(document.getElementById('grandTotal').innerText.replace(/,/g, '')) || 0;
+        let totalPaid = 0;
+        
+        document.querySelectorAll('.payment-amount').forEach(input => {
+            totalPaid += parseFloat(input.value) || 0;
+        });
+
+        let dueAmount = Math.max(0, grandTotal - totalPaid);
+
+        const totalPaidEl = document.getElementById('totalPaid');
+        if (totalPaidEl) totalPaidEl.innerText = totalPaid.toFixed(2);
+        
+        const dueAmountEl = document.getElementById('dueAmount');
+        if (dueAmountEl) dueAmountEl.innerText = dueAmount.toFixed(2);
+    }
+
+    function old_recalcPayment() {
     // Show due amount in real time
     const grandTotal = parseFloat(document.getElementById('grandTotal').textContent || 0);
     const paymentAmount = parseFloat(document.getElementById('payment_amount').value || 0);

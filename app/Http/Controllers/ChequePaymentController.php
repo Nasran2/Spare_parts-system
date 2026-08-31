@@ -35,12 +35,20 @@ class ChequePaymentController extends Controller
         $cheques = $query->paginate(20)->appends($request->query());
         $currency = config('app.currency', 'Rs ');
 
-        return view('cheque-payments.index', compact('cheques', 'currency'));
+        $bankAccounts = \App\Models\Accounting\BankAccount::where('is_active', true)->get();
+        $suppliers = \App\Models\Supplier::where('is_active', true)->get();
+
+        return view('cheque-payments.index', compact('cheques', 'currency', 'bankAccounts', 'suppliers'));
     }
 
     public function pass(Request $request, ChequePayment $chequePayment, ChequePaymentService $service)
     {
-        $service->pass($chequePayment, $request->user()?->id);
+        $validated = $request->validate([
+            'passed_bank_id' => 'nullable|exists:bank_accounts,id',
+            'supplier_id' => 'nullable|exists:suppliers,id',
+        ]);
+
+        $service->pass($chequePayment, $request->user()?->id, false, $validated['passed_bank_id'] ?? null, $validated['supplier_id'] ?? null);
 
         return back()->with('success', 'Cheque marked as passed and added to paid/accounting.');
     }

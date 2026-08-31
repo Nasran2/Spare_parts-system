@@ -402,9 +402,18 @@ class PreOrderController extends Controller
             'terms' => Setting::get('quotation_terms', ''),
         ];
         abort_unless(app()->bound('dompdf.wrapper'), 500, 'PDF export library not installed.');
+        
+        $pdfSettings = [
+            'line_color' => \App\Models\Setting::get('preorder_pdf_line_color', '#3b82f6'),
+            'text_color' => \App\Models\Setting::get('preorder_pdf_text_color', '#1f2937'),
+            'heading_color' => \App\Models\Setting::get('preorder_pdf_heading_color', '#eff6ff'),
+            'logo_shape' => \App\Models\Setting::get('preorder_pdf_logo_shape', 'original'),
+        ];
+
         $pdf = app('dompdf.wrapper')->loadView('preorders.pdf', [
             'preOrder' => $preOrder, 'shop' => $shop, 'kind' => $kind,
-            'currency' => Setting::get('currency_symbol', 'Rs '),
+            'currency' => \App\Models\Setting::get('currency_symbol', 'Rs '),
+            'pdfSettings' => $pdfSettings,
         ])->setPaper('a4', 'portrait');
 
         return $pdf->stream(strtolower($kind).'-'.$preOrder->pre_order_number.'.pdf');

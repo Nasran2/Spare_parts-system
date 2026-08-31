@@ -109,6 +109,21 @@ class SettingController extends Controller
     }
 
     /**
+     * Pre-Order Settings
+     */
+    public function preorder()
+    {
+        $settings = [
+            'preorder_pdf_line_color' => Setting::get('preorder_pdf_line_color', '#3b82f6'),
+            'preorder_pdf_text_color' => Setting::get('preorder_pdf_text_color', '#1f2937'),
+            'preorder_pdf_heading_color' => Setting::get('preorder_pdf_heading_color', '#eff6ff'),
+            'preorder_pdf_logo_shape' => Setting::get('preorder_pdf_logo_shape', 'original'),
+        ];
+
+        return view('settings.preorder', compact('settings'));
+    }
+
+    /**
      * POS Settings
      */
     public function pos()
@@ -294,6 +309,12 @@ class SettingController extends Controller
             'quotation_show_logo' => 'nullable|boolean',
             'quotation_footer_text' => 'nullable|string|max:500',
             'quotation_terms' => 'nullable|string|max:2000',
+
+            // Pre-Order Settings
+            'preorder_pdf_line_color' => 'nullable|string|max:20',
+            'preorder_pdf_text_color' => 'nullable|string|max:20',
+            'preorder_pdf_heading_color' => 'nullable|string|max:20',
+            'preorder_pdf_logo_shape' => 'nullable|in:original,square,round,box',
 
             // POS Settings
             'pos_layout' => 'nullable|in:default,modern',

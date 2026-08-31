@@ -7,6 +7,7 @@ use App\Models\Supplier;
 use App\Models\Sale;
 use App\Models\Purchase;
 use App\Models\Payment;
+use App\Models\ChequePayment;
 use Illuminate\Http\Request;
 use App\Services\DashboardVisibilityService;
 use App\Services\BulkPaymentAccountingService;
@@ -55,6 +56,9 @@ class BulkPaymentController extends Controller
             'allocations.*.type' => 'required|in:opening_balance,sale',
             'allocations.*.id' => 'nullable|integer',
             'allocations.*.amount' => 'required|numeric|min:0',
+            'cheque_number' => 'nullable|required_if:payment_method,cheque|string',
+            'bank_name' => 'nullable|required_if:payment_method,cheque|string',
+            'cheque_date' => 'nullable|required_if:payment_method,cheque|date',
         ]);
 
         if (DashboardVisibilityService::isCustomerHiddenForUser((int) $customer->id, $request->user())) {
@@ -74,6 +78,20 @@ class BulkPaymentController extends Controller
                     'notes' => 'Payment towards Opening Balance',
                 ]);
                 app(BulkPaymentAccountingService::class)->recordCustomerPayment($payment, $request->user()->id ?? null);
+                
+                if ($request->payment_method === 'cheque') {
+                    ChequePayment::create([
+                        'customer_id' => $customer->id,
+                        'payment_id' => $payment->id,
+                        'user_id' => $request->user()->id ?? null,
+                        'cheque_date' => $request->cheque_date,
+                        'cheque_number' => $request->cheque_number,
+                        'bank_name' => $request->bank_name,
+                        'amount' => $amount,
+                        'status' => 'pending',
+                        'notes' => 'Allocated to Opening Balance',
+                    ]);
+                }
             } elseif ($alloc['type'] === 'sale' && !empty($alloc['id'])) {
                 $sale = Sale::where('id', $alloc['id'])->where('customer_id', $customer->id)->first();
                 if ($sale) {
@@ -86,6 +104,21 @@ class BulkPaymentController extends Controller
                         'notes' => 'Bulk Payment Allocation',
                     ]);
                     app(BulkPaymentAccountingService::class)->recordCustomerPayment($payment, $request->user()->id ?? null);
+
+                    if ($request->payment_method === 'cheque') {
+                        ChequePayment::create([
+                            'sale_id' => $sale->id,
+                            'customer_id' => $customer->id,
+                            'payment_id' => $payment->id,
+                            'user_id' => $request->user()->id ?? null,
+                            'cheque_date' => $request->cheque_date,
+                            'cheque_number' => $request->cheque_number,
+                            'bank_name' => $request->bank_name,
+                            'amount' => $amount,
+                            'status' => 'pending',
+                            'notes' => 'Allocated to Sale ' . $sale->sale_no,
+                        ]);
+                    }
 
                     // Update Sale due amount
                     $sale->paid_amount += $amount;

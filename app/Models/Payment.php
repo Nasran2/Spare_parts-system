@@ -13,6 +13,7 @@ class Payment extends Model
         'purchase_id',
         'supplier_id',
         'sale_id',
+        'pre_order_id',
         'customer_id',
         'user_id',
         'amount',
@@ -46,6 +47,11 @@ class Payment extends Model
     public function sale()
     {
         return $this->belongsTo(Sale::class);
+    }
+
+    public function preOrder()
+    {
+        return $this->belongsTo(PreOrder::class);
     }
 
     public function customer()

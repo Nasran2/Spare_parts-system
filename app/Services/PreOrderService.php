@@ -305,11 +305,18 @@ class PreOrderService
             }
 
             $normalized = $this->normalizePayments($payments, (float) $preOrder->grand_total);
-            $cashPaid = collect($normalized)->where('method', '!=', 'cheque')->sum('amount');
-            $held = collect($normalized)->where('method', 'cheque')->sum('amount');
+            
+            $advanceCash = (float) $preOrder->paid_amount;
+            $advanceHeld = (float) $preOrder->held_cheque_amount;
+            
+            $newCashPaid = collect($normalized)->where('method', '!=', 'cheque')->sum('amount');
+            $newHeld = collect($normalized)->where('method', 'cheque')->sum('amount');
+            
+            $cashPaid = $advanceCash + $newCashPaid;
+            $held = $advanceHeld + $newHeld;
             $due = max(0, round((float) $preOrder->grand_total - $cashPaid - $held, 2));
 
-            $firstMethod = $normalized[0]['method'] ?? 'credit';
+            $firstMethod = $normalized[0]['method'] ?? ($cashPaid > 0 ? 'mixed' : 'credit');
             $sale = Sale::create([
                 'customer_id' => $preOrder->customer_id,
                 'user_id' => $userId,
@@ -398,44 +405,82 @@ class PreOrderService
     {
         return DB::transaction(function () use ($preOrder, $data, $userId) {
             $preOrder = PreOrder::lockForUpdate()->findOrFail($preOrder->id);
-            if ($preOrder->status !== 'completed' || ! $preOrder->sale_id) {
-                throw ValidationException::withMessages(['status' => 'Payments can only be collected for completed Pre-Orders.']);
+            if ($preOrder->status === 'cancelled') {
+                throw ValidationException::withMessages(['status' => 'Payments cannot be collected for cancelled Pre-Orders.']);
             }
-            $sale = Sale::withoutGlobalScopes()->lockForUpdate()->findOrFail($preOrder->sale_id);
+            
             $amount = round((float) $data['amount'], 2);
-            if ($amount <= 0 || $amount > (float) $sale->due_amount) {
+            if ($amount <= 0 || $amount > (float) $preOrder->due_amount) {
                 throw ValidationException::withMessages(['amount' => 'Payment cannot exceed the remaining due amount.']);
             }
 
-            if ($data['payment_method'] === 'cheque') {
-                $cheque = ChequePayment::create([
-                    'sale_id' => $sale->id, 'customer_id' => $sale->customer_id, 'user_id' => $userId,
-                    'cheque_date' => $data['cheque_date'], 'cheque_number' => $data['cheque_number'],
-                    'bank_name' => $data['bank_name'] ?? null, 'account_name' => $data['account_name'] ?? null,
-                    'amount' => $amount, 'status' => 'pending', 'notes' => $data['notes'] ?? null,
-                ]);
-                $sale->held_cheque_amount = round((float) $sale->held_cheque_amount + $amount, 2);
-                app(SalePaymentAccountingService::class)->recordChequeHold($cheque, $sale, $userId);
+            if ($preOrder->sale_id) {
+                $sale = Sale::withoutGlobalScopes()->lockForUpdate()->findOrFail($preOrder->sale_id);
+                if ($amount > (float) $sale->due_amount) {
+                    throw ValidationException::withMessages(['amount' => 'Payment cannot exceed the remaining sale due amount.']);
+                }
+
+                if ($data['payment_method'] === 'cheque') {
+                    $cheque = ChequePayment::create([
+                        'sale_id' => $sale->id, 'pre_order_id' => $preOrder->id, 'customer_id' => $sale->customer_id, 'user_id' => $userId,
+                        'cheque_date' => $data['cheque_date'], 'cheque_number' => $data['cheque_number'],
+                        'bank_name' => $data['bank_name'] ?? null, 'account_name' => $data['account_name'] ?? null,
+                        'amount' => $amount, 'status' => 'pending', 'notes' => $data['notes'] ?? null,
+                    ]);
+                    $sale->held_cheque_amount = round((float) $sale->held_cheque_amount + $amount, 2);
+                    app(SalePaymentAccountingService::class)->recordChequeHold($cheque, $sale, $userId);
+                } else {
+                    $payment = Payment::create([
+                        'sale_id' => $sale->id, 'pre_order_id' => $preOrder->id, 'customer_id' => $sale->customer_id, 'user_id' => $userId,
+                        'amount' => $amount, 'payment_method' => $data['payment_method'],
+                        'reference_no' => $data['reference_no'] ?? null, 'payment_date' => $data['payment_date'],
+                        'notes' => $data['notes'] ?? null, 'store_id' => $sale->store_id,
+                    ]);
+                    $sale->paid_amount = round((float) $sale->paid_amount + $amount, 2);
+                    app(SalePaymentAccountingService::class)->recordSalePayment($payment, $sale, $userId);
+                }
+                $this->refreshSaleBalance($sale);
+                $sale->save();
+                $this->syncFinancials($preOrder, $sale);
             } else {
-                $payment = Payment::create([
-                    'sale_id' => $sale->id, 'customer_id' => $sale->customer_id, 'user_id' => $userId,
-                    'amount' => $amount, 'payment_method' => $data['payment_method'],
-                    'reference_no' => $data['reference_no'] ?? null, 'payment_date' => $data['payment_date'],
-                    'notes' => $data['notes'] ?? null, 'store_id' => $sale->store_id,
-                ]);
-                $sale->paid_amount = round((float) $sale->paid_amount + $amount, 2);
-                app(SalePaymentAccountingService::class)->recordSalePayment($payment, $sale, $userId);
+                if ($data['payment_method'] === 'cheque') {
+                    $cheque = ChequePayment::create([
+                        'pre_order_id' => $preOrder->id, 'customer_id' => $preOrder->customer_id, 'user_id' => $userId,
+                        'cheque_date' => $data['cheque_date'], 'cheque_number' => $data['cheque_number'],
+                        'bank_name' => $data['bank_name'] ?? null, 'account_name' => $data['account_name'] ?? null,
+                        'amount' => $amount, 'status' => 'pending', 'notes' => $data['notes'] ?? null,
+                    ]);
+                    $preOrder->held_cheque_amount = round((float) $preOrder->held_cheque_amount + $amount, 2);
+                    app(SalePaymentAccountingService::class)->recordPreOrderChequeHold($cheque, $preOrder, $userId);
+                } else {
+                    $payment = Payment::create([
+                        'pre_order_id' => $preOrder->id, 'customer_id' => $preOrder->customer_id, 'user_id' => $userId,
+                        'amount' => $amount, 'payment_method' => $data['payment_method'],
+                        'reference_no' => $data['reference_no'] ?? null, 'payment_date' => $data['payment_date'],
+                        'notes' => $data['notes'] ?? null, 'store_id' => $preOrder->store_id,
+                    ]);
+                    $preOrder->paid_amount = round((float) $preOrder->paid_amount + $amount, 2);
+                    app(SalePaymentAccountingService::class)->recordPreOrderPayment($payment, $preOrder, $userId);
+                }
+                $preOrder->due_amount = max(0, round((float) $preOrder->grand_total - (float) $preOrder->paid_amount - (float) $preOrder->held_cheque_amount, 2));
+                
+                if ($preOrder->due_amount <= 0 && $preOrder->held_cheque_amount <= 0) {
+                    $preOrder->payment_status = 'paid';
+                } elseif ($preOrder->paid_amount > 0 || $preOrder->held_cheque_amount > 0) {
+                    $preOrder->payment_status = 'partial';
+                } else {
+                    $preOrder->payment_status = 'unpaid';
+                }
+                $preOrder->save();
             }
-            $this->refreshSaleBalance($sale);
-            $sale->save();
-            $this->syncFinancials($preOrder, $sale);
+
             $this->activity($preOrder, $userId, 'payment_added',
                 'Payment of Rs '.number_format($amount, 2).' added via '.str_replace('_', ' ', $data['payment_method']).'.',
                 null,
-                ['amount' => $amount, 'method' => $data['payment_method'], 'sale_id' => $sale->id]
+                ['amount' => $amount, 'method' => $data['payment_method']]
             );
 
-            return $preOrder->fresh(['sale.payments.user', 'sale.chequePayments.user']);
+            return $preOrder->fresh(['sale.payments.user', 'sale.chequePayments.user', 'payments.user', 'chequePayments.user']);
         });
     }
 
@@ -443,22 +488,42 @@ class PreOrderService
     {
         return DB::transaction(function () use ($preOrder, $payment, $userId) {
             $preOrder = PreOrder::lockForUpdate()->findOrFail($preOrder->id);
-            $sale = Sale::withoutGlobalScopes()->lockForUpdate()->findOrFail($preOrder->sale_id);
-            $payment = Payment::lockForUpdate()->where('sale_id', $sale->id)->findOrFail($payment->id);
             if (ChequePayment::where('payment_id', $payment->id)->exists()) {
                 throw ValidationException::withMessages(['payment' => 'Passed cheque payments must be managed through Cheque Management.']);
             }
-            app(SalePaymentAccountingService::class)->reversePayment($payment, $sale, $userId, 'Pre-Order payment deleted');
+            
             $amount = (float) $payment->amount;
             $snapshot = $payment->only(['amount', 'payment_method', 'payment_date', 'reference_no', 'notes']);
-            $payment->delete();
-            $sale->paid_amount = max(0, round((float) $sale->paid_amount - $amount, 2));
-            $this->refreshSaleBalance($sale);
-            $sale->save();
-            $this->syncFinancials($preOrder, $sale);
+
+            if ($preOrder->sale_id) {
+                $sale = Sale::withoutGlobalScopes()->lockForUpdate()->findOrFail($preOrder->sale_id);
+                $payment = Payment::lockForUpdate()->where('sale_id', $sale->id)->findOrFail($payment->id);
+                app(SalePaymentAccountingService::class)->reversePayment($payment, $sale, $userId, 'Pre-Order payment deleted');
+                $payment->delete();
+                $sale->paid_amount = max(0, round((float) $sale->paid_amount - $amount, 2));
+                $this->refreshSaleBalance($sale);
+                $sale->save();
+                $this->syncFinancials($preOrder, $sale);
+            } else {
+                $payment = Payment::lockForUpdate()->where('pre_order_id', $preOrder->id)->findOrFail($payment->id);
+                app(SalePaymentAccountingService::class)->reversePreOrderPayment($payment, $preOrder, $userId, 'Pre-Order advance payment deleted');
+                $payment->delete();
+                $preOrder->paid_amount = max(0, round((float) $preOrder->paid_amount - $amount, 2));
+                $preOrder->due_amount = max(0, round((float) $preOrder->grand_total - (float) $preOrder->paid_amount - (float) $preOrder->held_cheque_amount, 2));
+                
+                if ($preOrder->due_amount <= 0 && $preOrder->held_cheque_amount <= 0) {
+                    $preOrder->payment_status = 'paid';
+                } elseif ($preOrder->paid_amount > 0 || $preOrder->held_cheque_amount > 0) {
+                    $preOrder->payment_status = 'partial';
+                } else {
+                    $preOrder->payment_status = 'unpaid';
+                }
+                $preOrder->save();
+            }
+
             $this->activity($preOrder, $userId, 'payment_removed', 'Payment removed and accounting reversed.', $snapshot, null);
 
-            return $preOrder->fresh(['sale.payments', 'sale.chequePayments']);
+            return $preOrder->fresh(['sale.payments', 'sale.chequePayments', 'payments', 'chequePayments']);
         });
     }
 

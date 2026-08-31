@@ -46,9 +46,29 @@ class Customer extends Model
      */
     public function getDueAmountAttribute()
     {
-        $salesDue = $this->sales()->sum('due_amount') ?? 0;
-        $genericPayments = $this->payments()->whereNull('sale_id')->sum('amount') ?? 0;
+        return $this->sales_due_amount + $this->pre_order_due_amount;
+    }
 
-        return $salesDue + ($this->opening_balance ?? 0) - $genericPayments;
+    public function getSalesDueAmountAttribute()
+    {
+        $salesDue = $this->sales()->sum('due_amount') ?? 0;
+        $genericPayments = $this->payments()->whereNull('sale_id')->whereNull('pre_order_id')->sum('amount') ?? 0;
+        
+        $rawDue = $salesDue + ($this->opening_balance ?? 0) - $genericPayments;
+        return max(0, $rawDue);
+    }
+
+    public function getAdvanceBalanceAttribute()
+    {
+        $salesDue = $this->sales()->sum('due_amount') ?? 0;
+        $genericPayments = $this->payments()->whereNull('sale_id')->whereNull('pre_order_id')->sum('amount') ?? 0;
+        
+        $rawDue = $salesDue + ($this->opening_balance ?? 0) - $genericPayments;
+        return $rawDue < 0 ? abs($rawDue) : 0;
+    }
+
+    public function getPreOrderDueAmountAttribute()
+    {
+        return $this->preOrders()->where('status', 'pending')->sum('due_amount') ?? 0;
     }
 }

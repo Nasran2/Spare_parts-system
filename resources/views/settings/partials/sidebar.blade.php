@@ -20,6 +20,10 @@
                 <i class="fas fa-file-contract w-5"></i>
                 <span>Quotation Settings</span>
             </a>
+            <a href="{{ route('settings.preorder') }}" class="flex items-center space-x-3 px-4 py-3 rounded-lg {{ request()->routeIs('settings.preorder') ? 'bg-blue-50 text-blue-600 font-semibold' : 'hover:bg-gray-50 text-gray-700' }}">
+                <i class="fas fa-box-open w-5"></i>
+                <span>Pre-Order Settings</span>
+            </a>
             <a href="{{ route('settings.pos') }}" class="flex items-center space-x-3 px-4 py-3 rounded-lg {{ request()->routeIs('settings.pos') ? 'bg-blue-50 text-blue-600 font-semibold' : 'hover:bg-gray-50 text-gray-700' }}">
                 <i class="fas fa-cash-register w-5"></i>
                 <span>POS Settings</span>

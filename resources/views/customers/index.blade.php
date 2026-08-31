@@ -86,14 +86,43 @@
                         </td>
                         <td class="px-6 py-4 text-center">
                             @php($position = \App\Models\Setting::get('currency_position', 'before'))
-                            @php($decimals = (int) (\App\Models\Setting::get('decimal_places', 2)))
-                            <span class="font-bold text-red-600">
-                                @if($position === 'before')
-                                    {{ $currency }} {{ $maskMoney(($customer->due_amount ?? 0), !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}
-                                @else
-                                    {{ $maskMoney(($customer->due_amount ?? 0), !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }} {{ $currency }}
+                            @php($hideAmounts = !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details']))
+                            <div class="flex flex-col items-center gap-1 text-sm">
+                                <div class="text-xs text-gray-500 font-semibold w-full flex justify-between" title="Sales Due">
+                                    <span>Sales:</span> 
+                                    <span class="font-bold text-red-600 ml-2">
+                                        @if($position === 'before')
+                                            {{ $currency }} {{ $maskMoney($customer->sales_due_amount, $hideAmounts) }}
+                                        @else
+                                            {{ $maskMoney($customer->sales_due_amount, $hideAmounts) }} {{ $currency }}
+                                        @endif
+                                    </span>
+                                </div>
+                                @if($customer->advance_balance > 0)
+                                <div class="text-xs text-green-700 font-semibold w-full flex justify-between" title="Advance Payment Available">
+                                    <span>Advance:</span> 
+                                    <span class="font-bold ml-2">
+                                        @if($position === 'before')
+                                            {{ $currency }} {{ $maskMoney($customer->advance_balance, $hideAmounts) }}
+                                        @else
+                                            {{ $maskMoney($customer->advance_balance, $hideAmounts) }} {{ $currency }}
+                                        @endif
+                                    </span>
+                                </div>
                                 @endif
-                            </span>
+                                @if($customer->pre_order_due_amount > 0)
+                                <div class="text-xs text-gray-500 font-semibold w-full flex justify-between" title="Pre-Order Due">
+                                    <span>Pre-Order:</span> 
+                                    <span class="font-bold text-orange-500 ml-2">
+                                        @if($position === 'before')
+                                            {{ $currency }} {{ $maskMoney($customer->pre_order_due_amount, $hideAmounts) }}
+                                        @else
+                                            {{ $maskMoney($customer->pre_order_due_amount, $hideAmounts) }} {{ $currency }}
+                                        @endif
+                                    </span>
+                                </div>
+                                @endif
+                            </div>
                         </td>
                         <td class="px-6 py-4 text-center">
                             @if($customer->is_active)
@@ -109,6 +138,9 @@
                                         <i class="fas fa-money-bill-wave"></i>
                                     </a>
                                 @endif
+                                <button onclick="openAdvanceModal({{ $customer->id }}, '{{ addslashes($customer->name) }}')" class="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition" title="Add Advance Payment">
+                                    <i class="fas fa-wallet"></i>
+                                </button>
                                 <button onclick="viewCustomer({{ $customer->id }})" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition" title="View">
                                     <i class="fas fa-eye"></i>
                                 </button>
@@ -225,9 +257,8 @@
             </button>
         </div>
         
-        <!-- Tabs -->
         <div class="mb-4">
-            <div class="border-b border-gray-200">
+            <div class="flex justify-between items-end border-b border-gray-200">
                 <nav class="flex -mb-px space-x-4">
                     <button onclick="switchTab('ledger')" id="tab-ledger" class="tab-button active border-b-2 border-blue-600 py-3 px-4 text-sm font-semibold text-blue-600">
                         <i class="fas fa-book mr-2"></i>Ledger
@@ -239,6 +270,11 @@
                         <i class="fas fa-money-bill-wave mr-2"></i>Payments
                     </button>
                 </nav>
+                <div class="pb-2 pr-2">
+                    <button onclick="downloadCustomerPdf()" class="text-sm bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-md shadow-sm flex items-center transition-colors">
+                        <i class="fas fa-file-pdf mr-2"></i>Download PDF
+                    </button>
+                </div>
             </div>
         </div>
         
@@ -433,11 +469,16 @@ function submitCreate(event) {
 }
 
 function viewCustomer(id) {
+    window.currentActiveTab = 'ledger';
+    switchTab('ledger');
     fetch(`${BASE_URL}/customers/${id}`, { headers: { 'Accept': 'application/json' } })
     .then(r => r.json())
     .then(data => {
         if (!data.success) return;
         const { customer, period_totals, overall_totals, transactions, start_date, end_date } = data;
+        
+        window.currentCustomerStartDate = start_date;
+        window.currentCustomerEndDate = end_date;
 
         renderCustomerHeader(customer);
         renderAccountSummary(period_totals, overall_totals, start_date, end_date);
@@ -474,15 +515,29 @@ function renderCustomerHeader(c) {
 
 function renderAccountSummary(periodTotals, overallTotals, start, end) {
     const wrap = document.getElementById('accountSummary');
+    let duesHtml = '';
+    const hasSalesDue = Number(overallTotals.sales_due) > 0;
+    const hasPreOrderDue = Number(overallTotals.pre_order_due) > 0;
+    
+    if (hasSalesDue || hasPreOrderDue) {
+        if (hasSalesDue) {
+            duesHtml += `<div class="flex justify-between text-sm pl-2 border-l-2 border-orange-400"><span class="text-gray-600">Sales Due</span><span class="font-semibold text-orange-600">${CURRENCY}${fmt(overallTotals.sales_due)}</span></div>`;
+        }
+        if (hasPreOrderDue) {
+            duesHtml += `<div class="flex justify-between text-sm pl-2 border-l-2 border-purple-400"><span class="text-gray-600">Pre-Order Due</span><span class="font-semibold text-purple-600">${CURRENCY}${fmt(overallTotals.pre_order_due)}</span></div>`;
+        }
+    }
+
     wrap.innerHTML = `
         <div class="text-xs text-gray-600 flex items-center gap-2"><i class="fas fa-info-circle text-blue-500"></i>${formatDate(start)} To ${formatDate(end)}</div>
         <div class="flex justify-between text-sm"><span class="text-gray-600">Total invoice</span><span class="font-semibold">${CURRENCY}${fmt(periodTotals.invoice)}</span></div>
         <div class="flex justify-between text-sm"><span class="text-gray-600">Total paid</span><span class="font-semibold">${CURRENCY}${fmt(periodTotals.paid)}</span></div>
         <div class="border-t pt-2"></div>
-        <div class="text-sm text-gray-600">Overall Summary</div>
+        <div class="text-sm text-gray-600 mb-1">Overall Summary</div>
         <div class="flex justify-between text-sm"><span class="text-gray-600">Total invoice</span><span class="font-semibold">${CURRENCY}${fmt(overallTotals.invoice)}</span></div>
-        <div class="flex justify-between text-sm"><span class="text-gray-600">Total paid</span><span class="font-semibold">${CURRENCY}${fmt(overallTotals.paid)}</span></div>
-        <div class="flex justify-between text-sm"><span class="text-gray-700 font-semibold">Balance due</span><span class="font-bold ${Number(overallTotals.balance)>0?'text-red-600':'text-green-600'}">${CURRENCY}${fmt(overallTotals.balance)}</span></div>
+        <div class="flex justify-between text-sm mb-1"><span class="text-gray-600">Total paid</span><span class="font-semibold">${CURRENCY}${fmt(overallTotals.paid)}</span></div>
+        ${duesHtml}
+        <div class="flex justify-between text-sm mt-2 pt-2 border-t"><span class="text-gray-700 font-semibold">Balance due</span><span class="font-bold ${Number(overallTotals.balance)>0?'text-red-600':'text-green-600'}">${CURRENCY}${fmt(overallTotals.balance)}</span></div>
     `;
 }
 
@@ -537,6 +592,7 @@ function renderPayments(trans) {
 }
 
 function switchTab(tab) {
+    window.currentActiveTab = tab;
     const tabs = ['ledger','sales','payments'];
     tabs.forEach(t => {
         document.getElementById(`content-${t}`).classList.toggle('hidden', t !== tab);
@@ -545,6 +601,24 @@ function switchTab(tab) {
         document.getElementById(`tab-${t}`).classList.toggle('text-gray-500', t !== tab);
         document.getElementById(`tab-${t}`).classList.toggle('border-transparent', t !== tab);
     });
+}
+
+function downloadCustomerPdf() {
+    if (!window.currentViewingCustomerId) return;
+    const tab = window.currentActiveTab || 'ledger';
+    const start = window.currentCustomerStartDate;
+    const end = window.currentCustomerEndDate;
+    
+    let url = `${BASE_URL}/customers/${window.currentViewingCustomerId}/export-pdf/${tab}`;
+    const params = [];
+    if (start) params.push(`start_date=${start}`);
+    if (end) params.push(`end_date=${end}`);
+    
+    if (params.length > 0) {
+        url += '?' + params.join('&');
+    }
+    
+    window.open(url, '_blank');
 }
 
 function badge(status) {
@@ -654,7 +728,62 @@ function deleteCustomer(id) {
         alert('Failed to delete customer');
     });
 }
+
+function openAdvanceModal(id, name) {
+    document.getElementById('advanceCustomerName').textContent = name;
+    document.getElementById('advanceForm').action = `/customers/${id}/advance`;
+    document.getElementById('advanceModal').classList.remove('hidden');
+}
+
+function closeAdvanceModal() {
+    document.getElementById('advanceModal').classList.add('hidden');
+}
 </script>
+
+<!-- Add Advance Modal -->
+<div id="advanceModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-1/2 lg:w-1/3 shadow-lg rounded-md bg-white">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-bold text-gray-900">Add Advance Payment</h3>
+            <button onclick="closeAdvanceModal()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form id="advanceForm" method="POST" action="">
+            @csrf
+            <p class="text-sm text-gray-600 mb-4">Adding advance payment for <span id="advanceCustomerName" class="font-bold"></span></p>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Amount <span class="text-red-500">*</span></label>
+                    <input type="number" name="amount" step="0.01" min="0.01" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Payment Method</label>
+                    <select name="payment_method" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="cash">Cash</option>
+                        <option value="card">Card</option>
+                        <option value="bank_transfer">Bank Transfer</option>
+                        <option value="cheque">Cheque</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Payment Date</label>
+                    <input type="date" name="payment_date" value="{{ date('Y-m-d') }}" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Notes</label>
+                    <textarea name="notes" rows="2" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">Advance Payment</textarea>
+                </div>
+            </div>
+            
+            <div class="flex justify-end space-x-2 mt-6">
+                <button type="button" onclick="closeAdvanceModal()" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
+                <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">Save Advance</button>
+            </div>
+        </form>
+    </div>
+</div>
 
 @include('customers.payment-reminder-modal')
 

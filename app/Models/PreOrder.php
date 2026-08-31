@@ -86,6 +86,16 @@ class PreOrder extends Model
         return $this->hasMany(PreOrderItem::class);
     }
 
+    public function payments()
+    {
+        return $this->hasMany(Payment::class);
+    }
+
+    public function chequePayments()
+    {
+        return $this->hasMany(ChequePayment::class);
+    }
+
     public function activities()
     {
         return $this->hasMany(PreOrderActivity::class)->latest();

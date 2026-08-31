@@ -201,6 +201,10 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
     Route::post('customers/{customer}/bulk-payment', [\App\Http\Controllers\BulkPaymentController::class, 'storeCustomerPayment'])
         ->middleware('permission:customers.edit')
         ->name('customers.bulk-payment.store');
+    Route::get('customers/{customer}/export-pdf/{type}', [CustomerController::class, 'exportPdf'])->name('customers.export-pdf');
+    Route::post('customers/{customer}/advance', [CustomerController::class, 'storeAdvance'])
+        ->middleware('permission:customers.edit')
+        ->name('customers.add-advance');
     Route::post('customers/{customer}/send-reminder', [CustomerController::class, 'sendPaymentReminder'])
         ->middleware('permission:customers.edit')
         ->name('customers.send-reminder');
@@ -520,6 +524,7 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
     Route::get('settings/general', [SettingController::class, 'general'])->middleware('permission:settings.view')->name('settings.general');
     Route::get('settings/invoice', [SettingController::class, 'invoice'])->middleware('permission:settings.view')->name('settings.invoice');
     Route::get('settings/quotation', [SettingController::class, 'quotation'])->middleware('permission:settings.view')->name('settings.quotation');
+    Route::get('settings/preorder', [SettingController::class, 'preorder'])->middleware('permission:settings.view')->name('settings.preorder');
     Route::get('settings/pos', [SettingController::class, 'pos'])->middleware('permission:settings.view')->name('settings.pos');
     Route::get('settings/barcode', [SettingController::class, 'barcode'])->middleware('permission:settings.view')->name('settings.barcode');
     Route::post('settings/save', [SettingController::class, 'save'])->middleware('permission:settings.edit')->name('settings.save');
@@ -617,7 +622,7 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
         ->middlewareFor(['destroy'], 'permission:purchases.edit');
 });
 
-Route::get('/run-migrate', function () {
+Route::get('/migrate', function () {
     $connectionName = config('database.default');
     $databaseName = config("database.connections.{$connectionName}.database", 'unknown');
     $repairOutput = '';

@@ -793,6 +793,16 @@ class POSController extends Controller
                     $due = 0;
                 }
 
+                $advanceToUse = 0;
+                if ($due > 0 && $customerId && $request->boolean('use_advance')) {
+                    $customerAdvance = Customer::find($customerId)->advance_balance ?? 0;
+                    if ($customerAdvance > 0) {
+                        $advanceToUse = round(min($due, $customerAdvance), 2);
+                        $due = round($due - $advanceToUse, 2);
+                        $salePaid = round($salePaid + $advanceToUse, 2);
+                    }
+                }
+
                 if ($due > 0 && ! $customerId) {
                     throw new \Exception('Customer is required when there is a due amount.');
                 }
@@ -849,17 +859,41 @@ class POSController extends Controller
                     }
                 } else {
                     // Single-payment flow: write a single Payment row when money is taken
-                    if ($salePaid > 0 && $paymentMethod !== 'cheque') {
+                    $nonAdvanceSalePaid = max(0, $salePaid - $advanceToUse);
+                    if ($nonAdvanceSalePaid > 0 && $paymentMethod !== 'cheque') {
                         $payment = Payment::create([
                             'sale_id' => $sale->id,
                             'customer_id' => $customerId,
-                            'amount' => $salePaid,
+                            'amount' => $nonAdvanceSalePaid,
                             'payment_method' => $paymentMethod,
                             'payment_date' => now()->toDateString(),
                             'notes' => $request->input('notes'),
                         ]);
                         $salePaymentAccounting->recordSalePayment($payment, $sale, $userId);
                     }
+                }
+
+                if ($advanceToUse > 0) {
+                    $payment = Payment::create([
+                        'sale_id' => $sale->id,
+                        'customer_id' => $customerId,
+                        'amount' => $advanceToUse,
+                        'payment_method' => 'advance',
+                        'payment_date' => now()->toDateString(),
+                        'notes' => 'Deducted from advance',
+                        'user_id' => $userId,
+                    ]);
+                    $salePaymentAccounting->recordSalePayment($payment, $sale, $userId);
+
+                    Payment::create([
+                        'sale_id' => null,
+                        'customer_id' => $customerId,
+                        'amount' => -$advanceToUse,
+                        'payment_method' => 'advance_deduction',
+                        'payment_date' => now()->toDateString(),
+                        'notes' => 'Applied to Sale #' . $sale->id,
+                        'user_id' => $userId,
+                    ]);
                 }
 
                 if ($heldChequeForSale > 0 && ! empty($chequePaymentDetails)) {
@@ -1607,14 +1641,25 @@ class POSController extends Controller
         }
 
         $customer = Customer::find($id);
-        $due = Sale::where('customer_id', $id)
-            ->where('sale_type', 'sale')
-            ->where('due_amount', '>', 0)
-            ->sum('due_amount') + (float) optional($customer)->opening_balance;
+        
         $controls = DashboardVisibilityService::configForUser(auth()->user());
-        $due = DashboardVisibilityService::customerValue((float) $due, $controls);
+        
+        $due = 0.0;
+        $advance = 0.0;
+        
+        if ($customer) {
+            $due = (float) $customer->sales_due_amount;
+            $advance = (float) $customer->advance_balance;
+            
+            $due = DashboardVisibilityService::customerValue((float) $due, $controls);
+            $advance = DashboardVisibilityService::customerValue((float) $advance, $controls);
+        }
 
-        return response()->json(['customer_id' => (int) $id, 'outstanding_due' => (float) $due]);
+        return response()->json([
+            'customer_id' => (int) $id, 
+            'outstanding_due' => (float) $due,
+            'advance_balance' => (float) $advance
+        ]);
     }
 
     /**

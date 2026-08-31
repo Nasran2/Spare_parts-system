@@ -10,7 +10,11 @@ class ChequePayment extends Model
     use HasFactory;
 
     protected $fillable = [
+        'type',
         'sale_id',
+        'purchase_id',
+        'supplier_id',
+        'pre_order_id',
         'customer_id',
         'payment_id',
         'user_id',
@@ -38,9 +42,24 @@ class ChequePayment extends Model
         return $this->belongsTo(Sale::class);
     }
 
+    public function purchase()
+    {
+        return $this->belongsTo(Purchase::class);
+    }
+
+    public function preOrder()
+    {
+        return $this->belongsTo(PreOrder::class);
+    }
+
     public function customer()
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function supplier()
+    {
+        return $this->belongsTo(Supplier::class);
     }
 
     public function payment()

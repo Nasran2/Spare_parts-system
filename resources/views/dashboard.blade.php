@@ -296,6 +296,63 @@
         </div>
     </div>
     @endif
+    @if(($ownChequeReminders ?? collect())->count() > 0)
+    <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-amber-500 mb-6 mt-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-bold text-gray-800">
+                <i class="fas fa-building text-amber-600 mr-2"></i>
+                Own Cheques Due Soon
+            </h3>
+            <span class="text-xs font-semibold text-amber-700 bg-amber-50 px-3 py-1 rounded-full">{{ ($ownChequeReminders ?? collect())->count() }} pending</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-gray-200">
+                        <th class="text-left py-3 px-2 text-gray-600 font-semibold">Date</th>
+                        <th class="text-left py-3 px-2 text-gray-600 font-semibold">Cheque No</th>
+                        <th class="text-left py-3 px-2 text-gray-600 font-semibold">Supplier</th>
+                        <th class="text-right py-3 px-2 text-gray-600 font-semibold">Amount</th>
+                        <th class="text-right py-3 px-2 text-gray-600 font-semibold">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($ownChequeReminders as $cheque)
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        <td class="py-3 px-2">
+                            <div class="font-semibold text-gray-800">{{ $cheque->cheque_date?->format('Y-m-d') }}</div>
+                            <div class="text-xs {{ $cheque->cheque_date?->isPast() ? 'text-red-600' : 'text-gray-500' }}">
+                                {{ $cheque->cheque_date?->diffForHumans() }}
+                            </div>
+                        </td>
+                        <td class="py-3 px-2 text-gray-700">
+                            <div class="font-semibold">{{ $cheque->cheque_number }}</div>
+                            <div class="text-xs text-gray-500">{{ $cheque->bank_name ?: 'Bank not set' }}</div>
+                        </td>
+                        <td class="py-3 px-2 text-gray-600">{{ $cheque->supplier->name ?? 'Supplier' }}</td>
+                        <td class="py-3 px-2 text-right font-semibold text-gray-800">{{ $currency }} {{ $maskAmount($cheque->amount) }}</td>
+                        <td class="py-3 px-2">
+                            @if($canManageChequePayments ?? false)
+                            <div class="flex items-center justify-end gap-2">
+                                <form method="POST" action="{{ route('cheque-payments.pass', $cheque) }}" class="js-cheque-action-form" data-action-label="pass" data-cheque-date="{{ $cheque->cheque_date?->format('Y-m-d') }}">
+                                    @csrf
+                                    <button class="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-xs font-semibold">
+                                        <i class="fas fa-check mr-1"></i>Pass
+                                    </button>
+                                </form>
+                            </div>
+                            @else
+                            <span class="block text-right text-xs text-gray-500">View only</span>
+                            @endif
+                        </td>
+                    </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    </div>
+    @endif
+
 
     <!-- Charts Row -->
     @if(empty($dashboardControls['hide_charts']))

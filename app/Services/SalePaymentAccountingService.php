@@ -7,6 +7,7 @@ use App\Models\Accounting\ChartAccount;
 use App\Models\ChequePayment;
 use App\Models\Payment;
 use App\Models\Sale;
+use App\Models\PreOrder;
 
 class SalePaymentAccountingService
 {
@@ -14,6 +15,10 @@ class SalePaymentAccountingService
     {
         $amount = round((float) $payment->amount, 2);
         if ($amount <= 0) {
+            return;
+        }
+
+        if ($payment->payment_method === 'advance' || $payment->payment_method === 'advance_deduction') {
             return;
         }
 
@@ -36,6 +41,37 @@ class SalePaymentAccountingService
             'source_type' => 'payment',
             'source_id' => $payment->id,
             'description' => 'Payment received for sale '.$sale->sale_no.' via '.$this->paymentMethodLabel($method),
+        ]);
+
+        $assetAccount->increment('current_balance', $amount);
+    }
+
+    public function recordPreOrderPayment(Payment $payment, PreOrder $preOrder, ?int $userId = null): void
+    {
+        $amount = round((float) $payment->amount, 2);
+        if ($amount <= 0) {
+            return;
+        }
+
+        if ($this->transactionExists('payment', (int) $payment->id)) {
+            return;
+        }
+
+        $method = (string) ($payment->payment_method ?: 'cash');
+        $assetAccount = $this->assetAccountForPaymentMethod($method);
+
+        AccountTransaction::create([
+            'account_id' => $assetAccount->id,
+            'related_account_id' => $this->salesRevenueAccount()->id,
+            'user_id' => $userId,
+            'transaction_date' => $payment->payment_date?->toDateString() ?? now()->toDateString(),
+            'direction' => 'in',
+            'payment_method' => $method,
+            'amount' => $amount,
+            'reference_no' => $preOrder->pre_order_number,
+            'source_type' => 'payment',
+            'source_id' => $payment->id,
+            'description' => 'Advance Payment received for Pre-Order '.$preOrder->pre_order_number.' via '.$this->paymentMethodLabel($method),
         ]);
 
         $assetAccount->increment('current_balance', $amount);
@@ -72,7 +108,38 @@ class SalePaymentAccountingService
         $receivableAccount->increment('current_balance', $amount);
     }
 
-    public function recordChequePass(ChequePayment $cheque, Sale $sale, ?int $userId = null): void
+    public function recordPreOrderChequeHold(ChequePayment $cheque, PreOrder $preOrder, ?int $userId = null): void
+    {
+        $amount = round((float) $cheque->amount, 2);
+        if ($amount <= 0) {
+            return;
+        }
+
+        if ($this->transactionExists('cheque_payment_hold', (int) $cheque->id)) {
+            return;
+        }
+
+        $receivableAccount = $this->customerReceivableAccount();
+
+        AccountTransaction::create([
+            'account_id' => $receivableAccount->id,
+            'related_account_id' => $this->salesRevenueAccount()->id,
+            'user_id' => $userId,
+            'transaction_date' => now()->toDateString(),
+            'direction' => 'in',
+            'payment_method' => 'cheque',
+            'amount' => $amount,
+            'cheque_number' => $cheque->cheque_number,
+            'reference_no' => $preOrder->pre_order_number,
+            'source_type' => 'cheque_payment_hold',
+            'source_id' => $cheque->id,
+            'description' => 'Cheque held for Pre-Order '.$preOrder->pre_order_number,
+        ]);
+
+        $receivableAccount->increment('current_balance', $amount);
+    }
+
+    public function recordChequePass(ChequePayment $cheque, Sale $sale, ?int $userId = null, ?int $bankAccountId = null, ?int $supplierId = null): void
     {
         $amount = round((float) $cheque->amount, 2);
         if ($amount <= 0) {
@@ -83,8 +150,38 @@ class SalePaymentAccountingService
             return;
         }
 
-        $bankAccount = $this->bankAccount();
         $receivableAccount = $this->customerReceivableAccount();
+
+        if ($supplierId) {
+            // Endorsed to supplier: Debit Supplier Payable, Credit Customer Receivable
+            $payableAccount = $this->account('2000', 'Supplier Payable', 'liability', 'supplier_payable');
+            
+            AccountTransaction::create([
+                'account_id' => $payableAccount->id,
+                'related_account_id' => $receivableAccount->id,
+                'user_id' => $userId,
+                'transaction_date' => now()->toDateString(),
+                'direction' => 'out',
+                'payment_method' => 'cheque',
+                'amount' => $amount,
+                'cheque_number' => $cheque->cheque_number,
+                'reference_no' => $sale->sale_no,
+                'source_type' => 'cheque_payment',
+                'source_id' => $cheque->id,
+                'description' => 'Cheque endorsed to supplier for sale '.$sale->sale_no,
+            ]);
+
+            $payableAccount->decrement('current_balance', $amount);
+            $receivableAccount->decrement('current_balance', $amount);
+            
+            return;
+        }
+
+        // Passed to bank (default or specific)
+        $bankAccount = $bankAccountId ? \App\Models\Accounting\BankAccount::find($bankAccountId)?->chartAccount : null;
+        if (!$bankAccount) {
+            $bankAccount = $this->bankAccount();
+        }
 
         AccountTransaction::create([
             'account_id' => $bankAccount->id,
@@ -131,6 +228,36 @@ class SalePaymentAccountingService
             'source_type' => 'payment_reversal',
             'source_id' => $payment->id,
             'description' => $reason.' for sale '.$sale->sale_no,
+        ]);
+        ChartAccount::whereKey($source->account_id)->decrement('current_balance', $source->amount);
+    }
+
+    public function reversePreOrderPayment(Payment $payment, PreOrder $preOrder, ?int $userId = null, string $reason = 'Advance Payment reversed'): void
+    {
+        if ($this->transactionExists('payment_reversal', (int) $payment->id)) {
+            return;
+        }
+
+        $source = AccountTransaction::query()
+            ->where('source_type', 'payment')
+            ->where('source_id', $payment->id)
+            ->first();
+        if (! $source) {
+            return;
+        }
+
+        AccountTransaction::create([
+            'account_id' => $source->account_id,
+            'related_account_id' => $source->related_account_id,
+            'user_id' => $userId,
+            'transaction_date' => now()->toDateString(),
+            'direction' => 'out',
+            'payment_method' => $source->payment_method,
+            'amount' => $source->amount,
+            'reference_no' => $preOrder->pre_order_number,
+            'source_type' => 'payment_reversal',
+            'source_id' => $payment->id,
+            'description' => $reason.' for Pre-Order '.$preOrder->pre_order_number,
         ]);
         ChartAccount::whereKey($source->account_id)->decrement('current_balance', $source->amount);
     }
@@ -206,6 +333,36 @@ class SalePaymentAccountingService
             'source_type' => 'cheque_payment_hold_reversal',
             'source_id' => $cheque->id,
             'description' => $reason.' for sale '.$sale->sale_no,
+        ]);
+        ChartAccount::whereKey($hold->account_id)->decrement('current_balance', $hold->amount);
+    }
+
+    public function reversePreOrderChequeHold(ChequePayment $cheque, PreOrder $preOrder, ?int $userId = null, string $reason = 'Advance Cheque hold reversed'): void
+    {
+        if ($this->transactionExists('cheque_payment_hold_reversal', (int) $cheque->id)) {
+            return;
+        }
+        $hold = AccountTransaction::query()
+            ->where('source_type', 'cheque_payment_hold')
+            ->where('source_id', $cheque->id)
+            ->first();
+        if (! $hold) {
+            return;
+        }
+
+        AccountTransaction::create([
+            'account_id' => $hold->account_id,
+            'related_account_id' => $hold->related_account_id,
+            'user_id' => $userId,
+            'transaction_date' => now()->toDateString(),
+            'direction' => 'out',
+            'payment_method' => 'cheque',
+            'amount' => $hold->amount,
+            'cheque_number' => $cheque->cheque_number,
+            'reference_no' => $preOrder->pre_order_number,
+            'source_type' => 'cheque_payment_hold_reversal',
+            'source_id' => $cheque->id,
+            'description' => $reason.' for Pre-Order '.$preOrder->pre_order_number,
         ]);
         ChartAccount::whereKey($hold->account_id)->decrement('current_balance', $hold->amount);
     }

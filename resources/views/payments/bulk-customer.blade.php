@@ -21,7 +21,7 @@
                 </div>
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Payment Method</label>
-                    <select name="payment_method" class="w-full px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring focus:ring-blue-100" required>
+                    <select name="payment_method" id="payment_method" class="w-full px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring focus:ring-blue-100" required>
                         <option value="cash">Cash</option>
                         <option value="card">Card</option>
                         <option value="bank_transfer">Bank Transfer</option>
@@ -34,6 +34,21 @@
                         <input type="number" step="0.01" id="global-payment-amount" placeholder="Enter amount to auto-allocate" class="w-full px-4 py-2 border rounded-l-lg focus:border-blue-500 focus:ring focus:ring-blue-100">
                         <button type="button" onclick="autoAllocate()" class="bg-blue-600 text-white px-4 py-2 rounded-r-lg hover:bg-blue-700 font-semibold transition">Allocate</button>
                     </div>
+                </div>
+            </div>
+
+            <div id="cheque-details" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 bg-gray-50 p-4 rounded-lg hidden">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Cheque Number</label>
+                    <input type="text" name="cheque_number" id="cheque_number" class="w-full px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring focus:ring-blue-100" placeholder="e.g. 123456">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Bank Name</label>
+                    <input type="text" name="bank_name" id="bank_name" class="w-full px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring focus:ring-blue-100" placeholder="e.g. BOC, HNB">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Cheque Date</label>
+                    <input type="date" name="cheque_date" id="cheque_date" class="w-full px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring focus:ring-blue-100">
                 </div>
             </div>
 
@@ -164,7 +179,35 @@
             alert('Please allocate at least an amount greater than 0 to make a payment.');
             return false;
         }
+        
+        const method = document.getElementById('payment_method').value;
+        if (method === 'cheque') {
+            const num = document.getElementById('cheque_number').value;
+            const bank = document.getElementById('bank_name').value;
+            const date = document.getElementById('cheque_date').value;
+            if (!num || !bank || !date) {
+                alert('Please fill in all cheque details.');
+                return false;
+            }
+        }
+        
         return true;
     }
+
+    document.getElementById('payment_method').addEventListener('change', function() {
+        const chequeDetails = document.getElementById('cheque-details');
+        const isCheque = this.value === 'cheque';
+        if (isCheque) {
+            chequeDetails.classList.remove('hidden');
+            document.getElementById('cheque_number').required = true;
+            document.getElementById('bank_name').required = true;
+            document.getElementById('cheque_date').required = true;
+        } else {
+            chequeDetails.classList.add('hidden');
+            document.getElementById('cheque_number').required = false;
+            document.getElementById('bank_name').required = false;
+            document.getElementById('cheque_date').required = false;
+        }
+    });
 </script>
 @endsection

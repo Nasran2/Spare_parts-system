@@ -26,6 +26,12 @@
                     <i class="fas fa-money-bill-wave"></i> Make Payment
                 </a>
             @endif
+            <a href="{{ route('customers.export-pdf', ['customer' => $customer->id, 'type' => 'sales']) }}?start_date={{ $start }}&end_date={{ $end }}" target="_blank" class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition shadow flex items-center gap-2 text-sm font-semibold">
+                <i class="fas fa-file-pdf"></i> Sales PDF
+            </a>
+            <a href="{{ route('customers.export-pdf', ['customer' => $customer->id, 'type' => 'pre_orders']) }}?start_date={{ $start }}&end_date={{ $end }}" target="_blank" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition shadow flex items-center gap-2 text-sm font-semibold">
+                <i class="fas fa-file-pdf"></i> Pre-Orders PDF
+            </a>
         </div>
     </div>
 
@@ -38,6 +44,9 @@
                 </a>
                 <a href="#" onclick="filterLedger('sell'); return false;" id="tab-sell" class="ledger-tab px-4 py-2 text-gray-500 hover:text-blue-600 border-b-2 border-transparent flex items-center gap-2">
                     <i class="fas fa-shopping-cart"></i> Sales
+                </a>
+                <a href="#" onclick="filterLedger('pre-order'); return false;" id="tab-pre-order" class="ledger-tab px-4 py-2 text-gray-500 hover:text-blue-600 border-b-2 border-transparent flex items-center gap-2">
+                    <i class="fas fa-list-alt"></i> Pre-Orders
                 </a>
                 <a href="#" onclick="filterLedger('payment'); return false;" id="tab-payment" class="ledger-tab px-4 py-2 text-gray-500 hover:text-blue-600 border-b-2 border-transparent flex items-center gap-2">
                     <i class="fas fa-money-bill-wave"></i> Payments

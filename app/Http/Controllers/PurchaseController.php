@@ -67,7 +67,13 @@ class PurchaseController extends Controller
         $stores = \App\Models\Store::where('is_active', true)->orderBy('name')->get();
         $defaultStore = $stores->firstWhere('is_default', true) ?? $stores->first();
 
-        return view('purchases.create', compact('suppliers', 'products', 'productsData', 'canUseSellingSecretCode', 'stores', 'defaultStore', 'taxSettings'));
+        $pendingCustomerCheques = \App\Models\ChequePayment::with('customer')
+            ->where('status', 'pending')
+            ->where('type', 'customer')
+            ->orderBy('cheque_date')
+            ->get();
+
+        return view('purchases.create', compact('suppliers', 'products', 'productsData', 'canUseSellingSecretCode', 'stores', 'defaultStore', 'taxSettings', 'pendingCustomerCheques'));
     }
 
     /**
@@ -91,8 +97,14 @@ class PurchaseController extends Controller
             'input_vat_claimable' => 'nullable|boolean',
             'shipping_cost' => 'nullable|numeric|min:0',
             'shipping_type' => 'nullable|string|in:divided,expense',
-            'payment_method' => 'required|string|in:cash,credit,cheque,bank_deposit,bank_transfer,card,mobile_payment',
-            'payment_amount' => 'nullable|numeric|min:0',
+            'payments' => 'nullable|array',
+            'payments.*.method' => 'required|string',
+            'payments.*.amount' => 'required|numeric|min:0',
+            'payments.*.cheque_id' => 'nullable|exists:cheque_payments,id',
+            'payments.*.cheque_date' => 'nullable|date',
+            'payments.*.cheque_number' => 'nullable|string',
+            'payments.*.bank_name' => 'nullable|string',
+            'payment_method' => 'nullable|string',
             'document' => 'nullable|file|mimes:pdf,jpg,jpeg,png,csv,zip,doc,docx|max:5120',
             'notes' => 'nullable|string',
             'items' => 'required|array|min:1',
@@ -165,14 +177,46 @@ class PurchaseController extends Controller
                 PublicStorageSync::syncFile($documentPath);
             }
 
-            // Payment calculation
-            $paymentAmount = $validated['payment_amount'] ?? 0;
-            $paidAmount = min($paymentAmount, $grandTotal);
-            $dueAmount = $grandTotal - $paidAmount;
+                        // Payment calculation
+            $payments = $validated['payments'] ?? [];
+            if (empty($payments) && !empty($validated['payment_method']) && isset($validated['payment_amount'])) {
+                $payments = [['method' => $validated['payment_method'], 'amount' => $validated['payment_amount']]];
+            }
+
+            $paidAmount = 0;
+            $heldOwnChequeAmount = 0;
+            $chequePaymentsData = [];
+
+            foreach ($payments as $p) {
+                if (empty($p['method']) || empty($p['amount']) || $p['amount'] <= 0) continue;
+                if ($p['method'] === 'customer_cheque' && !empty($p['cheque_id'])) {
+                    // It's a party cheque! We don't add this to paidAmount, we add it to paidAmount but it acts like cash because it's immediately passed.
+                    // Wait, actually, if we give them a customer cheque, it acts as an immediate payment for the purchase.
+                    $paidAmount += $p['amount'];
+                    $chequePaymentsData[] = ['type' => 'customer', 'cheque_id' => $p['cheque_id'], 'amount' => $p['amount']];
+                } elseif ($p['method'] === 'own_cheque') {
+                    // Own cheques are held, they don't immediately reduce the purchase due_amount if we treat it like held_cheque_amount!
+                    // Let's add it to heldOwnChequeAmount.
+                    $heldOwnChequeAmount += $p['amount'];
+                    $chequePaymentsData[] = [
+                        'type' => 'own',
+                        'amount' => $p['amount'],
+                        'bank_name' => $p['bank_name'] ?? null,
+                        'cheque_number' => $p['cheque_number'] ?? null,
+                        'cheque_date' => $p['cheque_date'] ?? null,
+                    ];
+                } else {
+                    $paidAmount += $p['amount'];
+                }
+            }
+
+            $paidAmount = min($paidAmount, $grandTotal);
+            $dueAmount = max(0, $grandTotal - $paidAmount - $heldOwnChequeAmount);
+            
             $paymentStatus = 'unpaid';
-            if ($paidAmount >= $grandTotal) {
+            if ($dueAmount <= 0 && $heldOwnChequeAmount <= 0) {
                 $paymentStatus = 'paid';
-            } elseif ($paidAmount > 0) {
+            } elseif ($paidAmount > 0 || $heldOwnChequeAmount > 0) {
                 $paymentStatus = 'partial';
             }
 
@@ -196,9 +240,11 @@ class PurchaseController extends Controller
                 'tax_snapshot' => $taxSettings->snapshot(),
                 'shipping_cost' => $shippingCost,
                 'shipping_type' => $shippingType,
-                'payment_method' => $validated['payment_method'],
+                'payment_method' => $validated['payment_method'] ?? 'cash',
                 'total_amount' => $grandTotal,
-                'paid_amount' => $paidAmount,
+                'paid_amount' => $totalPaidAmount,
+                'held_own_cheque_amount' => $totalHeldAmount,
+                'held_own_cheque_amount' => $heldOwnChequeAmount,
                 'due_amount' => $dueAmount,
                 'payment_status' => $paymentStatus,
                 'document_path' => $documentPath,
@@ -211,6 +257,31 @@ class PurchaseController extends Controller
                     $totalQtyMinor
                 )
                 : 0;
+
+                        foreach ($chequePaymentsData as $cd) {
+                if ($cd['type'] === 'customer') {
+                    $cheque = \App\Models\ChequePayment::find($cd['cheque_id']);
+                    if ($cheque && $cheque->status === 'pending') {
+                        // Pass this cheque to the supplier!
+                        app(\App\Services\ChequePaymentService::class)->pass($cheque, auth()->id(), false, null, $purchase->supplier_id);
+                        $cheque->purchase_id = $purchase->id;
+                        $cheque->save();
+                    }
+                } elseif ($cd['type'] === 'own') {
+                    \App\Models\ChequePayment::create([
+                        'type' => 'own',
+                        'purchase_id' => $purchase->id,
+                        'supplier_id' => $purchase->supplier_id,
+                        'user_id' => auth()->id(),
+                        'cheque_date' => $cd['cheque_date'] ? \Carbon\Carbon::parse($cd['cheque_date'])->toDateString() : now()->toDateString(),
+                        'cheque_number' => (string) $cd['cheque_number'],
+                        'bank_name' => $cd['bank_name'],
+                        'amount' => $cd['amount'],
+                        'status' => 'pending',
+                        'notes' => 'Issued for Purchase #' . $purchase->id,
+                    ]);
+                }
+            }
 
             $taxPairs = [];
             foreach ($validated['items'] as $index => $it) {
@@ -374,8 +445,13 @@ class PurchaseController extends Controller
             ->when(! empty($hiddenSupplierIds), fn ($query) => $query->whereNotIn('id', $hiddenSupplierIds))
             ->orderBy('name')
             ->get();
+        $pendingCustomerCheques = \App\Models\ChequePayment::with('customer')
+            ->where('status', 'pending')
+            ->where('type', 'customer')
+            ->orderBy('cheque_date')
+            ->get();
 
-        return view('purchases.edit', compact('purchase', 'suppliers'));
+        return view('purchases.edit', compact('purchase', 'suppliers', 'pendingCustomerCheques'));
     }
 
     /**
@@ -396,20 +472,87 @@ class PurchaseController extends Controller
             'reference_no' => 'nullable|string|max:255',
             'purchase_date' => 'nullable|date',
             'status' => 'required|string|in:pending,ordered,received',
-            'payment_method' => 'nullable|string|in:cash,credit,cheque,bank_deposit,bank_transfer,card,mobile_payment',
-            'paid_amount' => 'nullable|numeric|min:0',
+            'payments' => 'nullable|array',
+            'payments.*.method' => 'required|string',
+            'payments.*.amount' => 'required|numeric|min:0',
+            'payments.*.cheque_id' => 'nullable|exists:cheque_payments,id',
+            'payments.*.cheque_date' => 'nullable|date',
+            'payments.*.cheque_number' => 'nullable|string',
+            'payments.*.bank_name' => 'nullable|string',
+            'payment_method' => 'nullable|string',
             'document' => 'nullable|file|mimes:pdf,jpg,jpeg,png,csv,zip,doc,docx|max:5120',
             'notes' => 'nullable|string',
         ]);
 
         return DB::transaction(function () use ($request, $validated, $purchase) {
-            $paidAmount = min((float) ($validated['paid_amount'] ?? $purchase->paid_amount ?? 0), (float) $purchase->total_amount);
-            $dueAmount = max((float) $purchase->total_amount - $paidAmount, 0);
+                        $payments = $validated['payments'] ?? [];
+            if (empty($payments) && !empty($validated['payment_method']) && isset($validated['paid_amount'])) {
+                $payments = [['method' => $validated['payment_method'], 'amount' => $validated['paid_amount']]];
+            }
+
+            $paidAmount = 0;
+            $heldOwnChequeAmount = 0;
+            $chequePaymentsData = [];
+
+            foreach ($payments as $p) {
+                if (empty($p['method']) || empty($p['amount']) || $p['amount'] <= 0) continue;
+                if ($p['method'] === 'customer_cheque' && !empty($p['cheque_id'])) {
+                    $paidAmount += $p['amount'];
+                    $chequePaymentsData[] = ['type' => 'customer', 'cheque_id' => $p['cheque_id'], 'amount' => $p['amount']];
+                } elseif ($p['method'] === 'own_cheque') {
+                    $heldOwnChequeAmount += $p['amount'];
+                    $chequePaymentsData[] = [
+                        'type' => 'own',
+                        'amount' => $p['amount'],
+                        'bank_name' => $p['bank_name'] ?? null,
+                        'cheque_number' => $p['cheque_number'] ?? null,
+                        'cheque_date' => $p['cheque_date'] ?? null,
+                    ];
+                } else {
+                    $paidAmount += $p['amount'];
+                }
+            }
+
+            // We need to add existing held own cheques!
+            // Wait, if they are editing the purchase, they might add MORE payments, or replace.
+            // For simplicity, we just add the newly submitted payments on top of the old ones.
+            // But wait, the edit screen usually just lets you update the `paid_amount` directly.
+            // If we're fully supporting multi-pay in edit, we should probably append the new payments.
+            
+            $totalPaidAmount = min($purchase->paid_amount + $paidAmount, (float) $purchase->total_amount);
+            $totalHeldAmount = $purchase->held_own_cheque_amount + $heldOwnChequeAmount;
+            
+            $dueAmount = max(0, (float) $purchase->total_amount - $totalPaidAmount - $totalHeldAmount);
+            
             $paymentStatus = 'unpaid';
-            if ($paidAmount >= (float) $purchase->total_amount) {
+            if ($dueAmount <= 0 && $totalHeldAmount <= 0) {
                 $paymentStatus = 'paid';
-            } elseif ($paidAmount > 0) {
+            } elseif ($totalPaidAmount > 0 || $totalHeldAmount > 0) {
                 $paymentStatus = 'partial';
+            }
+
+                        foreach ($chequePaymentsData as $cd) {
+                if ($cd['type'] === 'customer') {
+                    $cheque = \App\Models\ChequePayment::find($cd['cheque_id']);
+                    if ($cheque && $cheque->status === 'pending') {
+                        app(\App\Services\ChequePaymentService::class)->pass($cheque, auth()->id(), false, null, $purchase->supplier_id);
+                        $cheque->purchase_id = $purchase->id;
+                        $cheque->save();
+                    }
+                } elseif ($cd['type'] === 'own') {
+                    \App\Models\ChequePayment::create([
+                        'type' => 'own',
+                        'purchase_id' => $purchase->id,
+                        'supplier_id' => $purchase->supplier_id,
+                        'user_id' => auth()->id(),
+                        'cheque_date' => $cd['cheque_date'] ? \Carbon\Carbon::parse($cd['cheque_date'])->toDateString() : now()->toDateString(),
+                        'cheque_number' => (string) $cd['cheque_number'],
+                        'bank_name' => $cd['bank_name'],
+                        'amount' => $cd['amount'],
+                        'status' => 'pending',
+                        'notes' => 'Issued for Purchase #' . $purchase->id,
+                    ]);
+                }
             }
 
             $documentPath = $purchase->document_path;
@@ -424,7 +567,9 @@ class PurchaseController extends Controller
                 'purchase_date' => $validated['purchase_date'] ?? now()->toDateString(),
                 'status' => $validated['status'],
                 'payment_method' => $validated['payment_method'] ?? $purchase->payment_method,
-                'paid_amount' => $paidAmount,
+                'paid_amount' => $totalPaidAmount,
+                'held_own_cheque_amount' => $totalHeldAmount,
+                'held_own_cheque_amount' => $heldOwnChequeAmount,
                 'due_amount' => $dueAmount,
                 'payment_status' => $paymentStatus,
                 'document_path' => $documentPath,

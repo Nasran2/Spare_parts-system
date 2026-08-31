@@ -150,12 +150,18 @@ class CustomerController extends Controller
                 || $this->customerPurchasePriceHidden((float) $s->total_amount)
                 || DashboardVisibilityService::isSaleHiddenForUser((int) $s->id, Auth::user()));
 
+        $preOrders = $customer->preOrders()
+            ->when($start, fn ($q) => $q->whereDate('pre_order_date', '>=', $start))
+            ->when($end, fn ($q) => $q->whereDate('pre_order_date', '<=', $end))
+            ->orderBy('pre_order_date')
+            ->get();
+
         $controls = DashboardVisibilityService::configForUser(Auth::user());
         $customerDisplayValue = fn ($value) => DashboardVisibilityService::customerValue((float) $value, $controls);
 
         $periodTotals = [
-            'invoice' => (float) $sales->sum('total_amount'),
-            'paid' => (float) $sales->sum('paid_amount'),
+            'invoice' => (float) $sales->sum('total_amount') + (float) $preOrders->where('status', 'pending')->sum('grand_total'),
+            'paid' => (float) $sales->sum('paid_amount') + (float) $preOrders->where('status', 'pending')->sum('paid_amount'),
         ];
         $periodTotals['balance'] = max(0, $periodTotals['invoice'] - $periodTotals['paid']);
         $periodTotals = [
@@ -168,16 +174,24 @@ class CustomerController extends Controller
             ->reject(fn ($s) => SecretPos::isHidden((float) $s->total_amount)
                 || $this->customerPurchasePriceHidden((float) $s->total_amount)
                 || DashboardVisibilityService::isSaleHiddenForUser((int) $s->id, Auth::user()));
+                
+        $overallPreOrders = $customer->preOrders;
+
         $overallTotals = [
-            'invoice' => (float) $overallSales->sum('total_amount'),
-            'paid' => (float) $overallSales->sum('paid_amount'),
+            'invoice' => (float) $overallSales->sum('total_amount') + (float) $overallPreOrders->where('status', 'pending')->sum('grand_total'),
+            'paid' => (float) $overallSales->sum('paid_amount') + (float) $overallPreOrders->where('status', 'pending')->sum('paid_amount'),
         ];
         $genericPayments = (float) $customer->payments()->whereNull('sale_id')->sum('amount');
         $overallTotals['balance'] = max(0, $overallTotals['invoice'] - $overallTotals['paid']) + (float) $customer->opening_balance - $genericPayments;
+        $overallTotals['sales_due'] = $customer->sales_due_amount;
+        $overallTotals['pre_order_due'] = $customer->pre_order_due_amount;
+        
         $overallTotals = [
             'invoice' => $customerDisplayValue($overallTotals['invoice']),
             'paid' => $customerDisplayValue($overallTotals['paid']),
             'balance' => $customerDisplayValue($overallTotals['balance']),
+            'sales_due' => $customerDisplayValue($overallTotals['sales_due']),
+            'pre_order_due' => $customerDisplayValue($overallTotals['pre_order_due']),
         ];
 
         $isActive = PrivacyModeService::isActiveForUser(Auth::user()) && PrivacyModeService::shouldMaskForCurrentPage();
@@ -220,6 +234,44 @@ class CustomerController extends Controller
                     'credit' => $customerDisplayValue($sale->paid_amount),
                     'payment_method' => $sale->payment_method,
                     'notes' => 'Payment for '.$invoiceLabel,
+                ];
+            }
+        }
+        
+        foreach ($preOrders as $preOrder) {
+            $transactions[] = [
+                'date' => optional($preOrder->pre_order_date)->toDateString() ?: optional($preOrder->created_at)->toDateString(),
+                'reference' => $preOrder->pre_order_number,
+                'invoice' => $preOrder->pre_order_number,
+                'sale_id' => null,
+                'pre_order_id' => $preOrder->id,
+                'sale_date' => optional($preOrder->pre_order_date)->toDateString() ?: optional($preOrder->created_at)->toDateString(),
+                'type' => 'Pre-Order',
+                'location' => optional($preOrder->store)->name ?? config('app.name'),
+                'payment_status' => $preOrder->payment_status,
+                'debit' => $customerDisplayValue($preOrder->grand_total),
+                'credit' => 0.0,
+                'paid' => $customerDisplayValue($preOrder->paid_amount),
+                'due' => $customerDisplayValue($preOrder->due_amount),
+                'payment_method' => null,
+                'notes' => 'Status: ' . ucfirst($preOrder->status),
+            ];
+
+            if ((float) $preOrder->paid_amount > 0) {
+                $transactions[] = [
+                    'date' => optional($preOrder->pre_order_date)->toDateString() ?: optional($preOrder->created_at)->toDateString(),
+                    'reference' => 'PAY-'.$preOrder->pre_order_number,
+                    'invoice' => $preOrder->pre_order_number,
+                    'sale_id' => null,
+                    'pre_order_id' => $preOrder->id,
+                    'sale_date' => optional($preOrder->pre_order_date)->toDateString() ?: optional($preOrder->created_at)->toDateString(),
+                    'type' => 'Payment',
+                    'location' => optional($preOrder->store)->name ?? config('app.name'),
+                    'payment_status' => 'paid',
+                    'debit' => 0.0,
+                    'credit' => $customerDisplayValue($preOrder->paid_amount),
+                    'payment_method' => null,
+                    'notes' => 'Pre-Order Payment for '.$preOrder->pre_order_number,
                 ];
             }
         }
@@ -451,6 +503,166 @@ class CustomerController extends Controller
         ], 422);
     }
 
+    public function exportPdf(Request $request, string $id, string $type)
+    {
+        $customer = Customer::findOrFail($id);
+        if (DashboardVisibilityService::isCustomerHiddenForUser((int) $customer->id, Auth::user())) {
+            abort(404);
+        }
+
+        $start = request('start_date');
+        $end = request('end_date');
+        if (! $start || ! $end) {
+            $year = now()->year;
+            $start = $start ?: now()->setDate($year, 1, 1)->startOfDay()->toDateString();
+            $end = $end ?: now()->setDate($year, 12, 31)->endOfDay()->toDateString();
+        }
+
+        $sales = $customer->sales()
+            ->when($start, fn ($q) => $q->whereDate('sale_date', '>=', $start))
+            ->when($end, fn ($q) => $q->whereDate('sale_date', '<=', $end))
+            ->orderBy('sale_date')
+            ->get()
+            ->reject(fn ($s) => SecretPos::isHidden((float) $s->total_amount)
+                || $this->customerPurchasePriceHidden((float) $s->total_amount)
+                || DashboardVisibilityService::isSaleHiddenForUser((int) $s->id, Auth::user()));
+
+        $preOrders = $customer->preOrders()
+            ->with('items.product')
+            ->when($start, fn ($q) => $q->whereDate('pre_order_date', '>=', $start))
+            ->when($end, fn ($q) => $q->whereDate('pre_order_date', '<=', $end))
+            ->orderBy('pre_order_date')
+            ->get();
+
+        $controls = DashboardVisibilityService::configForUser(Auth::user());
+        $customerDisplayValue = fn ($value) => DashboardVisibilityService::customerValue((float) $value, $controls);
+
+        $isActive = PrivacyModeService::isActiveForUser(Auth::user()) && PrivacyModeService::shouldMaskForCurrentPage();
+        if ($isActive) {
+            PrivacyModeService::applyDailyInvoiceLabels($sales);
+        }
+
+        $transactions = [];
+        $totalInvoice = 0;
+        $totalPaid = 0;
+
+        $exportType = $type;
+        if (in_array($type, ['ledger', 'payments'])) {
+            $type = 'all';
+        }
+
+        if ($type === 'sales' || $type === 'all') {
+            foreach ($sales as $sale) {
+                $invoiceLabel = $isActive ? PrivacyModeService::displayInvoiceNumber($sale) : $sale->sale_no;
+
+                $transactions[] = [
+                    'date' => optional($sale->sale_date)->toDateString(),
+                    'reference' => $invoiceLabel,
+                    'type' => 'Sell',
+                    'payment_status' => $sale->payment_status,
+                    'debit' => $customerDisplayValue($sale->total_amount),
+                    'credit' => 0.0,
+                    'notes' => $sale->notes,
+                ];
+                $totalInvoice += (float)$sale->total_amount;
+
+                if ((float) $sale->paid_amount > 0) {
+                    $transactions[] = [
+                        'date' => optional($sale->sale_date)->toDateString(),
+                        'reference' => 'PAY-'.$invoiceLabel,
+                        'type' => 'Payment',
+                        'payment_status' => 'paid',
+                        'debit' => 0.0,
+                        'credit' => $customerDisplayValue($sale->paid_amount),
+                        'notes' => 'Payment for '.$invoiceLabel,
+                    ];
+                    $totalPaid += (float)$sale->paid_amount;
+                }
+            }
+        }
+
+        if ($type === 'pre_orders' || $type === 'all') {
+            foreach ($preOrders as $preOrder) {
+                $transactions[] = [
+                    'date' => optional($preOrder->pre_order_date)->toDateString() ?: optional($preOrder->created_at)->toDateString(),
+                    'reference' => $preOrder->pre_order_number,
+                    'type' => 'Pre-Order',
+                    'payment_status' => $preOrder->payment_status,
+                    'debit' => $customerDisplayValue($preOrder->grand_total),
+                    'credit' => 0.0,
+                    'notes' => 'Status: ' . ucfirst($preOrder->status),
+                ];
+                if ($preOrder->status === 'pending') {
+                    $totalInvoice += (float)$preOrder->grand_total;
+                }
+
+                if ((float) $preOrder->paid_amount > 0) {
+                    $transactions[] = [
+                        'date' => optional($preOrder->pre_order_date)->toDateString() ?: optional($preOrder->created_at)->toDateString(),
+                        'reference' => 'PAY-'.$preOrder->pre_order_number,
+                        'type' => 'Payment',
+                        'payment_status' => 'paid',
+                        'debit' => 0.0,
+                        'credit' => $customerDisplayValue($preOrder->paid_amount),
+                        'notes' => 'Pre-Order Payment for '.$preOrder->pre_order_number,
+                    ];
+                    if ($preOrder->status === 'pending') {
+                        $totalPaid += (float)$preOrder->paid_amount;
+                    }
+                }
+            }
+        }
+
+        if ($type === 'all') {
+            $genericPaymentsList = $customer->payments()->whereNull('sale_id')->get();
+            foreach ($genericPaymentsList as $gp) {
+                $pDate = optional($gp->payment_date)->toDateString() ?: $gp->created_at->toDateString();
+                $transactions[] = [
+                    'date' => $pDate,
+                    'reference' => 'PAY-OP',
+                    'type' => 'Payment',
+                    'payment_status' => 'paid',
+                    'debit' => 0.0,
+                    'credit' => $customerDisplayValue($gp->amount),
+                    'notes' => $gp->notes ?? 'Payment towards Opening Balance',
+                ];
+                $totalPaid += (float)$gp->amount;
+            }
+        }
+
+        if ($exportType === 'payments') {
+            $transactions = array_filter($transactions, fn($t) => $t['type'] === 'Payment');
+        }
+
+        usort($transactions, function($a, $b) {
+            return strtotime($a['date']) <=> strtotime($b['date']);
+        });
+
+        // Add sales_due and pre_order_due to overallTotals
+        $overallTotals = [
+            'invoice' => $customerDisplayValue($totalInvoice),
+            'paid' => $customerDisplayValue($totalPaid),
+            'balance' => $customerDisplayValue(max(0, $totalInvoice - $totalPaid)),
+            'sales_due' => $customerDisplayValue($customer->sales_due_amount),
+            'pre_order_due' => $customerDisplayValue($customer->pre_order_due_amount),
+        ];
+
+        $title = 'Customer Ledger';
+        if ($exportType === 'sales') {
+            $title = 'Customer Sales Report';
+        } elseif ($exportType === 'pre_orders') {
+            $title = 'Customer Pre-Orders Detailed Report';
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('customers.pdf-preorders-detailed', compact('preOrders', 'customer', 'title', 'overallTotals', 'start', 'end'));
+            return $pdf->download("Customer-{$exportType}-" . now()->format('Y-m-d') . ".pdf");
+        } elseif ($exportType === 'payments') {
+            $title = 'Customer Payments Report';
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('customers.pdf-payments', compact('transactions', 'customer', 'title', 'overallTotals', 'start', 'end'));
+            return $pdf->download("Customer-{$exportType}-" . now()->format('Y-m-d') . ".pdf");
+        }
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('customers.pdf-ledger', compact('transactions', 'customer', 'title', 'overallTotals', 'start', 'end'));
+        return $pdf->download("Customer-{$exportType}-" . now()->format('Y-m-d') . ".pdf");
+    }
     /**
      * Public view of customer bill (no login required).
      */
@@ -579,5 +791,32 @@ class CustomerController extends Controller
         $displayInvoiceNo = $this->displayInvoiceLabelForSale($sale);
 
         return view('customers.public-payment', compact('customer', 'sale', 'businessName', 'businessEmail', 'businessPhone', 'controls', 'displayInvoiceNo'));
+    }
+
+    public function storeAdvance(Request $request, string $id)
+    {
+        $request->validate([
+            'amount' => 'required|numeric|min:0.01',
+            'payment_method' => 'required|string',
+            'payment_date' => 'required|date',
+            'notes' => 'nullable|string',
+        ]);
+
+        $customer = Customer::findOrFail($id);
+
+        $payment = \App\Models\Payment::create([
+            'customer_id' => $customer->id,
+            'sale_id' => null,
+            'pre_order_id' => null,
+            'amount' => $request->amount,
+            'payment_method' => $request->payment_method,
+            'payment_date' => $request->payment_date,
+            'notes' => $request->notes ?: 'Advance Payment',
+            'user_id' => auth()->id(),
+        ]);
+
+        app(\App\Services\BulkPaymentAccountingService::class)->recordCustomerPayment($payment, auth()->id());
+
+        return redirect()->back()->with('success', 'Advance payment added successfully.');
     }
 }

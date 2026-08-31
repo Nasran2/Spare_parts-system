@@ -265,37 +265,146 @@
                 <div class="flex gap-2"><button class="flex-1 bg-gray-800 text-white rounded-lg px-3 py-2">Filter</button><a href="{{ route('accounting.export', ['section' => 'transactions', 'format' => 'excel'] + request()->query()) }}" class="flex-1 text-center bg-emerald-600 text-white rounded-lg px-3 py-2">Excel</a><a href="{{ route('accounting.export', ['section' => 'transactions', 'format' => 'pdf'] + request()->query()) }}" class="flex-1 text-center bg-blue-600 text-white rounded-lg px-3 py-2">PDF</a></div>
             </form>
         </div>
-        <div class="bg-white rounded-lg shadow p-5">
-            <h3 class="font-semibold text-gray-800 mb-4">Cash / Credit / Cheque / Bank Transaction</h3>
-            <form method="POST" action="{{ route('accounting.transactions.store') }}" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div class="bg-white rounded-xl shadow-md p-6 border-t-4 border-green-500 mb-6 mt-6">
+            <div class="flex items-center mb-6 border-b pb-4 border-gray-100">
+                <div class="bg-green-100 text-green-600 p-3 rounded-lg mr-4">
+                    <i class="fas fa-money-bill-transfer text-xl"></i>
+                </div>
+                <div>
+                    <h3 class="text-xl font-bold text-gray-800">Record New Transaction</h3>
+                    <p class="text-sm text-gray-500">Cash, Credit, Cheque, or Bank transactions</p>
+                </div>
+            </div>
+            <form method="POST" action="{{ route('accounting.transactions.store') }}">
                 @csrf
-                <select name="account_id" class="border rounded-lg px-3 py-2" required><option value="">Main account</option>@foreach($accounts as $account)<option value="{{ $account->id }}">{{ $account->code }} - {{ $account->name }}</option>@endforeach</select>
-                <select name="related_account_id" class="border rounded-lg px-3 py-2"><option value="">Related account</option>@foreach($accounts as $account)<option value="{{ $account->id }}">{{ $account->code }} - {{ $account->name }}</option>@endforeach</select>
-                <input type="date" name="transaction_date" value="{{ date('Y-m-d') }}" class="border rounded-lg px-3 py-2" required>
-                <select name="direction" class="border rounded-lg px-3 py-2" required><option value="in">Money In</option><option value="out">Money Out</option></select>
-                <select name="payment_method" class="accounting-payment-method border rounded-lg px-3 py-2" required><option value="cash">Cash</option><option value="credit">Credit</option><option value="cheque">Cheque</option><option value="bank_deposit">Bank Deposit</option><option value="bank_transfer">Bank Transfer</option><option value="card">Card</option><option value="mobile_payment">Mobile Payment</option></select>
-                <select name="bank_account_id" class="accounting-bank-select hidden border rounded-lg px-3 py-2">
-                    <option value="">Select bank</option>
-                    @foreach($banks as $bank)
-                        <option value="{{ $bank->id }}">{{ $bank->bank_name }} - {{ $bank->account_name }}</option>
-                    @endforeach
-                </select>
-                <input type="number" step="0.01" min="0.01" name="amount" placeholder="Amount" class="border rounded-lg px-3 py-2" required>
-                <input name="cheque_number" placeholder="Cheque number" class="border rounded-lg px-3 py-2">
-                <input name="reference_no" placeholder="Reference no" class="border rounded-lg px-3 py-2">
-                <input name="description" placeholder="Description" class="md:col-span-2 border rounded-lg px-3 py-2">
-                <button class="md:col-span-2 bg-green-600 text-white rounded-lg px-4 py-2">Record Transaction</button>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    <div class="col-span-1 md:col-span-2 lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-5 mb-2">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-1">Main Account <span class="text-red-500">*</span></label>
+                            <select name="account_id" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring focus:ring-green-200 transition" required>
+                                <option value="">Select Main Account</option>
+                                @foreach($accounts as $account)
+                                    <option value="{{ $account->id }}">{{ $account->code }} - {{ $account->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-1">Related Account</label>
+                            <select name="related_account_id" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring focus:ring-green-200 transition">
+                                <option value="">Select Related Account</option>
+                                @foreach($accounts as $account)
+                                    <option value="{{ $account->id }}">{{ $account->code }} - {{ $account->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+        
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Date <span class="text-red-500">*</span></label>
+                        <input type="date" name="transaction_date" value="{{ date('Y-m-d') }}" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring focus:ring-green-200 transition" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Direction <span class="text-red-500">*</span></label>
+                        <select name="direction" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring focus:ring-green-200 transition" required>
+                            <option value="in">Money In (+)</option>
+                            <option value="out">Money Out (-)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Amount <span class="text-red-500">*</span></label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <span class="text-gray-500 font-semibold sm:text-sm">Rs</span>
+                            </div>
+                            <input type="number" step="0.01" min="0.01" name="amount" placeholder="0.00" class="w-full pl-9 border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring focus:ring-green-200 transition" required>
+                        </div>
+                    </div>
+        
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Payment Method <span class="text-red-500">*</span></label>
+                        <select name="payment_method" class="accounting-payment-method w-full border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring focus:ring-green-200 transition" required>
+                            <option value="cash">Cash</option>
+                            <option value="credit">Credit</option>
+                            <option value="cheque">Cheque</option>
+                            <option value="bank_deposit">Bank Deposit</option>
+                            <option value="bank_transfer">Bank Transfer</option>
+                            <option value="card">Card</option>
+                            <option value="mobile_payment">Mobile Payment</option>
+                        </select>
+                    </div>
+                    
+                    <!-- We'll wrap the bank dropdown in a container that we can show/hide, but still use the same class so the existing JS works if it targets the select -->
+                    <div class="accounting-bank-select-container hidden">
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Bank Account</label>
+                        <select name="bank_account_id" class="accounting-bank-select w-full border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring focus:ring-green-200 transition">
+                            <option value="">Select bank</option>
+                            @foreach($banks as $bank)
+                                <option value="{{ $bank->id }}">{{ $bank->bank_name }} - {{ $bank->account_name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Cheque Number</label>
+                        <input type="text" name="cheque_number" placeholder="Optional" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring focus:ring-green-200 transition">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Reference Number</label>
+                        <input type="text" name="reference_no" placeholder="Optional" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring focus:ring-green-200 transition">
+                    </div>
+        
+                    <div class="col-span-1 md:col-span-2 lg:col-span-3">
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Description</label>
+                        <textarea name="description" rows="2" placeholder="Brief description of the transaction" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring focus:ring-green-200 transition"></textarea>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-6 rounded-lg shadow-md transition flex items-center">
+                        <i class="fas fa-save mr-2"></i> Record Transaction
+                    </button>
+                </div>
             </form>
         </div>
-        <div class="bg-white rounded-lg shadow p-5">
-            <h3 class="font-semibold text-gray-800 mb-4">Add Bank</h3>
-            <form method="POST" action="{{ route('accounting.banks.store') }}" class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div class="bg-white rounded-xl shadow-md p-6 border-t-4 border-blue-500 mb-6">
+            <div class="flex items-center mb-6 border-b pb-4 border-gray-100">
+                <div class="bg-blue-100 text-blue-600 p-3 rounded-lg mr-4">
+                    <i class="fas fa-building-columns text-xl"></i>
+                </div>
+                <div>
+                    <h3 class="text-xl font-bold text-gray-800">Add Bank Account</h3>
+                    <p class="text-sm text-gray-500">Register a new bank account in the system</p>
+                </div>
+            </div>
+            <form method="POST" action="{{ route('accounting.banks.store') }}">
                 @csrf
-                <input name="bank_name" placeholder="Bank" class="border rounded-lg px-3 py-2" required>
-                <input name="account_name" placeholder="Account name" class="border rounded-lg px-3 py-2" required>
-                <input name="account_number" placeholder="Account no" class="border rounded-lg px-3 py-2">
-                <input type="number" step="0.01" name="opening_balance" placeholder="Opening" class="border rounded-lg px-3 py-2">
-                <button class="md:col-span-4 bg-blue-600 text-white rounded-lg px-4 py-2">Add Bank Account</button>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Bank Name <span class="text-red-500">*</span></label>
+                        <input type="text" name="bank_name" placeholder="e.g. Commercial Bank" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 transition" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Account Name <span class="text-red-500">*</span></label>
+                        <input type="text" name="account_name" placeholder="e.g. Main Current Acc" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 transition" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Account Number</label>
+                        <input type="text" name="account_number" placeholder="Optional" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 transition">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Opening Balance</label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <span class="text-gray-500 font-semibold sm:text-sm">Rs</span>
+                            </div>
+                            <input type="number" step="0.01" name="opening_balance" placeholder="0.00" class="w-full pl-9 border-gray-300 rounded-lg shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 transition">
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-lg shadow-md transition flex items-center">
+                        <i class="fas fa-plus mr-2"></i> Add Bank Account
+                    </button>
+                </div>
             </form>
         </div>
     @endif
@@ -311,29 +420,113 @@
                 <div class="flex gap-2"><a href="{{ route('accounting.export', ['section' => 'banks', 'format' => 'excel'] + request()->query()) }}" class="flex-1 text-center bg-emerald-600 text-white rounded-lg px-3 py-2">Excel</a><a href="{{ route('accounting.export', ['section' => 'banks', 'format' => 'pdf'] + request()->query()) }}" class="flex-1 text-center bg-blue-600 text-white rounded-lg px-3 py-2">PDF</a></div>
             </form>
         </div>
-        <div class="bg-white rounded-lg shadow p-5">
-            <h3 class="font-semibold text-gray-800 mb-4">Bank Accounts & Reconciliation</h3>
-            <form method="POST" action="{{ route('accounting.banks.store') }}" class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">@csrf<input name="bank_name" placeholder="Bank" class="border rounded-lg px-3 py-2" required><input name="account_name" placeholder="Account name" class="border rounded-lg px-3 py-2" required><input name="account_number" placeholder="Account no" class="border rounded-lg px-3 py-2"><input type="number" step="0.01" name="opening_balance" placeholder="Opening" class="border rounded-lg px-3 py-2"><button class="md:col-span-4 bg-blue-600 text-white rounded-lg px-4 py-2">Add Bank Account</button></form>
-            <div class="border-t pt-5">
-                <h4 class="font-semibold text-gray-800 mb-3">Add Monthly Bank Statement</h4>
-                <form method="POST" action="{{ $banks->first() ? route('accounting.banks.reconcile', $banks->first()) : '#' }}" class="bank-reconcile-form rounded-lg border border-blue-100 bg-blue-50/40 p-4" data-action-template="{{ url('accounting/banks') }}/__BANK_ID__/reconcile" data-system-balance-template="{{ url('accounting/banks') }}/__BANK_ID__/system-balance">
-                    @csrf
-                    <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
-                        <select name="bank_account_id" class="bank-account-select border rounded-lg px-3 py-2" required>
-                            <option value="">Select bank</option>
-                            @foreach($banks as $bank)
-                                <option value="{{ $bank->id }}" data-current-balance="{{ number_format((float) $bank->chartAccount->current_balance, 2, '.', '') }}" {{ $loop->first ? 'selected' : '' }}>{{ $bank->bank_name }} - {{ $bank->account_name }}</option>
-                            @endforeach
-                        </select>
-                        <input type="month" name="statement_month" value="{{ date('Y-m') }}" class="bank-statement-month border rounded-lg px-3 py-2" required>
-                        <input type="number" step="0.01" name="statement_balance" placeholder="Statement balance" class="bank-statement-balance border rounded-lg px-3 py-2" required>
-                        <input type="text" class="bank-system-balance border rounded-lg px-3 py-2 bg-white text-gray-700" value="{{ $banks->first() ? number_format((float) $banks->first()->chartAccount->current_balance, 2, '.', '') : '0.00' }}" readonly>
-                        <input type="text" class="bank-difference border rounded-lg px-3 py-2 bg-white text-gray-700" value="0.00" readonly>
-                        <input name="notes" placeholder="Notes" class="border rounded-lg px-3 py-2">
+        <div class="bg-white rounded-xl shadow-md p-6 border-t-4 border-blue-500 mb-6 mt-6">
+            <div class="flex items-center mb-6 border-b pb-4 border-gray-100">
+                <div class="bg-blue-100 text-blue-600 p-3 rounded-lg mr-4">
+                    <i class="fas fa-building-columns text-xl"></i>
+                </div>
+                <div>
+                    <h3 class="text-xl font-bold text-gray-800">Add Bank Account</h3>
+                    <p class="text-sm text-gray-500">Register a new bank account in the system</p>
+                </div>
+            </div>
+            <form method="POST" action="{{ route('accounting.banks.store') }}" class="mb-8">
+                @csrf
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Bank Name <span class="text-red-500">*</span></label>
+                        <input type="text" name="bank_name" placeholder="e.g. Commercial Bank" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 transition" required>
                     </div>
-                    <button class="mt-3 bg-gray-800 text-white rounded-lg px-4 py-2" {{ $banks->isEmpty() ? 'disabled' : '' }}>Add Monthly Statement</button>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Account Name <span class="text-red-500">*</span></label>
+                        <input type="text" name="account_name" placeholder="e.g. Main Current Acc" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 transition" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Account Number</label>
+                        <input type="text" name="account_number" placeholder="Optional" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 transition">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Opening Balance</label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <span class="text-gray-500 font-semibold sm:text-sm">Rs</span>
+                            </div>
+                            <input type="number" step="0.01" name="opening_balance" placeholder="0.00" class="w-full pl-9 border-gray-300 rounded-lg shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 transition">
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-lg shadow-md transition flex items-center">
+                        <i class="fas fa-plus mr-2"></i> Add Bank Account
+                    </button>
+                </div>
+            </form>
+
+            <div class="border-t pt-8">
+                <div class="flex items-center mb-6">
+                    <div class="bg-indigo-100 text-indigo-600 p-2.5 rounded-lg mr-3">
+                        <i class="fas fa-file-invoice text-lg"></i>
+                    </div>
+                    <div>
+                        <h4 class="text-lg font-bold text-gray-800">Add Monthly Bank Statement</h4>
+                        <p class="text-sm text-gray-500">Reconcile your bank statement with the system</p>
+                    </div>
+                </div>
+                <form method="POST" action="{{ $banks->first() ? route('accounting.banks.reconcile', $banks->first()) : '#' }}" class="bank-reconcile-form bg-indigo-50/50 rounded-xl border border-indigo-100 p-6" data-action-template="{{ url('accounting/banks') }}/__BANK_ID__/reconcile" data-system-balance-template="{{ url('accounting/banks') }}/__BANK_ID__/system-balance">
+                    @csrf
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-5">
+                        <div class="xl:col-span-1">
+                            <label class="block text-sm font-semibold text-gray-700 mb-1">Select Bank <span class="text-red-500">*</span></label>
+                            <select name="bank_account_id" class="bank-account-select w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200 transition" required>
+                                <option value="">Select bank</option>
+                                @foreach($banks as $bank)
+                                    <option value="{{ $bank->id }}" data-current-balance="{{ number_format((float) $bank->chartAccount->current_balance, 2, '.', '') }}" {{ $loop->first ? 'selected' : '' }}>{{ $bank->bank_name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="xl:col-span-1">
+                            <label class="block text-sm font-semibold text-gray-700 mb-1">Statement Month <span class="text-red-500">*</span></label>
+                            <input type="month" name="statement_month" value="{{ date('Y-m') }}" class="bank-statement-month w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200 transition" required>
+                        </div>
+                        <div class="xl:col-span-1">
+                            <label class="block text-sm font-semibold text-gray-700 mb-1">Statement Bal <span class="text-red-500">*</span></label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <span class="text-gray-500 font-semibold sm:text-sm">Rs</span>
+                                </div>
+                                <input type="number" step="0.01" name="statement_balance" placeholder="0.00" class="bank-statement-balance w-full pl-9 border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200 transition" required>
+                            </div>
+                        </div>
+                        <div class="xl:col-span-1">
+                            <label class="block text-sm font-semibold text-gray-700 mb-1">System Bal</label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <span class="text-gray-400 font-semibold sm:text-sm">Rs</span>
+                                </div>
+                                <input type="text" class="bank-system-balance w-full pl-9 border-gray-200 bg-gray-100 rounded-lg shadow-inner text-gray-600 font-medium" value="{{ $banks->first() ? number_format((float) $banks->first()->chartAccount->current_balance, 2, '.', '') : '0.00' }}" readonly>
+                            </div>
+                        </div>
+                        <div class="xl:col-span-1">
+                            <label class="block text-sm font-semibold text-gray-700 mb-1">Difference</label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <span class="text-gray-400 font-semibold sm:text-sm">Rs</span>
+                                </div>
+                                <input type="text" class="bank-difference w-full pl-9 border-gray-200 bg-gray-100 rounded-lg shadow-inner text-gray-600 font-medium" value="0.00" readonly>
+                            </div>
+                        </div>
+                        <div class="xl:col-span-1">
+                            <label class="block text-sm font-semibold text-gray-700 mb-1">Notes</label>
+                            <input type="text" name="notes" placeholder="Optional" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200 transition">
+                        </div>
+                    </div>
+                    <div class="mt-6 flex justify-end">
+                        <button class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-6 rounded-lg shadow-md transition flex items-center" {{ $banks->isEmpty() ? 'disabled' : '' }}>
+                            <i class="fas fa-check-circle mr-2"></i> Add Monthly Statement
+                        </button>
+                    </div>
                     @if($banks->isEmpty())
-                        <p class="mt-2 text-sm text-amber-700">Add a bank account first, then add the monthly statement.</p>
+                        <p class="mt-3 text-sm font-medium text-amber-700 bg-amber-50 p-3 rounded border border-amber-200 text-center"><i class="fas fa-exclamation-triangle mr-1"></i> Add a bank account first, then add the monthly statement.</p>
                     @endif
                 </form>
             </div>

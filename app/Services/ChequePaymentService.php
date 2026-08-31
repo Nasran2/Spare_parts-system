@@ -10,9 +10,9 @@ use Illuminate\Support\Facades\DB;
 
 class ChequePaymentService
 {
-    public function pass(ChequePayment $cheque, ?int $userId = null, bool $autoPassed = false): ChequePayment
+    public function pass(ChequePayment $cheque, ?int $userId = null, bool $autoPassed = false, ?int $bankAccountId = null, ?int $supplierId = null): ChequePayment
     {
-        return DB::transaction(function () use ($cheque, $userId, $autoPassed) {
+        return DB::transaction(function () use ($cheque, $userId, $autoPassed, $bankAccountId, $supplierId) {
             $cheque = ChequePayment::lockForUpdate()->with('sale')->findOrFail($cheque->id);
             if ($cheque->status !== 'pending') {
                 return $cheque;
@@ -29,12 +29,36 @@ class ChequePaymentService
                 'notes' => trim('Cheque passed: '.$cheque->cheque_number.($cheque->bank_name ? ' / '.$cheque->bank_name : '')),
             ]);
 
+            $notes = $cheque->notes;
+            if ($supplierId) {
+                $supplier = \App\Models\Supplier::find($supplierId);
+                $supplierName = $supplier ? $supplier->name : "ID: $supplierId";
+                $notes = trim($notes . "\nEndorsed to Supplier: " . $supplierName);
+                
+                // Create a Payment for the supplier to deduct their due
+                \App\Models\Payment::create([
+                    'supplier_id' => $supplierId,
+                    'user_id' => $userId,
+                    'amount' => $cheque->amount,
+                    'payment_method' => 'cheque',
+                    'payment_date' => now()->toDateString(),
+                    'reference_no' => $cheque->cheque_number,
+                    'notes' => trim('Endorsed customer cheque: '.$cheque->cheque_number.($cheque->bank_name ? ' / '.$cheque->bank_name : '')),
+                ]);
+            } elseif ($bankAccountId) {
+                $bank = \App\Models\Accounting\BankAccount::find($bankAccountId);
+                if ($bank) {
+                    $notes = trim($notes . "\nDeposited to Bank: " . $bank->bank_name . " - " . $bank->account_number);
+                }
+            }
+
             $cheque->update([
                 'payment_id' => $payment->id,
                 'status' => 'passed',
                 'processed_by' => $userId,
                 'processed_at' => now(),
                 'auto_passed' => $autoPassed,
+                'notes' => $notes,
             ]);
 
             $sale->held_cheque_amount = max(0, round((float) $sale->held_cheque_amount - (float) $cheque->amount, 2));
@@ -42,7 +66,7 @@ class ChequePaymentService
             $this->refreshSaleBalance($sale);
             $sale->save();
 
-            app(SalePaymentAccountingService::class)->recordChequePass($cheque, $sale, $userId);
+            app(SalePaymentAccountingService::class)->recordChequePass($cheque, $sale, $userId, $bankAccountId, $supplierId);
             $this->syncPreOrder($sale);
 
             return $cheque->refresh();

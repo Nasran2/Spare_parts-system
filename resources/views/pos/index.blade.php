@@ -170,6 +170,16 @@
                     </div>
                     <button id="btn-new-customer" type="button" class="h-9 w-9 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center justify-center shrink-0" title="Add Customer"><i class="fas fa-plus text-xs"></i></button>
                 </div>
+                
+                <div id="pos-customer-due-display" class="hidden text-xs px-3 py-2 border-b border-yellow-200 bg-yellow-50 text-yellow-800">
+                    Outstanding Due: <span id="pos-customer-due-amount" class="font-bold">{{ $currency }} 0.00</span>
+                </div>
+                <div id="customer-advance-wrap" class="hidden text-xs px-3 py-2 border-b border-green-200 bg-green-50 text-green-800">
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="use_advance" class="form-checkbox h-3 w-3 text-green-600 rounded">
+                        <span>Deduct from Advance (Available: <span id="customer-advance-amount" class="font-bold"></span>)</span>
+                    </label>
+                </div>
 
                 <!-- Cart column headers -->
                 <div class="px-3 py-1.5 border-b border-slate-100 flex items-center text-[11px] font-bold text-slate-400 uppercase tracking-wide">
@@ -191,6 +201,7 @@
                     <div class="flex justify-between text-slate-600 js-vat-breakdown-row hidden"><span>VAT</span><span id="tax-amount" class="font-semibold">{{ $currency }} 0.00</span></div>
                     <div class="flex justify-between font-bold text-slate-800 border-t border-slate-200 pt-1"><span>Total</span><span id="total" class="text-indigo-700">{{ $currency }} 0.00</span></div>
                     <div id="card-fee-row" class="flex justify-between text-slate-600 hidden"><span id="card-fee-label">Card Fee</span><span id="card-fee-amount" class="font-semibold">{{ $currency }} 0.00</span></div>
+                    <div id="advance-deduction-row" class="flex justify-between text-green-600 hidden"><span id="advance-deduction-label">Advance Deduction</span><span id="advance-deduction-amount" class="font-semibold">-{{ $currency }} 0.00</span></div>
                     <div id="payable-row" class="flex justify-between font-extrabold text-slate-900 text-base"><span>Payable</span><span id="total-payable">{{ $currency }} 0.00</span></div>
                     <!-- Discount input -->
                     <div class="flex items-center gap-2 pt-1">
@@ -227,7 +238,6 @@
                         <input type="date" id="cheque-date" class="h-10 px-3 rounded-lg border border-indigo-200 bg-white text-sm focus:ring-2 focus:ring-indigo-500" placeholder="Cheque pass date">
                         <input type="text" id="cheque-number" class="h-10 px-3 rounded-lg border border-indigo-200 bg-white text-sm focus:ring-2 focus:ring-indigo-500" placeholder="Cheque number">
                         <input type="text" id="cheque-bank" class="h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm focus:ring-2 focus:ring-indigo-500" placeholder="Bank">
-                        <input type="text" id="cheque-name" class="h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm focus:ring-2 focus:ring-indigo-500" placeholder="Customer name">
                     </div>
                     @endunless
                     <div class="flex items-center gap-2">
@@ -310,6 +320,10 @@
                         <span id="card-fee-label" class="text-gray-600">Card Fee:</span>
                         <span id="card-fee-amount" class="font-semibold">{{ $currency }} 0.00</span>
                     </div>
+                    <div id="advance-deduction-row" class="flex justify-between text-sm text-green-600 hidden">
+                        <span id="advance-deduction-label" class="text-green-600">Advance Deduction:</span>
+                        <span id="advance-deduction-amount" class="font-semibold">-{{ $currency }} 0.00</span>
+                    </div>
                     <div id="payable-row" class="pt-1 flex justify-between">
                         <span class="font-bold text-sm">Total Payable:</span>
                         <span id="total-payable" class="font-bold text-lg text-gray-900">{{ $currency }} 0.00</span>
@@ -331,8 +345,14 @@
                         <i class="fas fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none"></i>
                         <div class="pos-customer-results hidden absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg"></div>
                     </div>
-                    <div id="customer-due" class="mt-2 hidden text-sm p-2 rounded border bg-yellow-50 border-yellow-200 text-yellow-800">
-                        Outstanding Due: <span id="customer-due-amount">{{ $currency }} 0.00</span>
+                    <div id="pos-customer-due-display" class="mt-2 hidden text-sm p-2 rounded border bg-yellow-50 border-yellow-200 text-yellow-800">
+                        Outstanding Due: <span id="pos-customer-due-amount">{{ $currency }} 0.00</span>
+                    </div>
+                    <div id="customer-advance-wrap" class="mt-2 hidden text-sm p-2 rounded border bg-green-50 border-green-200 text-green-800">
+                        <label class="flex items-center space-x-2 cursor-pointer">
+                            <input type="checkbox" id="use_advance" class="form-checkbox h-4 w-4 text-green-600 rounded">
+                            <span>Deduct from Advance (Available: <span id="customer-advance-amount" class="font-bold"></span>)</span>
+                        </label>
                     </div>
                 </div>
 
@@ -372,8 +392,7 @@
                     <div id="cheque-fields" class="hidden mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
                         <input type="date" id="cheque-date" class="px-3 py-2 border-2 border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="Cheque pass date">
                         <input type="text" id="cheque-number" class="px-3 py-2 border-2 border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="Cheque number">
-                        <input type="text" id="cheque-bank" class="px-3 py-2 border border-gray-300 rounded-lg" placeholder="Bank">
-                        <input type="text" id="cheque-name" class="px-3 py-2 border border-gray-300 rounded-lg" placeholder="Customer name">
+                        <input type="text" id="cheque-bank" class="px-3 py-2 border border-gray-300 rounded-lg md:col-span-2" placeholder="Bank">
                     </div>
                     <div class="grid grid-cols-2 gap-2 mt-3">
                         <div id="change-display" class="p-2 bg-green-50 border border-green-200 rounded-lg hidden">
@@ -865,22 +884,32 @@
         return Math.round((total * (rate / 100)) * 100) / 100;
     }
 
+    function getAdvanceDeduction(basePayable) {
+        const useAdvance = document.getElementById('use_advance')?.checked;
+        if (!useAdvance || !window.currentCustomerAdvance) return 0;
+        return Math.min(window.currentCustomerAdvance, basePayable);
+    }
+
     function computePayableTotal(baseTotal, cardUsedOverride = null){
         const method = getPaymentMethod();
         const fee = computeCardFee(baseTotal, method, cardUsedOverride);
         const cardUsed = (cardUsedOverride === null) ? (method === 'card') : Boolean(cardUsedOverride);
+        let payable = Number(baseTotal || 0);
         if (cardUsed && fee > 0 && (POS_CARD_FEE.mode || 'customer') === 'customer') {
-            return Math.round((Number(baseTotal || 0) + fee) * 100) / 100;
+            payable += fee;
         }
-        return Math.round(Number(baseTotal || 0) * 100) / 100;
+        const deduction = getAdvanceDeduction(payable);
+        return Math.round((payable - deduction) * 100) / 100;
     }
 
     function computePayableTotalSplit(baseTotal, cardAmount){
         const fee = computeCardFeeAmount(cardAmount);
+        let payable = Number(baseTotal || 0);
         if (cardAmount > 0 && fee > 0 && (POS_CARD_FEE.mode || 'customer') === 'customer') {
-            return Math.round((Number(baseTotal || 0) + fee) * 100) / 100;
+            payable += fee;
         }
-        return Math.round(Number(baseTotal || 0) * 100) / 100;
+        const deduction = getAdvanceDeduction(payable);
+        return Math.round((payable - deduction) * 100) / 100;
     }
 
     function updatePayableUI(baseTotal, cardUsedOverride = null){
@@ -902,6 +931,18 @@
                 feeRow.classList.add('hidden');
             }
         }
+
+        const payableBeforeDeduction = cardUsed && fee > 0 && (POS_CARD_FEE.mode || 'customer') === 'customer' 
+            ? Number(baseTotal || 0) + fee 
+            : Number(baseTotal || 0);
+        const advanceDeduction = getAdvanceDeduction(payableBeforeDeduction);
+        
+        document.querySelectorAll('#advance-deduction-row').forEach(row => {
+            row.classList.toggle('hidden', advanceDeduction <= 0);
+        });
+        document.querySelectorAll('#advance-deduction-amount').forEach(el => {
+            el.textContent = '-' + currency(advanceDeduction);
+        });
 
         if (totalPayableEl) {
             totalPayableEl.textContent = currency(computePayableTotal(baseTotal, cardUsedOverride));
@@ -1235,7 +1276,7 @@
         const visiblePicker = Array.from(document.querySelectorAll('.pos-customer-picker'))
             .find(picker => picker.offsetParent !== null);
 
-        return (visiblePicker || document).querySelector('#customer-select');
+        return (visiblePicker || document).querySelector('.pos-customer-id');
     }
 
     function selectedCustomerId(){
@@ -2429,7 +2470,6 @@
         } else {
             changeDisplay?.classList.add('hidden');
         }
-
         if (due > 0) {
             dueDisplay?.classList.remove('hidden');
             if (dueAmountEl) dueAmountEl.textContent = currency(due);
@@ -2442,23 +2482,56 @@
     initCustomerSearch();
 
     // Customer due fetch
-    const customerDueWrap = document.getElementById('customer-due');
-    const customerDueAmount = document.getElementById('customer-due-amount');
+    const customerDueWrap = document.getElementById('pos-customer-due-display') || document.getElementById('customer-due');
+    const customerDueAmount = document.getElementById('pos-customer-due-amount') || document.getElementById('customer-due-amount');
+    const customerAdvanceWrap = document.getElementById('customer-advance-wrap');
+    const customerAdvanceAmount = document.getElementById('customer-advance-amount');
+    const useAdvanceCheckbox = document.getElementById('use_advance');
+    
     document.querySelectorAll('.pos-customer-id').forEach(customerSelectEl => {
         customerSelectEl.addEventListener('change', async () => {
             const id = selectedCustomerId();
-            if (!id) { customerDueWrap.classList.add('hidden'); return; }
+            if (!id) { 
+                customerDueWrap.classList.add('hidden'); 
+                if(customerAdvanceWrap) customerAdvanceWrap.classList.add('hidden');
+                return; 
+            }
             try {
-                const res = await fetch(`/api/customer-due/${id}`);
+                const res = await fetch(`/api/customer-due/${id}`, {
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json' }
+                });
                 if (res.ok) {
                     const data = await res.json();
                     customerDueAmount.textContent = currency(data.outstanding_due || 0);
                     customerDueWrap.classList.remove('hidden');
+                    
+                    if (data.advance_balance > 0) {
+                        window.currentCustomerAdvance = Number(data.advance_balance);
+                        if(customerAdvanceAmount) customerAdvanceAmount.textContent = currency(data.advance_balance);
+                        if(customerAdvanceWrap) customerAdvanceWrap.classList.remove('hidden');
+                        if(useAdvanceCheckbox) useAdvanceCheckbox.checked = true;
+                    } else {
+                        window.currentCustomerAdvance = 0;
+                        if(customerAdvanceWrap) customerAdvanceWrap.classList.add('hidden');
+                        if(useAdvanceCheckbox) useAdvanceCheckbox.checked = false;
+                    }
                 }
-            } catch(_){}
+            } catch (e) {
+                console.error(e);
+            }
             updateCheckoutState();
+            updatePayableUI(readBaseTotal());
         });
     });
+    
+    document.addEventListener('change', (e) => {
+        if (e.target.id === 'use_advance') {
+            updateCheckoutState();
+            updatePayableUI(readBaseTotal());
+        }
+    });
+
     updateCheckoutState();
 
     // New Customer Modal
@@ -2792,7 +2865,6 @@
         let chequeDate = document.getElementById('cheque-date')?.value || '';
         let chequeNumber = document.getElementById('cheque-number')?.value || '';
         let chequeBank = document.getElementById('cheque-bank')?.value || '';
-        let chequeName = document.getElementById('cheque-name')?.value || '';
         if (Array.isArray(payloadExtra.payments)) {
             const missingCheque = payloadExtra.payments.find(p => p.method === 'cheque' && (!p.cheque_date || !String(p.cheque_number || '').trim()));
             if (missingCheque) {
@@ -2805,6 +2877,8 @@
             showToast('warning', 'Cheque pass date and cheque number are required.');
             return;
         }
+
+        let useAdvance = document.getElementById('use_advance')?.checked || false;
         
         let res;
         try {
@@ -2817,6 +2891,7 @@
                 cheque_number: chequeNumber || null,
                 cheque_bank: chequeBank || null,
                 cheque_name: chequeName || null,
+                use_advance: useAdvance,
                 ...payloadExtra
             });
         } catch(err){
@@ -2885,10 +2960,13 @@
             const cart = await postJSON('{{ route('pos.cart.clear') }}');
             renderCart(cart);
             document.getElementById('cash-amount').value = '';
-            ['cheque-date','cheque-number','cheque-bank','cheque-name'].forEach(id => {
+            ['cheque-date','cheque-number','cheque-bank'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.value = '';
             });
+            if (typeof multiPayRows !== 'undefined' && multiPayRows) {
+                multiPayRows.innerHTML = '';
+            }
             changeDisplay?.classList.add('hidden');
             dueDisplay?.classList.add('hidden');
             showToast('success', 'Sale completed #' + res.sale_id);
@@ -2941,11 +3019,10 @@
                     <i class="fas fa-trash"></i>
                 </button>
             </div>
-            <div class="col-span-12 cheque-row-fields hidden grid grid-cols-1 md:grid-cols-2 gap-3 bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+            <div class="col-span-12 cheque-row-fields hidden grid grid-cols-1 md:grid-cols-3 gap-3 bg-indigo-50 border border-indigo-200 rounded-lg p-3">
                 <input type="date" class="h-12 px-3 border border-indigo-200 rounded-lg bg-white cheque-date" placeholder="Cheque pass date">
                 <input type="text" class="h-12 px-3 border border-indigo-200 rounded-lg bg-white cheque-number" placeholder="Cheque number">
                 <input type="text" class="h-12 px-3 border border-gray-300 rounded-lg bg-white cheque-bank" placeholder="Bank">
-                <input type="text" class="h-12 px-3 border border-gray-300 rounded-lg bg-white cheque-name" placeholder="Customer name">
             </div>
         `;
         const sel = row.querySelector('select.payment-method');
@@ -2959,7 +3036,7 @@
         inp.value = amount;
         sel.addEventListener('change', toggleRowCheque);
         inp.addEventListener('input', updateMultiPaySummary);
-        row.querySelectorAll('.cheque-date,.cheque-number,.cheque-bank,.cheque-name').forEach(el => {
+        row.querySelectorAll('.cheque-date,.cheque-number,.cheque-bank').forEach(el => {
             el.addEventListener('input', updateMultiPaySummary);
             el.addEventListener('change', updateMultiPaySummary);
         });
@@ -2996,7 +3073,6 @@
                 payload.cheque_date = row.querySelector('.cheque-date')?.value || '';
                 payload.cheque_number = row.querySelector('.cheque-number')?.value || '';
                 payload.cheque_bank = row.querySelector('.cheque-bank')?.value || '';
-                payload.cheque_name = row.querySelector('.cheque-name')?.value || '';
             }
             payments.push(payload);
         });
@@ -3042,9 +3118,13 @@
 
     function openMultiPay(){
         if (!multiPayModal || !multiPayRows) return;
-        multiPayRows.innerHTML = '';
-        const payable = computePayableTotalSplit(readBaseTotal(), 0);
-        multiPayRows.appendChild(buildPaymentRow('cash', payable.toFixed(2)));
+        
+        // Persist multiple payment rows if accidental close
+        if (multiPayRows.children.length === 0) {
+            const payable = computePayableTotalSplit(readBaseTotal(), 0);
+            multiPayRows.appendChild(buildPaymentRow('cash', payable.toFixed(2)));
+        }
+        
         multiPayModal.classList.remove('hidden');
         updateMultiPaySummary();
     }

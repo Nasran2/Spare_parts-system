@@ -359,11 +359,21 @@ class DashboardController extends Controller
             $chequeReminderEnabled = (bool) Setting::get('pos_cheque_reminders_enabled', true);
             $canViewChequeReminders = $request->user()?->hasPermission('cheque_payments.view') || $request->user()?->hasPermission('cheque_payments.manage');
             $canManageChequePayments = $request->user()?->hasPermission('cheque_payments.manage');
-            $chequeReminders = collect([]);
+                        $chequeReminders = collect([]);
+            $ownChequeReminders = collect([]);
             if ($chequeReminderEnabled && $canViewChequeReminders && empty($dashboardControls['hide_invoice_details'])) {
                 $chequeReminders = ChequePayment::with(['sale', 'customer'])
                     ->where('status', 'pending')
+                    ->where('type', 'customer')
                     ->whereDate('cheque_date', '<=', now()->addDays($chequeReminderDays)->toDateString())
+                    ->orderBy('cheque_date')
+                    ->limit(10)
+                    ->get();
+                    
+                $ownChequeReminders = ChequePayment::with(['purchase', 'supplier'])
+                    ->where('status', 'pending')
+                    ->where('type', 'own')
+                    ->whereDate('cheque_date', '<=', now()->addDays(4)->toDateString())
                     ->orderBy('cheque_date')
                     ->limit(10)
                     ->get();
@@ -389,6 +399,7 @@ class DashboardController extends Controller
                 'expenseChangePercent',
                 'profitChangePercent',
                 'chequeReminders',
+                'ownChequeReminders',
                 'canManageChequePayments'
             ));
         } catch (\Exception $e) {
