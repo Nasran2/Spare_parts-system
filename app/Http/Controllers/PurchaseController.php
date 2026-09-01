@@ -22,10 +22,11 @@ class PurchaseController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
+        $isPreOrder = $request->boolean('is_pre_order');
         $hiddenSupplierIds = DashboardVisibilityService::hiddenSupplierIdsForUser(auth()->user());
-        $query = Purchase::with('supplier')->latest();
+        $query = Purchase::with('supplier')->where('is_pre_order', $isPreOrder)->latest();
         if (! empty($hiddenSupplierIds)) {
             $query->whereNotIn('supplier_id', $hiddenSupplierIds);
         }
@@ -33,14 +34,15 @@ class PurchaseController extends Controller
         $purchases = $query->get();
         $controls = DashboardVisibilityService::configForUser(auth()->user());
 
-        return view('purchases.index', compact('purchases', 'controls'));
+        return view('purchases.index', compact('purchases', 'controls', 'isPreOrder'));
     }
 
     /**
      * Show the form for creating a new resource.
      */
-    public function create()
+    public function create(Request $request)
     {
+        $isPreOrder = $request->boolean('is_pre_order');
         $canUseSellingSecretCode = auth()->user()?->isSuperAdmin() === true;
         // load suppliers and products for the purchase create form if needed
         $hiddenSupplierIds = DashboardVisibilityService::hiddenSupplierIdsForUser(auth()->user());
@@ -48,7 +50,10 @@ class PurchaseController extends Controller
             ->when(! empty($hiddenSupplierIds), fn ($query) => $query->whereNotIn('id', $hiddenSupplierIds))
             ->orderBy('name')
             ->get();
-        $products = \App\Models\Product::with('taxSetting')->orderBy('name')->get();
+        $includeOriginal = $request->boolean('include_original');
+        $products = \App\Models\Product::with('taxSetting')
+            ->when(!$includeOriginal, fn($q) => $q->where('is_pre_order', $isPreOrder))
+            ->orderBy('name')->get();
         $taxSettings = TaxSetting::current();
 
         // Pre-format products for JS to avoid Blade parsing issues
@@ -73,7 +78,7 @@ class PurchaseController extends Controller
             ->orderBy('cheque_date')
             ->get();
 
-        return view('purchases.create', compact('suppliers', 'products', 'productsData', 'canUseSellingSecretCode', 'stores', 'defaultStore', 'taxSettings', 'pendingCustomerCheques'));
+        return view('purchases.create', compact('suppliers', 'products', 'productsData', 'canUseSellingSecretCode', 'stores', 'defaultStore', 'taxSettings', 'pendingCustomerCheques', 'isPreOrder', 'includeOriginal'));
     }
 
     /**
@@ -81,10 +86,18 @@ class PurchaseController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $rules = [
+            'is_pre_order' => 'boolean',
             'supplier_id' => 'required|exists:suppliers,id',
             'store_ids' => 'required|array|min:1',
             'store_ids.*' => 'exists:stores,id',
+        ];
+        
+        if ($request->boolean('is_pre_order')) {
+            $rules['store_ids'] = 'nullable|array';
+        }
+        
+        $validated = $request->validate($rules + [
             'reference_no' => 'nullable|string|max:255',
             'purchase_date' => 'nullable|date',
             'status' => 'nullable|string|in:pending,ordered,received',
@@ -221,6 +234,7 @@ class PurchaseController extends Controller
             }
 
             $purchase = Purchase::create([
+                'is_pre_order' => $request->boolean('is_pre_order'),
                 'supplier_id' => $validated['supplier_id'],
                 'store_id' => $validated['store_ids'][0] ?? null,
                 'user_id' => auth()->id(),
@@ -242,8 +256,7 @@ class PurchaseController extends Controller
                 'shipping_type' => $shippingType,
                 'payment_method' => $validated['payment_method'] ?? 'cash',
                 'total_amount' => $grandTotal,
-                'paid_amount' => $totalPaidAmount,
-                'held_own_cheque_amount' => $totalHeldAmount,
+                'paid_amount' => $paidAmount,
                 'held_own_cheque_amount' => $heldOwnChequeAmount,
                 'due_amount' => $dueAmount,
                 'payment_status' => $paymentStatus,
@@ -431,9 +444,10 @@ class PurchaseController extends Controller
     /**
      * Show the form for editing the specified resource.
      */
-    public function edit(string $id)
+    public function edit(Request $request, string $id)
     {
         $purchase = \App\Models\Purchase::with(['items.product', 'supplier'])->findOrFail($id);
+        $isPreOrder = $purchase->is_pre_order;
         if (SecretPos::isPurchaseHidden((float) $purchase->total_amount)) {
             abort(404);
         }
@@ -451,7 +465,8 @@ class PurchaseController extends Controller
             ->orderBy('cheque_date')
             ->get();
 
-        return view('purchases.edit', compact('purchase', 'suppliers', 'pendingCustomerCheques'));
+                $includeOriginal = request()->boolean('include_original');
+        return view('purchases.edit', compact('purchase', 'suppliers', 'pendingCustomerCheques', 'isPreOrder', 'includeOriginal'));
     }
 
     /**
@@ -569,7 +584,6 @@ class PurchaseController extends Controller
                 'payment_method' => $validated['payment_method'] ?? $purchase->payment_method,
                 'paid_amount' => $totalPaidAmount,
                 'held_own_cheque_amount' => $totalHeldAmount,
-                'held_own_cheque_amount' => $heldOwnChequeAmount,
                 'due_amount' => $dueAmount,
                 'payment_status' => $paymentStatus,
                 'document_path' => $documentPath,

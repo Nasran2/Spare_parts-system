@@ -432,7 +432,9 @@ class AccountingController extends Controller
         } else {
             [$title, $headers, $rows] = $this->exportRows($request, $section);
             if ($format === 'pdf') {
-                $pdf = Pdf::loadView('accounting.export', compact('title', 'headers', 'rows'))->setPaper('a4', 'landscape');
+                $from = $request->input('from');
+                $to = $request->input('to');
+                $pdf = Pdf::loadView('accounting.export', compact('title', 'headers', 'rows', 'from', 'to'))->setPaper('a4', 'landscape');
                 return $pdf->download(str_replace(' ', '-', strtolower($title)).'.pdf');
             }
         }
@@ -488,12 +490,15 @@ class AccountingController extends Controller
         return [
             'title' => 'Cash Book Report',
             'shop' => [
-                'name' => \App\Models\Setting::get('store_name', 'Store Name'),
-                'address' => \App\Models\Setting::get('store_address', ''),
-                'phone' => \App\Models\Setting::get('store_phone', ''),
-                'email' => \App\Models\Setting::get('store_email', ''),
-                'logo' => \App\Models\Setting::get('store_logo', null),
+                'name' => \App\Models\Setting::get('shop_name', config('app.name', 'Vehicle POS')),
+                'tagline' => \App\Models\Setting::get('shop_tagline', ''),
+                'address' => \App\Models\Setting::get('shop_address', ''),
+                'phone' => \App\Models\Setting::get('shop_phone', ''),
+                'email' => \App\Models\Setting::get('shop_email', ''),
+                'logo' => \App\Models\Setting::get('shop_logo', null),
             ],
+            'from' => $request->input('from'),
+            'to' => $request->input('to'),
             'totals' => $totals,
             'main_table' => ['Main Account Transactions', ['Date', 'Reference', 'Description', 'Direction', 'Amount'], $mainRows],
             'petty_table' => ['Petty Cash Transactions', ['Date', 'Reference', 'Description', 'Direction', 'Amount'], $pettyRows],

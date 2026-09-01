@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Purchases')
+@section('title', isset($isPreOrder) && $isPreOrder ? 'Pre-Order Purchases' : 'Purchases')
 @section('page-title', 'Purchase Management')
 
 @section('content')
@@ -32,7 +32,7 @@
             <h3 class="text-lg font-semibold text-gray-800">Purchase Management</h3>
             <p class="text-sm text-gray-600">Track and manage all purchase orders</p>
         </div>
-        <a href="{{ route('purchases.create') }}" class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition shadow-lg">
+        <a href="{{ route('purchases.create', ['is_pre_order' => isset($isPreOrder) && $isPreOrder ? 1 : 0]) }}" class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition shadow-lg">
             <i class="fas fa-plus mr-2"></i>Add New Purchase
         </a>
     </div>
@@ -104,7 +104,7 @@
                         <td colspan="7" class="px-6 py-12 text-center">
                             <i class="fas fa-shopping-cart text-6xl text-gray-300 mb-4"></i>
                             <p class="text-gray-500 text-lg">No purchases found</p>
-                            <a href="{{ route('purchases.create') }}" class="mt-4 inline-block px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                            <a href="{{ route('purchases.create', ['is_pre_order' => isset($isPreOrder) && $isPreOrder ? 1 : 0]) }}" class="mt-4 inline-block px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
                                 <i class="fas fa-plus mr-2"></i>Add Purchase
                             </a>
                         </td>
@@ -120,7 +120,7 @@
 <script>
 function openCreateModal() {
     // fallback: navigate to create page
-    window.location.href = '{{ route('purchases.create') }}';
+    window.location.href = '{{ route('purchases.create', ['is_pre_order' => isset($isPreOrder) && $isPreOrder ? 1 : 0]) }}';
 }
 function viewPurchase(id) {
     window.location.href = '{{ url('purchases') }}/' + id;

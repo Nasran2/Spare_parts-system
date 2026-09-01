@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
-@section('title', 'Edit Product')
-@section('page-title', 'Edit Product')
+@section('title', isset($isPreOrder) && $isPreOrder ? 'Edit Pre-Order Product' : 'Edit Product')
+@section('page-title', isset($isPreOrder) && $isPreOrder ? 'Edit Pre-Order Product' : 'Edit Product')
 
 @section('content')
 <div class="space-y-6">
@@ -21,7 +21,18 @@
     </div>
 
     <!-- Form -->
-    <form action="{{ route('products.update', $product) }}" method="POST" enctype="multipart/form-data" class="bg-white rounded-xl shadow-md p-6">
+    <form action="{{ route('products.update', $product) }}" method="POST" enctype="multipart/form-data" class="bg-white rounded-xl shadow-md overflow-hidden">
+        @if(isset($isPreOrder) && $isPreOrder)
+        <div class="bg-gradient-to-r from-indigo-600 to-purple-700 px-6 py-5 text-white flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-2">
+            <div>
+                <h2 class="text-xl font-bold"><i class="fas fa-box-open mr-2"></i>Update Pre-Order Product</h2>
+                <p class="text-purple-100 text-sm mt-1">This product is managed separately in the Pre-Order catalog.</p>
+            </div>
+        </div>
+        <div class="p-6 pt-4">
+        @else
+        <div class="p-6">
+        @endif
         @csrf
         @method('PUT')
 
@@ -633,6 +644,9 @@
                         <form action="{{ route('product-prices.update', $price) }}" method="POST">
                             @csrf
                             @method('PUT')
+            @if(isset($isPreOrder) && $isPreOrder)
+                <input type="hidden" name="is_pre_order" value="1">
+            @endif
                             <td class="px-3 py-2 border">
                                 <input type="number" step="0.01" min="0" name="cost_price" value="{{ $price->cost_price }}" class="w-32 px-2 py-1 border rounded-lg" {{ auth()->user()?->hasPermission('edit_product_prices') ? '' : 'readonly' }}>
                             </td>
@@ -722,6 +736,7 @@
                 </button>
             </div>
         </form>
+        </div>
     </div>
 </div>
 
@@ -754,6 +769,7 @@
                 </button>
             </div>
         </form>
+        </div>
     </div>
 </div>
 

@@ -44,15 +44,10 @@
             $businessAddress = \App\Models\Setting::get('shop_address') ?? \App\Models\Setting::get('business_address') ?? '';
             $businessPhone = \App\Models\Setting::get('shop_phone') ?? \App\Models\Setting::get('business_phone') ?? '';
         @endphp
-        <div style="text-align:center; margin-bottom:8px;">
-            <div style="font-size:20px; font-weight:bold;">{{ $businessName }}</div>
-            <div class="meta">{{ $businessAddress }} @if($businessPhone) • {{ $businessPhone }} @endif</div>
-            <hr>
-        </div>
-    <div class="header">
-        <div class="title">Receive Report</div>
-        <div class="chip">Period: {{ $from ?? 'All' }} - {{ $to ?? 'All' }}</div>
-    </div>
+    @include('pdf.partials.letterhead', [
+        'documentTitle' => 'Receive Report',
+        'documentMeta' => ['Period' => ($from ?? 'All').' to '.($to ?? 'All')],
+    ])
     <div class="summary">
         <div class="card"><div class="label">Total Received</div><div class="value">{{ $maskMoney(($summary['total_received'] ?? 0), !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</div></div>
         <div class="card"><div class="label">Transactions</div><div class="value">{{ $summary['count'] ?? 0 }}</div></div>

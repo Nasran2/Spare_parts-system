@@ -31,27 +31,10 @@
     </style>
 </head>
 <body>
-    <div class="header">
-        @if(!empty($shop['logo']))
-            <img src="{{ public_path($shop['logo']) }}" alt="Logo" />
-        @endif
-        <div class="shop">
-            <h2>{{ $shop['name'] }}</h2>
-            <p>{{ $shop['address'] }}</p>
-            @if(!empty($shop['phone']) || !empty($shop['email']))
-                <p>
-                    @if(!empty($shop['phone'])) Tel: {{ $shop['phone'] }} @endif
-                    @if(!empty($shop['phone']) && !empty($shop['email'])) | @endif
-                    @if(!empty($shop['email'])) Email: {{ $shop['email'] }} @endif
-                </p>
-            @endif
-        </div>
-    </div>
-
-    <div class="title-bar">
-        <h1>{{ $title }}</h1>
-        <div class="muted">Generated: {{ now()->format('Y-m-d H:i') }}</div>
-    </div>
+    @include('pdf.partials.letterhead', [
+        'documentTitle' => $title,
+        'documentMeta' => ($from || $to) ? ['Period' => ($from ?: 'Beginning').' to '.($to ?: 'Today')] : [],
+    ])
 
     <table class="summary-grid">
         <tr>

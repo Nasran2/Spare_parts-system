@@ -39,15 +39,10 @@
             return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
         };
     @endphp
-    <?php $name = \App\Models\Setting::get('shop_name') ?? \App\Models\Setting::get('business_name');
-          $addr = \App\Models\Setting::get('shop_address') ?? \App\Models\Setting::get('business_address');
-          $phone = \App\Models\Setting::get('shop_phone') ?? \App\Models\Setting::get('business_phone'); ?>
-    <div class="letterhead">
-        <div class="name">{{ $name }}</div>
-        <div class="meta">{{ $addr }}{{ $addr ? ' | ' : '' }}{{ $phone }}</div>
-    </div>
-    <div class="title" style="font-size:16px;font-weight:bold;margin-bottom:8px;">Due Bills Report</div>
-    <div style="margin-bottom:8px;">Date Range: {{ $from ?? '—' }} to {{ $to ?? '—' }}</div>
+    @include('pdf.partials.letterhead', [
+        'documentTitle' => 'Due Bills Report',
+        'documentMeta' => ['Period' => ($from ?? 'All').' to '.($to ?? 'All')],
+    ])
 
     <table>
         <thead>

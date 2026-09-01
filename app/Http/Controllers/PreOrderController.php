@@ -49,10 +49,69 @@ class PreOrderController extends Controller
             'paid' => $orders->where('status', 'completed')->sum('paid_amount'),
             'due' => $orders->where('status', 'completed')->sum('due_amount'),
         ];
-        $customers = Customer::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']);
+        
+        if ($request->get('export') === 'pdf') {
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('preorders.pdf_report', compact('orders', 'summary', 'request'))->setPaper('a4', 'landscape');
+            return $pdf->download('preorder-report.pdf');
+        }
+
+        $customers = Customer::query()->whereHas('preOrders')->where('is_active', true)->orderBy('name')->get(['id', 'name']);
 
         return view('preorders.report', compact('orders', 'summary', 'customers'));
     }
+
+        public function customerReport(Request $request)
+    {
+        $customersQuery = Customer::query()
+            ->whereHas('preOrders')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->with('preOrders');
+            
+        if ($request->filled('customer_id')) {
+            $customersQuery->where('id', $request->customer_id);
+        }
+        
+        $customers = $customersQuery->get();
+            
+        foreach ($customers as $customer) {
+            // Apply date filters if any
+            $preOrders = $customer->preOrders;
+            if ($request->filled('date_from')) {
+                $preOrders = $preOrders->where('pre_order_date', '>=', $request->date_from);
+            }
+            if ($request->filled('date_to')) {
+                $preOrders = $preOrders->where('pre_order_date', '<=', $request->date_to);
+            }
+            
+            $customer->total_preorders = $preOrders->count();
+            $customer->total_amount = $preOrders->where('status', '!=', 'cancelled')->sum('grand_total');
+            $customer->paid_amount = $preOrders->sum('paid_amount');
+            $customer->due_amount = max(0, $customer->total_amount - $customer->paid_amount);
+        }
+        
+        // Filter out customers who have 0 pre-orders in the date range if date range is applied
+        if ($request->filled('date_from') || $request->filled('date_to')) {
+            $customers = $customers->filter(fn($c) => $c->total_preorders > 0);
+        }
+        
+        $summary = [
+            'total_customers' => $customers->count(),
+            'total_amount' => $customers->sum('total_amount'),
+            'total_paid' => $customers->sum('paid_amount'),
+            'total_due' => $customers->sum('due_amount'),
+        ];
+        
+        if ($request->get('export') === 'pdf') {
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('preorders.pdf_customer_report', compact('customers', 'summary', 'request'))->setPaper('a4', 'portrait');
+            return $pdf->download('preorder-customer-report.pdf');
+        }
+
+        $allCustomersWithPreorders = Customer::query()->whereHas('preOrders')->where('is_active', true)->orderBy('name')->get(['id', 'name']);
+
+        return view('preorders.customer_report', compact('customers', 'summary', 'allCustomersWithPreorders'));
+    }
+
 
     public function create(Request $request)
     {
@@ -283,7 +342,9 @@ class PreOrderController extends Controller
         $term = trim((string) $request->input('q'));
         $settings = TaxSetting::current();
         $calculator = app(TaxCalculationService::class);
+        $includeOriginal = $request->boolean('include_original');
         $products = Product::query()->with(['activePrices', 'taxSetting'])->where('is_active', true)
+            ->when(!$includeOriginal, fn ($query) => $query->where('is_pre_order', true))
             ->when($term !== '', fn ($query) => $query->where(fn ($q) => $q
                 ->where('name', 'like', "%{$term}%")->orWhere('sku', 'like', "%{$term}%")
                 ->orWhere('barcode', 'like', "%{$term}%")))

@@ -9,7 +9,34 @@
         @endforeach
     </div>
     <div class="bg-white rounded-xl shadow-lg p-5">
-        <form class="grid grid-cols-1 md:grid-cols-5 gap-3"><input type="date" name="date_from" value="{{ request('date_from') }}" class="px-3 py-2.5 border rounded-lg"><input type="date" name="date_to" value="{{ request('date_to') }}" class="px-3 py-2.5 border rounded-lg"><select name="status" class="px-3 py-2.5 border rounded-lg"><option value="">All statuses</option>@foreach(['pending','completed','cancelled'] as $s)<option value="{{ $s }}" @selected(request('status')===$s)>{{ ucfirst($s) }}</option>@endforeach</select><select name="payment_status" class="px-3 py-2.5 border rounded-lg"><option value="">All payment statuses</option>@foreach(['unpaid','partial','paid'] as $s)<option value="{{ $s }}" @selected(request('payment_status')===$s)>{{ ucfirst($s) }}</option>@endforeach</select><button class="bg-blue-600 text-white rounded-lg">Apply Filters</button></form>
+        <form class="grid grid-cols-1 md:grid-cols-6 gap-3">
+            <input type="date" name="date_from" value="{{ request('date_from') }}" class="px-3 py-2.5 border rounded-lg" title="From Date">
+            <input type="date" name="date_to" value="{{ request('date_to') }}" class="px-3 py-2.5 border rounded-lg" title="To Date">
+            <select name="customer_id" class="px-3 py-2.5 border rounded-lg">
+                <option value="">All Customers</option>
+                @foreach($customers as $c)
+                    <option value="{{ $c->id }}" @selected(request('customer_id') == $c->id)>{{ $c->name }}</option>
+                @endforeach
+            </select>
+            <select name="status" class="px-3 py-2.5 border rounded-lg">
+                <option value="">All statuses</option>
+                @foreach(['pending','completed','cancelled'] as $s)
+                    <option value="{{ $s }}" @selected(request('status')===$s)>{{ ucfirst($s) }}</option>
+                @endforeach
+            </select>
+            <select name="payment_status" class="px-3 py-2.5 border rounded-lg">
+                <option value="">All payment statuses</option>
+                @foreach(['unpaid','partial','paid'] as $s)
+                    <option value="{{ $s }}" @selected(request('payment_status')===$s)>{{ ucfirst($s) }}</option>
+                @endforeach
+            </select>
+            <div class="flex gap-2">
+                <button type="submit" class="w-full bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700">Apply</button>
+                <button type="submit" name="export" value="pdf" class="w-full bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 flex items-center justify-center gap-1" title="Export PDF">
+                    <i class="fas fa-file-pdf"></i> PDF
+                </button>
+            </div>
+        </form>
     </div>
     <div class="bg-white rounded-xl shadow overflow-x-auto"><table class="w-full min-w-[900px] text-sm"><thead class="bg-gray-50"><tr><th class="p-3 text-left">Pre-Order</th><th class="p-3 text-left">Date</th><th class="p-3 text-left">Customer</th><th class="p-3">Status</th><th class="p-3 text-right">Total</th><th class="p-3 text-right">Paid</th><th class="p-3 text-right">Due</th></tr></thead><tbody class="divide-y">@forelse($orders as $order)<tr><td class="p-3"><a class="text-blue-600 font-mono" href="{{ route('preorders.show',$order) }}">{{ $order->pre_order_number }}</a></td><td class="p-3">{{ $order->pre_order_date->format('Y-m-d') }}</td><td class="p-3">{{ $order->customer?->name }}</td><td class="p-3 text-center">{{ ucfirst($order->status) }}</td><td class="p-3 text-right">{{ number_format((float)$order->grand_total,2) }}</td><td class="p-3 text-right">{{ number_format((float)$order->paid_amount,2) }}</td><td class="p-3 text-right">{{ number_format((float)$order->due_amount,2) }}</td></tr>@empty<tr><td colspan="7" class="p-10 text-center text-gray-500">No records.</td></tr>@endforelse</tbody></table></div>
 </div>

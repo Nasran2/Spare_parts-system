@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
-@section('title', 'Edit Purchase')
-@section('page-title', 'Edit Purchase')
+@section('title', isset($isPreOrder) && $isPreOrder ? 'Edit Pre-Order Purchase' : 'Edit Purchase')
+@section('page-title', isset($isPreOrder) && $isPreOrder ? 'Edit Pre-Order Purchase' : 'Edit Purchase')
 
 @section('content')
 @php
@@ -29,10 +29,24 @@
         </div>
     @endif
 
-    <div class="bg-white rounded-xl shadow-md p-6">
+    <div class="bg-white rounded-xl shadow-md overflow-hidden">
+        @if(isset($isPreOrder) && $isPreOrder)
+        <div class="bg-gradient-to-r from-indigo-600 to-purple-700 px-6 py-5 text-white flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+            <div>
+                <h2 class="text-xl font-bold"><i class="fas fa-truck-loading mr-2"></i>Update Pre-Order Purchase</h2>
+                <p class="text-purple-100 text-sm mt-1">Purchase pre-order items. Stock is tracked under pre-orders.</p>
+            </div>
+        </div>
+        <div class="p-6 pt-2">
+        @else
+        <div class="p-6">
+        @endif
         <form action="{{ route('purchases.update', $purchase->id) }}" method="POST" enctype="multipart/form-data">
             @csrf
             @method('PUT')
+            @if(isset($isPreOrder) && $isPreOrder)
+                <input type="hidden" name="is_pre_order" value="1">
+            @endif
 
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 <div>

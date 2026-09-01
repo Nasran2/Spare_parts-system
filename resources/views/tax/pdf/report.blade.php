@@ -9,7 +9,10 @@
     th { background: #eee; text-align: left; }
     td:nth-child(4), td:nth-child(5) { text-align: right; }
 </style></head><body>
-<h1>{{ $title }}</h1><div class="period">{{ $from }} to {{ $to }}</div>
+@include('pdf.partials.letterhead', [
+    'documentTitle' => $title,
+    'documentMeta' => ['Tax Period' => $from.' to '.$to],
+])
 <table><thead><tr>@foreach($headings as $heading)<th>{{ $heading }}</th>@endforeach</tr></thead><tbody>
 @foreach($rows as $row)<tr>@foreach($row as $cell)<td>{{ $cell }}</td>@endforeach</tr>@endforeach
 </tbody></table></body></html>

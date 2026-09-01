@@ -63,25 +63,10 @@
     @endphp
 
     <div class="container">
-        <!-- Letterhead Header -->
-        <table class="letterhead">
-            <tr>
-                <td style="width: 50%;">
-                    <div class="company-name">{{ $businessName }}</div>
-                    <div class="company-meta">
-                        @if($businessAddress){{ $businessAddress }}<br>@endif
-                        @if($businessPhone)Phone: {{ $businessPhone }}@endif
-                    </div>
-                </td>
-                <td class="report-title-container" style="width: 50%;">
-                    <div class="report-title">Sales Report</div>
-                    <div class="report-meta">
-                        <strong>Period:</strong> {{ $from ?? '—' }} to {{ $to ?? '—' }}<br>
-                        <strong>Generated:</strong> {{ now()->format('Y-m-d H:i') }}
-                    </div>
-                </td>
-            </tr>
-        </table>
+        @include('pdf.partials.letterhead', [
+            'documentTitle' => 'Sales Report',
+            'documentMeta' => ['Period' => ($from ?? 'All').' to '.($to ?? 'All')],
+        ])
 
         <!-- Summary Widgets (Top) -->
         <table class="summary-container">

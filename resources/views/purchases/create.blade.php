@@ -1,12 +1,26 @@
 @extends('layouts.app')
 
 @section('title', 'Create Purchase')
-@section('page-title', 'Add Purchase')
+@section('page-title', isset($isPreOrder) && $isPreOrder ? 'Add Pre-Order Purchase' : 'Add Purchase')
 
 @section('content')
-<div class="bg-white rounded-xl shadow-md p-6">
+<div class="bg-white rounded-xl shadow-md overflow-hidden">
+        @if(isset($isPreOrder) && $isPreOrder)
+        <div class="bg-gradient-to-r from-indigo-600 to-purple-700 px-6 py-5 text-white flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+            <div>
+                <h2 class="text-xl font-bold"><i class="fas fa-truck-loading mr-2"></i>New Pre-Order Purchase</h2>
+                <p class="text-purple-100 text-sm mt-1">Purchase pre-order items. Stock is tracked under pre-orders.</p>
+            </div>
+        </div>
+        <div class="p-6 pt-2">
+        @else
+        <div class="p-6">
+        @endif
     <form action="{{ route('purchases.store') }}" method="POST" enctype="multipart/form-data" onsubmit="return submitPurchase(event)">
         @csrf
+        @if(isset($isPreOrder) && $isPreOrder)
+            <input type="hidden" name="is_pre_order" value="1">
+        @endif
 
         <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
             <!-- Supplier -->
@@ -49,6 +63,7 @@
             </div>
 
             <!-- Store -->
+            @if(!isset($isPreOrder) || !$isPreOrder)
             <div>
                 <div class="flex items-center justify-between mb-2">
                     <label class="block text-sm font-semibold text-gray-700">
@@ -74,6 +89,7 @@
                     <p id="no_store_matches" class="hidden text-sm text-gray-500">No matching stores</p>
                 </div>
             </div>
+            @endif
         </div>
 
 
@@ -112,9 +128,15 @@
                 <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
                 <div id="product_suggestions" class="hidden absolute left-0 right-0 mt-1 bg-white border border-gray-200 rounded shadow-lg z-30 max-h-64 overflow-y-auto"></div>
             </div>
-            <button type="button" onclick="openProductModal()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+            <button type="button" onclick="openProductModal()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 whitespace-nowrap">
                 <i class="fas fa-plus mr-2"></i>Add new product
             </button>
+            @if(isset($isPreOrder) && $isPreOrder)
+            <label class="flex items-center text-sm text-gray-700 ml-4 whitespace-nowrap">
+                <input type="checkbox" onchange="window.location.href='?is_pre_order=1&include_original=' + (this.checked ? '1' : '0')" {{ isset($includeOriginal) && $includeOriginal ? 'checked' : '' }} class="mr-2 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                Include Original Products
+            </label>
+            @endif
         </div>
 
         <!-- Products Table -->
@@ -288,6 +310,9 @@
             <button onclick="closeProductModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
         </div>
         <form id="quickProductForm">
+            @if(isset($isPreOrder) && $isPreOrder)
+                <input type="hidden" name="is_pre_order" value="1">
+            @endif
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="md:col-span-2">
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Product Name <span class="text-red-500">*</span></label>
@@ -609,6 +634,9 @@ function hideStoreResults() {
 }
 
 function buildStoreQuantitiesContainer(tr, selectedStores) {
+    @if(isset($isPreOrder) && $isPreOrder)
+        return; // Pre-orders don't use store quantities
+    @endif
     const container = tr.querySelector('.store-qtys-container');
     if (!container) return;
 
@@ -753,9 +781,13 @@ function addItemRow(productData = null) {
             </select>
         </td>
         <td class="border px-2 py-2">
-            <div class="store-qtys-container space-y-1.5 p-1"></div>
-            <input type="hidden" class="qty-input" value="0" />
-            <div class="text-xs text-gray-500 font-semibold mt-1 text-right row-total-qty-display">Total: 0</div>
+            @if(isset($isPreOrder) && $isPreOrder)
+                <input type="number" min="0.001" step="any" class="qty-input w-full text-right border border-gray-300 rounded focus:ring-green-500 px-2 py-1 text-sm" value="1" oninput="recalcRow(this); applyShippingToAll();" />
+            @else
+                <div class="store-qtys-container space-y-1.5 p-1"></div>
+                <input type="hidden" class="qty-input" value="0" />
+                <div class="text-xs text-gray-500 font-semibold mt-1 text-right row-total-qty-display">Total: 0</div>
+            @endif
         </td>
         <td class="border px-2 py-2">
             <input type="number" step="0.01" class="cost-before-discount-input w-full text-right border-0 focus:ring-0 text-sm" value="${selectedProduct.cost_price || 0}" data-original-cost="${selectedProduct.cost_price || 0}" oninput="recalcRow(this)" />
@@ -1131,6 +1163,13 @@ function recalcGrandTotal() {
         const container = document.getElementById('payments-container');
         const index = paymentIndex++;
         
+        let grandTotal = parseFloat(document.getElementById('grandTotal').innerText.replace(/,/g, '')) || 0;
+        let totalPaid = 0;
+        document.querySelectorAll('.payment-amount').forEach(input => {
+            totalPaid += parseFloat(input.value) || 0;
+        });
+        let dueAmount = Math.max(0, grandTotal - totalPaid);
+        
         let chequeOptions = '<option value="">Select Party Cheque...</option>';
         pendingCustomerCheques.forEach(c => {
             chequeOptions += `<option value="${c.id}">${c.bank_name} - ${c.cheque_number} - Rs ${parseFloat(c.amount).toFixed(2)} (${c.customer ? c.customer.name : 'Unknown'})</option>`;
@@ -1153,7 +1192,7 @@ function recalcGrandTotal() {
                 </div>
 
                 <div class="w-1/4 flex gap-2">
-                    <input type="number" name="payments[${index}][amount]" step="0.01" value="0" class="w-full border border-gray-300 rounded px-2 py-1.5 focus:ring-2 focus:ring-blue-500 payment-amount" oninput="recalcPayment()">
+                    <input type="number" name="payments[${index}][amount]" step="0.01" value="${dueAmount.toFixed(2)}" class="w-full border border-gray-300 rounded px-2 py-1.5 focus:ring-2 focus:ring-blue-500 payment-amount" oninput="recalcPayment()">
                     <button type="button" onclick="removePaymentRow(${index})" class="px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200">
                         <i class="fas fa-trash"></i>
                     </button>
@@ -1162,6 +1201,7 @@ function recalcGrandTotal() {
         `;
         container.insertAdjacentHTML('beforeend', rowHtml);
         handlePaymentMethodChange(document.querySelector(`select[name="payments[${index}][method]"]`), index);
+        recalcPayment();
     }
 
     function handlePaymentMethodChange(select, index) {

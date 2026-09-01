@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Stock Report')
+@section('title', request('is_pre_order') ? 'Pre-Order Stock Report' : 'Stock Report')
 @section('page-title', 'Stock Report')
 
 @section('content')

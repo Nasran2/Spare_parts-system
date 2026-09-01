@@ -31,7 +31,10 @@
 
             <div class="bg-white rounded-xl shadow p-5"><h3 class="font-semibold text-gray-800 border-b pb-3 mb-4"><i class="fas fa-car-side text-blue-600 mr-2"></i>Vehicle Information</h3><div class="grid grid-cols-1 md:grid-cols-3 gap-5">@if($preOrder->vehicle_image_url)<div><img src="{{ $preOrder->vehicle_image_url }}" alt="{{ $preOrder->vehicle_name }}" class="w-full max-h-56 object-contain bg-gray-50 border rounded-xl"></div>@endif<div class="{{ $preOrder->vehicle_image_url ? 'md:col-span-2':'md:col-span-3' }}"><div class="text-xl font-bold">{{ $preOrder->vehicle_name }}</div>@if($preOrder->vehicle_description)<p class="mt-4 text-sm text-gray-600 whitespace-pre-wrap">{{ $preOrder->vehicle_description }}</p>@endif @if($preOrder->instructions)<div class="mt-4 p-3 bg-blue-50 text-blue-900 rounded-lg text-sm whitespace-pre-wrap"><strong>Instructions</strong><br>{{ $preOrder->instructions }}</div>@endif</div></div></div>
 
-            <div class="bg-white rounded-xl shadow overflow-hidden"><div class="px-5 py-4 border-b flex justify-between"><h3 class="font-semibold text-gray-800"><i class="fas fa-gears text-blue-600 mr-2"></i>Products / Parts & Sync Status</h3><span class="text-sm text-gray-500">{{ $preOrder->items->count() }} item(s)</span></div><div class="overflow-x-auto"><table class="w-full min-w-[1150px] text-sm"><thead class="bg-gray-50 text-xs uppercase text-gray-600"><tr><th class="p-3 text-left">Part</th><th class="p-3 text-center">Stock / Sync</th><th class="p-3 text-right">Qty</th><th class="p-3 text-right">Quoted</th><th class="p-3 text-right">Current</th><th class="p-3 text-right">Final</th><th class="p-3 text-right">Discount</th><th class="p-3 text-right">Total</th><th class="p-3 text-center">Action</th></tr></thead><tbody class="divide-y">@foreach($preOrder->items as $item) @php $isSeparate = $preOrder->pdf_tax_display === 'separate'; $isExclHidden = $preOrder->pdf_tax_display === 'exclusive_hidden'; $tm = $isExclHidden ? (1 + ((float)$preOrder->custom_tax_rate / 100)) : 1; $dispQuoted = (float)$item->quoted_price * $tm; $dispCurrent = $item->current_selling_price !== null ? (float)$item->current_selling_price * $tm : null; $dispFinal = (float)$item->final_price * $tm; $dispDiscount = (float)$item->discount_amount * $tm; $dispLineTotal = $isSeparate ? ((float)$item->gross_amount - (float)$item->discount_amount) : (float)$item->line_total; @endphp <tr><td class="p-3"><div class="font-semibold">{{ $item->original_product_name }}</div>@if($item->description)<div class="text-xs text-gray-500 mt-1">{{ $item->description }}</div>@endif @if($item->product)<div class="text-xs text-green-600 mt-1">Linked: {{ $item->product->name }}{{ $item->product->sku ? ' · '.$item->product->sku : '' }}</div>@endif</td><td class="p-3 text-center"><div class="flex items-center justify-center gap-2">@if(!$item->product_id)<span class="px-2 py-1 bg-amber-100 text-amber-800 rounded-full text-xs whitespace-nowrap">⚠ Not Synced</span>@elseif($item->current_stock<=0)<span class="px-2 py-1 bg-amber-100 text-amber-800 rounded-full text-xs whitespace-nowrap">⚠ 0 Stock</span>@else<span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs whitespace-nowrap">✓ Synced · {{ $item->current_stock }}</span>@endif @if($preOrder->status==='pending' && auth()->user()->hasPermission('preorder_sync_product'))<button onclick="openSync({{ json_encode(['id'=>$item->id,'name'=>$item->original_product_name,'quoted'=>(float)$item->quoted_price]) }})" class="p-1 text-indigo-600 hover:bg-indigo-50 rounded inline-flex items-center" title="Sync Product"><i class="fas fa-link"></i></button>@endif</div></td><td class="p-3 text-right">{{ $item->quantity }}</td><td class="p-3 text-right">{{ $currency }}{{ number_format($dispQuoted,2) }}</td><td class="p-3 text-right">{{ $dispCurrent !== null ? $currency.number_format($dispCurrent,2) : '—' }}</td><td class="p-3 text-right font-semibold {{ $dispQuoted !== $dispFinal ? 'text-blue-700':'' }}">{{ $currency }}{{ number_format($dispFinal,2) }}</td><td class="p-3 text-right">{{ $currency }}{{ number_format($dispDiscount,2) }}</td><td class="p-3 text-right font-semibold">{{ $currency }}{{ number_format($dispLineTotal,2) }}</td><td class="p-3"><div class="flex justify-center gap-1">@if($preOrder->status==='pending' && $item->product && auth()->user()->hasPermission('preorder_change_price'))<button onclick="openPrice({{ json_encode(['id'=>$item->id,'name'=>$item->original_product_name,'quoted'=>(float)$item->quoted_price,'current'=>$item->current_selling_price,'final'=>(float)$item->final_price]) }})" class="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Change Price"><i class="fas fa-tags"></i></button>@endif</div></td></tr>@endforeach</tbody></table></div></div>
+            <div class="bg-white rounded-xl shadow overflow-hidden"><div class="px-5 py-4 border-b flex justify-between"><h3 class="font-semibold text-gray-800"><i class="fas fa-gears text-blue-600 mr-2"></i>Products / Parts & Sync Status</h3><span class="text-sm text-gray-500">{{ $preOrder->items->count() }} item(s)</span></div><div class="overflow-x-auto"><table class="w-full min-w-[1150px] text-sm"><thead class="bg-gray-50 text-xs uppercase text-gray-600"><tr><th class="p-3 text-left">Part</th><th class="p-3 text-center">Stock / Sync</th><th class="p-3 text-right">Qty</th><th class="p-3 text-right">Quoted</th><th class="p-3 text-right">Current</th><th class="p-3 text-right">Final</th><th class="p-3 text-right">Discount</th><th class="p-3 text-right">Total</th><th class="p-3 text-center">Action</th></tr></thead><tbody class="divide-y">@foreach($preOrder->items as $item) @php $isSeparate = $preOrder->pdf_tax_display === 'separate'; $isExclHidden = $preOrder->pdf_tax_display === 'exclusive_hidden'; $tm = $isExclHidden ? (1 + ((float)$preOrder->custom_tax_rate / 100)) : 1; $dispQuoted = (float)$item->quoted_price * $tm; $dispCurrent = $item->current_selling_price !== null ? (float)$item->current_selling_price * $tm : null; $dispFinal = (float)$item->final_price * $tm; $dispDiscount = (float)$item->discount_amount * $tm; $dispLineTotal = $isSeparate ? ((float)$item->gross_amount - (float)$item->discount_amount) : (float)$item->line_total; @endphp <tr><td class="p-3"><div class="font-semibold">{{ $item->original_product_name }}</div>@if($item->description)<div class="text-xs text-gray-500 mt-1">{{ $item->description }}</div>@endif @if($item->product)<div class="text-xs text-green-600 mt-1">Linked: {{ $item->product->name }}{{ $item->product->sku ? ' · '.$item->product->sku : '' }}</div>@endif</td><td class="p-3 text-center"><div class="flex items-center justify-center gap-2">@if(!$item->product_id)<span class="px-2 py-1 bg-amber-100 text-amber-800 rounded-full text-xs whitespace-nowrap">⚠ Not Synced</span>@elseif($item->current_stock<=0)<span class="px-2 py-1 bg-amber-100 text-amber-800 rounded-full text-xs whitespace-nowrap">⚠ 0 Stock</span>@else<span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs whitespace-nowrap">✓ Synced · {{ $item->current_stock }}</span>@endif @if($preOrder->status==='pending' && auth()->user()->hasPermission('preorder_sync_product'))<button onclick="openSync({{ json_encode(['id'=>$item->id,'name'=>$item->original_product_name,'quoted'=>(float)$item->quoted_price]) }})" class="p-1 text-indigo-600 hover:bg-indigo-50 rounded inline-flex items-center" title="Sync Product"><i class="fas fa-link"></i></button>
+@if(auth()->user()->hasPermission('products.create'))
+<button type="button" onclick="openCreateProductForSync({{ json_encode(['id'=>$item->id,'name'=>$item->original_product_name]) }})" class="p-1 text-green-600 hover:bg-green-50 rounded inline-flex items-center ml-1" title="Create New Product & Sync"><i class="fas fa-plus"></i></button>
+@endif @endif</div></td><td class="p-3 text-right">{{ $item->quantity }}</td><td class="p-3 text-right">{{ $currency }}{{ number_format($dispQuoted,2) }}</td><td class="p-3 text-right">{{ $dispCurrent !== null ? $currency.number_format($dispCurrent,2) : '—' }}</td><td class="p-3 text-right font-semibold {{ $dispQuoted !== $dispFinal ? 'text-blue-700':'' }}">{{ $currency }}{{ number_format($dispFinal,2) }}</td><td class="p-3 text-right">{{ $currency }}{{ number_format($dispDiscount,2) }}</td><td class="p-3 text-right font-semibold">{{ $currency }}{{ number_format($dispLineTotal,2) }}</td><td class="p-3"><div class="flex justify-center gap-1">@if($preOrder->status==='pending' && $item->product && auth()->user()->hasPermission('preorder_change_price'))<button onclick="openPrice({{ json_encode(['id'=>$item->id,'name'=>$item->original_product_name,'quoted'=>(float)$item->quoted_price,'current'=>$item->current_selling_price,'final'=>(float)$item->final_price]) }})" class="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Change Price"><i class="fas fa-tags"></i></button>@endif</div></td></tr>@endforeach</tbody></table></div></div>
         </div>
 
         <div class="space-y-6">
@@ -62,6 +65,161 @@
 {{-- Future payment modal --}}
 <div id="payment-modal" class="modal fixed inset-0 hidden items-center justify-center bg-black/50 z-[80] p-4"><div class="bg-white rounded-xl shadow-2xl max-w-lg w-full"><form method="POST" action="{{ route('preorders.payments.store',$preOrder) }}">@csrf<div class="p-6 space-y-4"><h3 class="text-xl font-bold">Collect Payment</h3><div class="p-3 bg-red-50 text-red-800 rounded-lg">Remaining due: <strong>{{ $currency }}{{ number_format((float)$preOrder->due_amount,2) }}</strong></div><div><label class="text-sm font-medium">Amount *</label><input name="amount" type="number" min="0.01" max="{{ $preOrder->due_amount }}" step="0.01" required class="mt-1 w-full p-3 border rounded-lg"></div><div><label class="text-sm font-medium">Method *</label><select name="payment_method" id="future-method" class="mt-1 w-full p-3 border rounded-lg"><option value="cash">Cash</option><option value="bank_deposit">Bank Deposit</option><option value="bank_transfer">Bank Transfer</option><option value="card">Card</option><option value="mobile_payment">Mobile Payment</option><option value="cheque">Cheque</option></select></div><div><label class="text-sm font-medium">Date *</label><input name="payment_date" type="date" value="{{ now()->format('Y-m-d') }}" required class="mt-1 w-full p-3 border rounded-lg"></div><div><label class="text-sm font-medium">Reference</label><input name="reference_no" class="mt-1 w-full p-3 border rounded-lg"></div><div id="future-cheque" class="hidden grid grid-cols-2 gap-3"><input name="cheque_number" placeholder="Cheque number" class="p-3 border rounded-lg"><input name="cheque_date" type="date" class="p-3 border rounded-lg"><input name="bank_name" placeholder="Bank" class="p-3 border rounded-lg"><input name="account_name" placeholder="Account name" class="p-3 border rounded-lg"></div><textarea name="notes" placeholder="Notes" class="w-full p-3 border rounded-lg"></textarea></div><div class="p-4 bg-gray-50 flex justify-end gap-2"><button type="button" onclick="closeModal('payment-modal')" class="px-4 py-2 bg-gray-200 rounded-lg">Cancel</button><button class="px-5 py-2 bg-blue-600 text-white rounded-lg">Save Payment</button></div></form></div></div>
 
+<!-- Product Create Modal -->
+<div id="createProductSyncModal" class="fixed inset-0 hidden items-center justify-center z-50">
+    <div class="absolute inset-0 bg-black opacity-50" onclick="closeModal('createProductSyncModal')"></div>
+    <div class="bg-white rounded-lg shadow-lg w-full max-w-2xl relative z-10 p-6 max-h-screen overflow-y-auto">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold">Add New Product</h3>
+            <button onclick="closeModal('createProductSyncModal')" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+        </div>
+        <form id="createProductSyncForm">
+<input type="hidden" name="pre_order_item_id" id="cps_item_id">
+            @if(isset($isPreOrder) && $isPreOrder)
+                <input type="hidden" name="is_pre_order" value="1">
+            @endif
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Product Name <span class="text-red-500">*</span></label>
+                    <input type="text" name="name" required class="w-full border rounded px-3 py-2" />
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">SKU / Barcode</label>
+                    <input type="text" name="sku" class="w-full border rounded px-3 py-2" placeholder="Auto-generated if left blank" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Unit <span class="text-red-500">*</span></label>
+                    <select name="unit_id" class="w-full border rounded px-3 py-2" required>
+                        <option value="">-- Select --</option>
+                        @foreach(\App\Models\Unit::where('is_active', true)->get() as $u)
+                        <option value="{{ $u->id }}">{{ $u->name }}{{ $u->short_name ? ' (' . $u->short_name . ')' : '' }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Category</label>
+                    <select name="categories[]" class="w-full border rounded px-3 py-2">
+                        <option value="">-- Select --</option>
+                        @foreach(\App\Models\Category::where('is_active', true)->get() as $c)
+                        <option value="{{ $c->id }}">{{ $c->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Brand</label>
+                    <select name="brands[]" class="w-full border rounded px-3 py-2">
+                        <option value="">-- Select --</option>
+                        @foreach(\App\Models\Brand::where('is_active', true)->get() as $b)
+                        <option value="{{ $b->id }}">{{ $b->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Show Unit Prices For</label>
+                    <p class="text-xs text-gray-500 mb-2">Uncheck units you do not want to display. Leave all checked to show prices for every unit.</p>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 border rounded px-3 py-2 bg-gray-50">
+                        @foreach(\App\Models\Unit::where('is_active', true)->get() as $u)
+                            @php
+                                $m = rtrim(rtrim(number_format((float)$u->base_unit_multiplier, 3, '.', ''), '0'), '.');
+                            @endphp
+                            <label class="flex items-center space-x-2 px-2 py-1 border rounded bg-white">
+                                <input type="checkbox" name="visible_units[]" value="{{ $u->id }}" class="text-blue-600 rounded" checked>
+                                <span class="text-xs text-gray-700">{{ $u->short_name ?: $u->name }} (x{{ $m }})</span>
+                            </label>
+                        @endforeach
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Cost Price <span class="text-red-500">*</span></label>
+                    <input type="number" step="0.01" name="cost_price" required class="w-full border rounded px-3 py-2" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Selling Price <span class="text-red-500">*</span></label>
+                    <input type="number" step="0.01" name="selling_price" required class="w-full border rounded px-3 py-2" />
+                </div>
+                @if(($canUseSellingSecretCode ?? false) && (bool) \App\Models\Setting::get('barcode_enable_selling_secret_code', false))
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Secret Selling Code</label>
+                    <input type="text" id="quick_secret_selling_code" class="w-full border rounded px-3 py-2" placeholder="Type secret code to fill selling price" />
+                </div>
+                @endif
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Secret Cost Code</label>
+                    <input type="text" id="quick_secret_cost_code" class="w-full border rounded px-3 py-2" placeholder="Type secret code to fill cost price" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Profit Margin</label>
+                    <div class="flex gap-2">
+                        <input type="number" step="0.01" min="0" id="quick_profit_margin_percent" class="w-full border rounded px-3 py-2" placeholder="Margin %" />
+                        <input type="number" step="0.01" min="0" id="quick_profit_margin_fixed" class="w-full border rounded px-3 py-2" placeholder="Fixed" />
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Stock Quantity <span class="text-red-500">*</span></label>
+                    <input type="number" name="stock_quantity" value="0" min="0" required class="w-full border rounded px-3 py-2" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Alert Quantity <span class="text-red-500">*</span></label>
+                    <input type="number" name="alert_quantity" value="1" min="0" required class="w-full border rounded px-3 py-2" />
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Description</label>
+                    <textarea name="description" rows="2" class="w-full border rounded px-3 py-2" placeholder="Optional"></textarea>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Product Image</label>
+                    <input type="file" name="image" accept="image/*" class="w-full border rounded px-3 py-2" />
+                </div>
+                
+                <!-- Mark as Purchase -->
+                <div class="md:col-span-2 mt-2 p-4 border rounded-lg bg-blue-50">
+                    <label class="flex items-center space-x-2 font-semibold text-blue-900 cursor-pointer">
+                        <input type="checkbox" id="mark_as_purchase" class="w-5 h-5 rounded text-blue-600">
+                        <span>Mark this as a Purchase</span>
+                    </label>
+                    
+                    <div id="purchase_details_container" class="hidden mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="md:col-span-2">
+                            <label class="block text-sm font-semibold text-gray-700 mb-1">Supplier <span class="text-red-500">*</span></label>
+                            <div class="flex gap-2">
+                                <select id="purchase_supplier_id" class="w-full border rounded px-3 py-2">
+                                    <option value="">Please Select</option>
+                                    @foreach(\App\Models\Supplier::where('is_active', true)->get() as $sup)
+                                        <option value="{{ $sup->id }}">{{ $sup->name }}</option>
+                                    @endforeach
+                                </select>
+                                <button type="button" onclick="openSupplierModal()" class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 whitespace-nowrap">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-1">Payment Method</label>
+                            <select id="purchase_payment_method" class="w-full border rounded px-3 py-2">
+                                <option value="cash">Cash</option>
+                                <option value="bank_transfer">Bank Transfer</option>
+                                <option value="card">Card</option>
+                                <option value="mobile_payment">Mobile Payment</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-1">Amount Paid (Due: <span id="purchase_due_display">0.00</span>)</label>
+                            <input type="number" step="0.01" min="0" id="purchase_paid_amount" class="w-full border rounded px-3 py-2" value="0.00" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-6 flex items-center gap-2">
+                <button type="submit" class="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                    <i class="fas fa-plus mr-2"></i>Create Product
+                </button>
+                <button type="button" onclick="closeModal('createProductSyncModal')" class="px-6 py-2 bg-gray-200 rounded hover:bg-gray-300">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+
 <script>
 const currency=@json($currency);
 function openModal(id){const m=document.getElementById(id);m.classList.remove('hidden');m.classList.add('flex');if(id==='complete-modal')enhanceCompleteSummary()}
@@ -79,5 +237,370 @@ const total={{ (float)$preOrder->grand_total }};let paymentIndex=0;
 function addCompletionPayment(){const i=paymentIndex++,row=document.createElement('div');row.className='payment-row border rounded-lg p-3';row.innerHTML=`<div class="grid grid-cols-1 md:grid-cols-5 gap-2"><select name="payments[${i}][method]" class="method p-2 border rounded"><option value="cash">Cash</option><option value="bank_deposit">Bank Deposit</option><option value="bank_transfer">Bank Transfer</option><option value="card">Card</option><option value="mobile_payment">Mobile</option><option value="cheque">Cheque</option><option value="due">Due (no collection)</option></select><input name="payments[${i}][amount]" type="number" min="0" step="0.01" placeholder="Amount" class="amount p-2 border rounded"><input name="payments[${i}][date]" type="date" value="{{ now()->format('Y-m-d') }}" class="p-2 border rounded"><input name="payments[${i}][reference]" placeholder="Reference" class="p-2 border rounded"><button type="button" class="text-red-600" onclick="this.closest('.payment-row').remove();calcPayments()"><i class="fas fa-trash"></i></button></div><div class="cheque-fields hidden grid grid-cols-1 md:grid-cols-4 gap-2 mt-2"><input name="payments[${i}][cheque_number]" placeholder="Cheque number" class="p-2 border rounded"><input name="payments[${i}][cheque_date]" type="date" class="p-2 border rounded"><input name="payments[${i}][bank_name]" placeholder="Bank" class="p-2 border rounded"><input name="payments[${i}][account_name]" placeholder="Account name" class="p-2 border rounded"></div>`;document.getElementById('completion-payments').appendChild(row);row.querySelector('.method').onchange=function(){row.querySelector('.cheque-fields').classList.toggle('hidden',this.value!=='cheque');calcPayments()};row.querySelector('.amount').oninput=calcPayments;calcPayments()}
 function calcPayments(){let allocated=0;document.querySelectorAll('.payment-row').forEach(r=>{if(r.querySelector('.method').value!=='due')allocated+=Number(r.querySelector('.amount').value||0)});document.getElementById('allocated-total').textContent=currency+allocated.toFixed(2);document.getElementById('completion-due').textContent=currency+Math.max(0,total-allocated).toFixed(2)}
 document.getElementById('future-method')?.addEventListener('change',function(){document.getElementById('future-cheque').classList.toggle('hidden',this.value!=='cheque')});
+
+// Setup Quick Product Constants
+const CAN_USE_SELLING_SECRET_CODE = @json((bool)\App\Models\Setting::get('barcode_enable_selling_secret_code', false));
+const QUICK_COST_CODE_MAP = @json((array)\App\Models\Setting::get('barcode_cost_code_map'));
+const QUICK_SELLING_CODE_MAP = CAN_USE_SELLING_SECRET_CODE ? @json((array)\App\Models\Setting::get('barcode_selling_code_map')) : {};
+
+if (!Object.keys(QUICK_COST_CODE_MAP || {}).length) {
+    Object.assign(QUICK_COST_CODE_MAP, {
+        '0': 'E', '1': 'M', '2': 'O', '3': 'D', '4': 'T',
+        '5': 'P', '6': 'C', '7': 'S', '8': 'K', '9': 'L'
+    });
+}
+if (CAN_USE_SELLING_SECRET_CODE && !Object.keys(QUICK_SELLING_CODE_MAP || {}).length) {
+    Object.assign(QUICK_SELLING_CODE_MAP, QUICK_COST_CODE_MAP);
+}
+
+function encodeNumberToSecret(numStr, map) {
+    let str = String(numStr).trim();
+    if (!str) return '';
+    if (str.includes('.')) {
+        str = parseFloat(str).toFixed(2);
+    }
+    let encoded = '';
+    for (let char of str) {
+        if (char === '.') {
+            encoded += '.';
+        } else if (map[char]) {
+            encoded += map[char];
+        } else {
+            encoded += char;
+        }
+    }
+    return encoded;
+}
+
+function attachQuickProductListeners() {
+    const form = document.getElementById('createProductSyncForm');
+    if (!form) return;
+
+    const costInput = form.querySelector('input[name="cost_price"]');
+    const sellingInput = form.querySelector('input[name="selling_price"]');
+    const percentInput = document.getElementById('quick_profit_margin_percent');
+    const fixedInput = document.getElementById('quick_profit_margin_fixed');
+    const secretCodeInput = document.getElementById('quick_secret_cost_code');
+    const sellingSecretCodeInput = document.getElementById('quick_secret_selling_code');
+    const qtyInput = form.querySelector('input[name="stock_quantity"]');
+    const dueDisplay = document.getElementById('purchase_due_display');
+
+    if (!costInput || !sellingInput || !percentInput || !fixedInput || !secretCodeInput) return;
+
+    const updateDueAmount = () => {
+        if (!dueDisplay) return;
+        const c = parseFloat(costInput.value || 0);
+        const q = parseFloat(qtyInput?.value || 0);
+        dueDisplay.textContent = (c * q).toFixed(2);
+    };
+
+    const onCostInput = () => {
+        const cost = parseFloat(costInput.value || 0);
+        let selling = 0;
+        
+        if (percentInput.value) {
+            selling = cost * (1 + parseFloat(percentInput.value) / 100);
+        } else if (fixedInput.value) {
+            selling = cost + parseFloat(fixedInput.value);
+        }
+        
+        if (selling > 0) {
+            sellingInput.value = selling.toFixed(2);
+        }
+        
+        secretCodeInput.value = encodeNumberToSecret(costInput.value, QUICK_COST_CODE_MAP);
+        if (sellingSecretCodeInput && sellingInput.value) {
+            sellingSecretCodeInput.value = encodeNumberToSecret(sellingInput.value, QUICK_SELLING_CODE_MAP);
+        }
+        updateDueAmount();
+    };
+
+    const onSellingInput = () => {
+        const cost = parseFloat(costInput.value || 0);
+        const selling = parseFloat(sellingInput.value || 0);
+        
+        if (cost > 0 && selling > 0) {
+            percentInput.value = (((selling - cost) / cost) * 100).toFixed(2);
+            fixedInput.value = (selling - cost).toFixed(2);
+        }
+        
+        if (sellingSecretCodeInput) {
+            sellingSecretCodeInput.value = encodeNumberToSecret(sellingInput.value, QUICK_SELLING_CODE_MAP);
+        }
+    };
+
+    const onMarginInput = (isPercent) => {
+        return () => {
+            const cost = parseFloat(costInput.value || 0);
+            if (isPercent) {
+                const percent = parseFloat(percentInput.value || 0);
+                sellingInput.value = (cost * (1 + percent / 100)).toFixed(2);
+                fixedInput.value = '';
+            } else {
+                const fixed = parseFloat(fixedInput.value || 0);
+                sellingInput.value = (cost + fixed).toFixed(2);
+                percentInput.value = '';
+            }
+            if (sellingSecretCodeInput) {
+                sellingSecretCodeInput.value = encodeNumberToSecret(sellingInput.value, QUICK_SELLING_CODE_MAP);
+            }
+        };
+    };
+
+    costInput.addEventListener('input', onCostInput);
+    sellingInput.addEventListener('input', onSellingInput);
+    percentInput.addEventListener('input', onMarginInput(true));
+    fixedInput.addEventListener('input', onMarginInput(false));
+    if(qtyInput) qtyInput.addEventListener('input', updateDueAmount);
+
+    secretCodeInput.value = encodeNumberToSecret(costInput.value || 0, QUICK_COST_CODE_MAP);
+}
+
+document.getElementById('mark_as_purchase')?.addEventListener('change', function() {
+    const container = document.getElementById('purchase_details_container');
+    if (this.checked) {
+        container.classList.remove('hidden');
+    } else {
+        container.classList.add('hidden');
+    }
+});
+
+function openCreateProductForSync(item) {
+    document.getElementById('cps_item_id').value = item.id;
+    const form = document.getElementById('createProductSyncForm');
+    form.reset();
+    form.querySelector('[name="name"]').value = item.name;
+    document.getElementById('purchase_details_container')?.classList.add('hidden');
+    document.getElementById('purchase_due_display').textContent = '0.00';
+    attachQuickProductListeners();
+    openModal('createProductSyncModal');
+}
+
+document.getElementById('createProductSyncForm')?.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const form = this;
+    const btn = form.querySelector('button[type="submit"]');
+    const itemId = document.getElementById('cps_item_id').value;
+    
+    // Validate
+    if(!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+    
+    btn.disabled = true;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Creating...';
+    
+    try {
+        const formData = new FormData(form);
+        formData.append('is_pre_order', '1');
+
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+        
+        // 1. Create the product
+        const createRes = await fetch('/products', {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': csrfToken,
+                'Accept': 'application/json'
+            },
+            body: formData
+        });
+        
+        const createData = await createRes.json();
+        if (!createRes.ok) {
+            let msg = createData.message || 'Error creating product';
+            if (createData.errors) {
+                msg += '\n' + Object.values(createData.errors).map(e => e.join(', ')).join('\n');
+            }
+            throw new Error(msg);
+        }
+        
+        const productId = createData.product.id;
+        
+        // 2. Mark as purchase (if checked)
+        const markAsPurchase = document.getElementById('mark_as_purchase').checked;
+        if (markAsPurchase) {
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Logging Purchase...';
+            
+            const supplierId = document.getElementById('purchase_supplier_id').value;
+            const paymentMethod = document.getElementById('purchase_payment_method').value;
+            const paidAmount = document.getElementById('purchase_paid_amount').value;
+            const qty = parseFloat(formData.get('stock_quantity') || 0);
+            const cost = parseFloat(formData.get('cost_price') || 0);
+            const sell = parseFloat(formData.get('selling_price') || 0);
+
+            const purchasePayload = {
+                is_pre_order: 1,
+                supplier_id: supplierId,
+                purchase_date: new Date().toISOString().split('T')[0],
+                status: 'received',
+                items: [{
+                    product_id: productId,
+                    quantity: qty,
+                    unit_cost: cost,
+                    selling_price: sell,
+                    add_to_price_stock: true
+                }],
+                payments: [{
+                    method: paymentMethod,
+                    amount: paidAmount
+                }]
+            };
+            
+            const purchRes = await fetch('/purchases', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(purchasePayload)
+            });
+            
+            if (!purchRes.ok) {
+                const purchData = await purchRes.json();
+                let msg = purchData.message || 'Error logging purchase';
+                if (purchData.errors) {
+                    msg += '\n' + Object.values(purchData.errors).map(e => e.join(', ')).join('\n');
+                }
+                throw new Error(msg + '\n(Note: Product was created successfully)');
+            }
+        }
+        
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Syncing...';
+        
+        // 3. Sync the product
+        const syncUrl = `/preorders/${ @json($preOrder->id) }/items/${itemId}/sync`;
+        const syncRes = await fetch(syncUrl, {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': csrfToken,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                product_id: productId,
+                price_action: 'current'
+            })
+        });
+        
+        if (!syncRes.ok) {
+            const syncData = await syncRes.json();
+            throw new Error(syncData.message || 'Error syncing product. Product created, but sync failed.');
+        }
+        
+        window.location.reload();
+        
+    } catch(err) {
+        alert(err.message);
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+});
+
+// Supplier Modal Logic
+function openSupplierModal() {
+    document.getElementById('supplierModal').classList.remove('hidden');
+    document.getElementById('supplierModal').classList.add('flex');
+}
+function closeSupplierModal() {
+    document.getElementById('supplierModal').classList.add('hidden');
+}
+
+document.getElementById('quickSupplierForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    const data = new FormData(e.target);
+    const btn = e.target.querySelector('button[type="submit"]');
+    const originalText = btn.innerHTML;
+    
+    try {
+        btn.disabled = true;
+        btn.innerHTML = 'Creating...';
+        const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        const res = await fetch("{{ route('suppliers.store') }}", {
+            method: 'POST',
+            headers: { 'X-CSRF-TOKEN': token, 'Accept': 'application/json' },
+            body: data
+        });
+        const json = await res.json();
+        if (!json.success) {
+            alert(json.message || 'Failed to create supplier');
+            return;
+        }
+        const s = json.supplier;
+        const sel = document.getElementById('purchase_supplier_id');
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.name;
+        sel.appendChild(opt);
+        sel.value = s.id;
+        
+        closeSupplierModal();
+        e.target.reset();
+    } catch (err) {
+        console.error(err);
+        alert('Error creating supplier');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+});
+
 </script>
+
+<!-- Supplier Modal -->
+<div id="supplierModal" style="z-index: 1000;" class="fixed inset-0 hidden items-center justify-center">
+    <div class="absolute inset-0 bg-black opacity-50" onclick="closeSupplierModal()"></div>
+    <div class="bg-white rounded-lg shadow-lg w-full max-w-2xl relative z-[1001] p-6 max-h-screen overflow-y-auto">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold">Add New Supplier</h3>
+            <button onclick="closeSupplierModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+        </div>
+        <form id="quickSupplierForm">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Name <span class="text-red-500">*</span></label>
+                    <input type="text" name="name" required class="w-full border rounded px-3 py-2" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Company Name</label>
+                    <input type="text" name="company_name" class="w-full border rounded px-3 py-2" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Supplier TIN</label>
+                    <input type="text" name="tin" inputmode="numeric" pattern="[0-9]{9,12}" maxlength="12" class="w-full border rounded px-3 py-2" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Email</label>
+                    <input type="email" name="email" class="w-full border rounded px-3 py-2" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Phone <span class="text-red-500">*</span></label>
+                    <input type="text" name="phone" required class="w-full border rounded px-3 py-2" />
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Address</label>
+                    <input type="text" name="address" class="w-full border rounded px-3 py-2" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">City</label>
+                    <input type="text" name="city" class="w-full border rounded px-3 py-2" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Country</label>
+                    <input type="text" name="country" class="w-full border rounded px-3 py-2" />
+                </div>
+            </div>
+            <div class="mt-6 flex items-center gap-2">
+                <button type="submit" class="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                    <i class="fas fa-plus mr-2"></i>Create Supplier
+                </button>
+                <button type="button" onclick="closeSupplierModal()" class="px-6 py-2 bg-gray-200 rounded hover:bg-gray-300">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 @endsection

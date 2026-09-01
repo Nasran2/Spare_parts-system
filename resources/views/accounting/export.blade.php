@@ -14,8 +14,10 @@
     </style>
 </head>
 <body>
-    <h1>{{ $title }}</h1>
-    <div class="muted">Generated {{ now()->format('Y-m-d H:i') }}</div>
+    @include('pdf.partials.letterhead', [
+        'documentTitle' => $title,
+        'documentMeta' => ($from || $to) ? ['Period' => ($from ?: 'Beginning').' to '.($to ?: 'Today')] : [],
+    ])
     <table>
         <thead>
             <tr>

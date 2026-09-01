@@ -225,6 +225,8 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
         ->middleware('permission:preorder_create')->name('preorders.quick-customer');
     Route::get('preorders/report', [PreOrderController::class, 'report'])
         ->middleware('permission:preorder_reports')->name('preorders.report');
+    Route::get('preorders/customer-report', [PreOrderController::class, 'customerReport'])
+        ->middleware('permission:preorder_reports')->name('preorders.customer-report');
     Route::get('preorders/status/{status}', [PreOrderController::class, 'index'])
         ->whereIn('status', ['pending', 'completed', 'cancelled'])
         ->middleware('permission:preorder_view')->name('preorders.status');

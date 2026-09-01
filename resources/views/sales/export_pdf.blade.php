@@ -34,19 +34,13 @@
             return number_format($roundToWhole ? round($masked) : $masked, $roundToWhole ? 0 : 2);
         };
     @endphp
-    <div class="header">
-        @if(!empty($shop['logo']))
-            <img src="{{ public_path($shop['logo']) }}" alt="Logo" />
-        @endif
-        <div class="shop">
-            <h2>{{ $shop['name'] }}</h2>
-            <div>
-                <small>{{ $shop['address'] }}</small><br>
-                @if($shop['phone'])<small>Tel: {{ $shop['phone'] }}</small><br>@endif
-                @if($shop['email'])<small>Email: {{ $shop['email'] }}</small>@endif
-            </div>
-        </div>
-    </div>
+    @include('pdf.partials.letterhead', [
+        'documentTitle' => 'Sales Export',
+        'documentMeta' => [
+            'Period' => ($from ?? 'All').' to '.($to ?? 'All'),
+            'Records' => $sales->count(),
+        ],
+    ])
 
     <table>
         <thead>

@@ -44,15 +44,10 @@
             $businessAddress = \App\Models\Setting::get('shop_address') ?? \App\Models\Setting::get('business_address') ?? '';
             $businessPhone = \App\Models\Setting::get('shop_phone') ?? \App\Models\Setting::get('business_phone') ?? '';
         @endphp
-        <div style="text-align:center; margin-bottom:8px;">
-            <div style="font-size:20px; font-weight:bold;">{{ $businessName }}</div>
-            <div class="meta">{{ $businessAddress }} @if($businessPhone) • {{ $businessPhone }} @endif</div>
-            <hr>
-        </div>
-        <div class="header">
-            <div class="title">Customer Due Report</div>
-            <div class="meta">Date Range: {{ $from ?? '—' }} to {{ $to ?? '—' }}</div>
-        </div>
+        @include('pdf.partials.letterhead', [
+            'documentTitle' => 'Customer Due Report',
+            'documentMeta' => ['Period' => ($from ?? 'All').' to '.($to ?? 'All')],
+        ])
 
         <table>
             <thead>

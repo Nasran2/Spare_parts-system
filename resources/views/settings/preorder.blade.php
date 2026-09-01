@@ -28,11 +28,12 @@
                     @csrf
                     <div class="space-y-6">
                         
-                        <!-- PDF Theme Settings -->
+                        <!-- Shared PDF Letterhead Settings -->
                         <div class="border-b pb-4">
                             <h4 class="font-bold text-gray-700 mb-4">
-                                <i class="fas fa-palette text-blue-600 mr-2"></i>PDF Appearance
+                                <i class="fas fa-palette text-blue-600 mr-2"></i>PDF Letterhead Appearance
                             </h4>
+                            <p class="text-sm text-gray-500 mb-4">These colors and the logo shape are used consistently on all report, statement, quotation, and export PDFs.</p>
                             <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                                 <div>
                                     <label class="block text-sm font-semibold text-gray-700 mb-2">PDF Theme Color (Lines)</label>
@@ -42,7 +43,7 @@
                                         value="{{ old('preorder_pdf_line_color', $settings['preorder_pdf_line_color']) }}"
                                         class="h-10 w-full px-1 py-1 border border-gray-300 rounded-lg cursor-pointer focus:ring-2 focus:ring-blue-500"
                                     >
-                                    <p class="text-xs text-gray-500 mt-1">Color of table lines and borders</p>
+                                    <p class="text-xs text-gray-500 mt-1">Letterhead accent, lines, and report headings</p>
                                 </div>
                                 <div>
                                     <label class="block text-sm font-semibold text-gray-700 mb-2">PDF Text Color</label>
@@ -62,7 +63,7 @@
                                         value="{{ old('preorder_pdf_heading_color', $settings['preorder_pdf_heading_color']) }}"
                                         class="h-10 w-full px-1 py-1 border border-gray-300 rounded-lg cursor-pointer focus:ring-2 focus:ring-blue-500"
                                     >
-                                    <p class="text-xs text-gray-500 mt-1">Background color for table headers</p>
+                                    <p class="text-xs text-gray-500 mt-1">Background color for report table headers</p>
                                 </div>
                                 <div>
                                     <label class="block text-sm font-semibold text-gray-700 mb-2">Logo Shape</label>
@@ -75,7 +76,7 @@
                                         <option value="round" {{ old('preorder_pdf_logo_shape', $settings['preorder_pdf_logo_shape']) == 'round' ? 'selected' : '' }}>Round</option>
                                         <option value="box" {{ old('preorder_pdf_logo_shape', $settings['preorder_pdf_logo_shape']) == 'box' ? 'selected' : '' }}>Box Shape (Rounded Edges)</option>
                                     </select>
-                                    <p class="text-xs text-gray-500 mt-1">Select the shape of the business logo on the PDF</p>
+                                    <p class="text-xs text-gray-500 mt-1">Business logo shape on every PDF letterhead</p>
                                 </div>
                             </div>
                         </div>

@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
-@section('title', 'Products')
-@section('page-title', 'Products')
+@section('title', isset($isPreOrder) && $isPreOrder ? 'Pre-Order Products' : 'Products')
+@section('page-title', isset($isPreOrder) && $isPreOrder ? 'Pre-Order Products' : 'Products')
 
 @section('content')
 @php
@@ -39,7 +39,7 @@
             <p class="text-sm text-gray-600">Manage your vehicle parts inventory</p>
         </div>
         <a 
-            href="{{ route('products.create') }}" 
+            href="{{ route('products.create', ['is_pre_order' => isset($isPreOrder) && $isPreOrder ? 1 : 0]) }}" 
             class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition shadow-lg"
         >
             <i class="fas fa-plus mr-2"></i>Add New Product
@@ -305,7 +305,7 @@
                                 <p class="text-gray-500 text-lg mb-2">No products found</p>
                                 <p class="text-gray-400 text-sm mb-4">Start by adding your first product</p>
                                 <a 
-                                    href="{{ route('products.create') }}" 
+                                    href="{{ route('products.create', ['is_pre_order' => isset($isPreOrder) && $isPreOrder ? 1 : 0]) }}" 
                                     class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
                                 >
                                     <i class="fas fa-plus mr-2"></i>Add Product

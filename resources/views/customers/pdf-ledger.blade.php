@@ -18,11 +18,14 @@
     </style>
 </head>
 <body>
-    <div class="header">
-        <h2>{{ $title }}</h2>
-        <p>Customer: {{ $customer->name }}</p>
-        <p>Date Range: {{ \Carbon\Carbon::parse($start)->format('m/d/Y') }} - {{ \Carbon\Carbon::parse($end)->format('m/d/Y') }}</p>
-    </div>
+    @include('pdf.partials.letterhead', [
+        'documentTitle' => $title,
+        'documentReference' => 'CUS-'.str_pad((string) $customer->id, 6, '0', STR_PAD_LEFT),
+        'documentMeta' => [
+            'Customer' => $customer->name,
+            'Period' => \Carbon\Carbon::parse($start)->format('Y-m-d').' to '.\Carbon\Carbon::parse($end)->format('Y-m-d'),
+        ],
+    ])
 
     <table>
         <thead>

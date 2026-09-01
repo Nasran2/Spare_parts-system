@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Customer Pre-Order Report</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; font-size: 12px; margin: 0; padding: 0; }
+        .container { width: 100%; margin: 0 auto; padding: 20px; }
+        
+        /* Summary Boxes */
+        .summary-container { width: 100%; margin-bottom: 25px; border-collapse: collapse; }
+        .summary-container td { padding: 0 5px; width: 25%; vertical-align: top; }
+        .summary-box { border: 1px solid #e0e4e8; background: #f8fafc; padding: 12px 8px; text-align: center; border-radius: 4px; }
+        .summary-label { font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 6px; }
+        .summary-value { font-size: 15px; font-weight: bold; color: #1e293b; }
+        .text-green { color: #16a34a; }
+        .text-blue { color: #2563eb; }
+        .text-red { color: #dc2626; }
+
+        /* Data Table */
+        .data-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .data-table th, .data-table td { border: 1px solid #e2e8f0; padding: 8px 10px; font-size: 11px; }
+        .data-table th { background: #f1f5f9; color: #475569; text-transform: uppercase; font-size: 10px; font-weight: bold; text-align: left; }
+        .right { text-align: right !important; }
+        .center { text-align: center !important; }
+        
+        .footer { margin-top: 30px; text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 15px; }
+        
+        table { border-collapse: collapse; }
+    </style>
+</head>
+<body>
+    @php
+        $businessName = \App\Models\Setting::get('shop_name') ?? \App\Models\Setting::get('business_name') ?? config('app.name', 'Vehicle POS');
+    @endphp
+
+    <div class="container">
+        @include('pdf.partials.letterhead', [
+            'documentTitle' => 'Customer Pre-Order Report',
+            'documentMeta' => [
+                'Period' => ($request->date_from ?? 'All') . ' to ' . ($request->date_to ?? 'All'),
+                'Customer' => $request->filled('customer_id') ? \App\Models\Customer::find($request->customer_id)?->name : 'All Customers'
+            ],
+        ])
+
+        <!-- Summary Widgets (Top) -->
+        <table class="summary-container">
+            <tr>
+                <td style="padding-left: 0;">
+                    <div class="summary-box">
+                        <div class="summary-label">Total Customers</div>
+                        <div class="summary-value">{{ number_format($summary['total_customers']) }}</div>
+                    </div>
+                </td>
+                <td>
+                    <div class="summary-box">
+                        <div class="summary-label">Total Amount</div>
+                        <div class="summary-value text-blue">{{ number_format($summary['total_amount'], 2) }}</div>
+                    </div>
+                </td>
+                <td>
+                    <div class="summary-box">
+                        <div class="summary-label">Paid Amount</div>
+                        <div class="summary-value text-green">{{ number_format($summary['total_paid'], 2) }}</div>
+                    </div>
+                </td>
+                <td style="padding-right: 0;">
+                    <div class="summary-box">
+                        <div class="summary-label">Due Amount</div>
+                        <div class="summary-value text-red">{{ number_format($summary['total_due'], 2) }}</div>
+                    </div>
+                </td>
+            </tr>
+        </table>
+
+        <!-- Main Data Table -->
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Customer Name</th>
+                    <th class="center">Total Pre-Orders</th>
+                    <th class="right">Total Amount</th>
+                    <th class="right">Paid Amount</th>
+                    <th class="right">Due Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($customers as $customer)
+                <tr>
+                    <td>{{ $customer->name }}</td>
+                    <td class="center">{{ number_format($customer->total_preorders) }}</td>
+                    <td class="right">{{ number_format((float)$customer->total_amount, 2) }}</td>
+                    <td class="right">{{ number_format((float)$customer->paid_amount, 2) }}</td>
+                    <td class="right">{{ number_format((float)$customer->due_amount, 2) }}</td>
+                </tr>
+                @empty
+                <tr>
+                    <td colspan="5" class="center">No customers with pre-orders found for this period.</td>
+                </tr>
+                @endforelse
+            </tbody>
+        </table>
+        
+        <div class="footer">
+            Generated by {{ $businessName }} System
+        </div>
+    </div>
+</body>
+</html>

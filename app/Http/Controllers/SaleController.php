@@ -512,8 +512,10 @@ class SaleController extends Controller
         if (! app()->bound('dompdf.wrapper')) {
             return back()->with('error', 'PDF export library not installed');
         }
+        $from = $request->input('date_from');
+        $to = $request->input('date_to');
         $pdf = app('dompdf.wrapper');
-        $pdf->loadView('sales.export_pdf', compact('sales', 'shop', 'controls'));
+        $pdf->loadView('sales.export_pdf', compact('sales', 'shop', 'controls', 'from', 'to'));
         $pdf->setPaper('A4', 'portrait');
 
         return $pdf->download('sales_'.now()->format('Ymd_His').'.pdf');

@@ -57,7 +57,8 @@ class ProductController extends Controller
     {
         $hiddenProductIds = DashboardVisibilityService::hiddenProductIdsForUser($request->user());
 
-        $query = Product::with(['categories', 'brands', 'unit']);
+        $isPreOrder = $request->boolean('is_pre_order');
+        $query = Product::with(['categories', 'brands', 'unit'])->where('is_pre_order', $isPreOrder);
         if (! empty($hiddenProductIds)) {
             $query->whereNotIn('id', $hiddenProductIds);
         }
@@ -152,7 +153,7 @@ class ProductController extends Controller
         
         $stores = \App\Models\Store::where('is_active', true)->orderBy('name')->get(['id', 'name']);
 
-        return view('products.index', compact('products', 'categories', 'subcategories', 'brands', 'units', 'mainCategoryId', 'subCategoryId', 'stores', 'selectedStoreId'));
+        return view('products.index', compact('products', 'categories', 'subcategories', 'brands', 'units', 'mainCategoryId', 'subCategoryId', 'stores', 'selectedStoreId', 'isPreOrder'));
     }
 
     public function barcodePrint()
@@ -321,8 +322,9 @@ class ProductController extends Controller
         return $settings;
     }
 
-    public function create()
+    public function create(\Illuminate\Http\Request $request)
     {
+        $isPreOrder = $request->boolean('is_pre_order');
         $categories = $this->getActiveCategoriesWithCounts();
         $brands = Brand::where('is_active', true)->get();
         $units = Unit::where('is_active', true)->get();
@@ -353,7 +355,7 @@ class ProductController extends Controller
         $stores = \App\Models\Store::where('is_active', true)->orderByDesc('is_default')->orderBy('name')->get();
         $defaultStore = $stores->firstWhere('is_default', true) ?? $stores->first();
 
-        return view('products.create', compact('categories', 'brands', 'units', 'vatEnabled', 'vatRate', 'taxSettings', 'costCodeMap', 'sellingCodeMap', 'sellingSecretEnabled', 'stores', 'defaultStore'));
+        return view('products.create', compact('categories', 'brands', 'units', 'vatEnabled', 'vatRate', 'taxSettings', 'costCodeMap', 'sellingCodeMap', 'sellingSecretEnabled', 'stores', 'defaultStore', 'isPreOrder'));
     }
 
     public function store(Request $request)
@@ -450,6 +452,7 @@ class ProductController extends Controller
             // Set legacy columns for backward compatibility
             $validated['category_id'] = $categories[0] ?? null;
             $validated['brand_id'] = null;
+            $validated['is_pre_order'] = $request->boolean('is_pre_order');
 
             $product = Product::create($validated);
             $this->syncProductTaxSetting($product, $request);
@@ -470,7 +473,7 @@ class ProductController extends Controller
                 ]);
             }
 
-            return redirect()->route('products.index')->with('success', 'Product created successfully!');
+            return redirect()->route('products.index', ['is_pre_order' => $request->boolean('is_pre_order') ? 1 : 0])->with('success', 'Product created successfully!');
         }
 
         // Brands selected: create one product per brand
@@ -705,6 +708,7 @@ class ProductController extends Controller
 
     public function edit(Product $product)
     {
+        $isPreOrder = $product->is_pre_order;
         $product->load([
             'prices' => fn ($query) => $query->orderByDesc('is_default')->orderBy('selling_price'),
             'taxSetting',
@@ -739,7 +743,7 @@ class ProductController extends Controller
         $stores = \App\Models\Store::where('is_active', true)->orderByDesc('is_default')->orderBy('name')->get();
         $defaultStore = $stores->firstWhere('is_default', true) ?? $stores->first();
 
-        return view('products.edit', compact('product', 'categories', 'brands', 'units', 'vatEnabled', 'vatRate', 'taxSettings', 'costCodeMap', 'sellingCodeMap', 'sellingSecretEnabled', 'stores', 'defaultStore'));
+        return view('products.edit', compact('product', 'categories', 'brands', 'units', 'vatEnabled', 'vatRate', 'taxSettings', 'costCodeMap', 'sellingCodeMap', 'sellingSecretEnabled', 'stores', 'defaultStore', 'isPreOrder'));
     }
 
     public function update(Request $request, Product $product)
@@ -823,7 +827,7 @@ class ProductController extends Controller
             'new' => $product->toArray(),
         ]);
 
-        return redirect()->route('products.index')->with('success', 'Product updated successfully!');
+        return redirect()->route('products.index', ['is_pre_order' => $request->boolean('is_pre_order') ? 1 : 0])->with('success', 'Product updated successfully!');
     }
 
     private function syncProductTaxSetting(Product $product, Request $request): void
@@ -1197,18 +1201,13 @@ class ProductController extends Controller
         $prefix = 'PRD';
         $timestamp = now()->format('ymd'); // YYMMDD format
 
-        // Get the last product created today
-        $lastProduct = Product::whereDate('created_at', today())
-            ->orderBy('id', 'desc')
-            ->first();
-
-        if ($lastProduct && preg_match('/PRD\d{6}-(\d+)/', $lastProduct->sku, $matches)) {
-            $number = intval($matches[1]) + 1;
-        } else {
-            $number = 1;
+        $number = 1;
+        while (true) {
+            $sku = $prefix . $timestamp . '-' . str_pad($number, 3, '0', STR_PAD_LEFT);
+            if (! \App\Models\Product::where('sku', $sku)->exists()) {
+                return $sku;
+            }
+            $number++;
         }
-
-        // Generate SKU in format: PRD241109-001
-        return $prefix.$timestamp.'-'.str_pad($number, 3, '0', STR_PAD_LEFT);
     }
 }

@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Purchase Report')
+@section('title', request('is_pre_order') ? 'Pre-Order Purchase Report' : 'Purchase Report')
 @section('page-title', 'Purchase Report')
 
 @section('content')
@@ -72,7 +72,7 @@
         </div>
         <div class="flex items-center gap-2">
             <button class="bg-blue-600 text-white px-4 py-2 rounded text-sm">Filter</button>
-            <a href="{{ route('reports.purchase') }}" class="text-sm text-gray-600 hover:text-gray-800">Reset</a>
+            <a href="{{ request()->has('is_pre_order') ? route('reports.purchase', ['is_pre_order' => request('is_pre_order')]) : route('reports.purchase') }}" class="text-sm text-gray-600 hover:text-gray-800">Reset</a>
             <a href="{{ route('reports.purchase.csv', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-emerald-600 text-white rounded text-sm"><i class="fas fa-file-excel mr-1"></i>Excel</a>
             <a href="{{ route('reports.purchase.pdf', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-blue-600 text-white rounded text-sm"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
         </div>

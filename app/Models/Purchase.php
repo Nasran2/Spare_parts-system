@@ -10,6 +10,7 @@ class Purchase extends Model
     use HasFactory;
 
     protected $fillable = [
+        'is_pre_order',
         'purchase_no',
         'reference_no',
         'supplier_tax_invoice_number',

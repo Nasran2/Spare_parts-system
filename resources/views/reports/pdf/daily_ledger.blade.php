@@ -39,13 +39,10 @@
             $businessPhone = \App\Models\Setting::get('shop_phone') ?? \App\Models\Setting::get('business_phone') ?? '';
         @endphp
         
-        <div class="header">
-            <div style="font-size:24px; font-weight:bold; margin-bottom: 6px;">{{ $businessName }}</div>
-            <div class="meta">{{ $businessAddress }} @if($businessPhone) • {{ $businessPhone }} @endif</div>
-            <div style="margin: 15px 0; border-bottom: 2px solid #333;"></div>
-            <div class="title">Accounting Daily Ledger</div>
-            <div class="meta">Date Range: {{ $from ?? '—' }} to {{ $to ?? '—' }}</div>
-        </div>
+        @include('pdf.partials.letterhead', [
+            'documentTitle' => 'Accounting Daily Ledger',
+            'documentMeta' => ['Period' => ($from ?? 'All').' to '.($to ?? 'All')],
+        ])
         
         <div class="kpi-container">
             <div class="kpi-box">

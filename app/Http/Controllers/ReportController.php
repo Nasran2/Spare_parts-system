@@ -770,7 +770,9 @@ class ReportController extends Controller
         $subcategoryId = $request->filled('subcategory_id') ? (int) $request->input('subcategory_id') : null;
         $categoryIds = $this->resolveCategoryFilterIds($categoryId, $subcategoryId);
 
+        $isPreOrder = $request->boolean('is_pre_order');
         $query = Purchase::with(['supplier', 'items.product.category'])
+            ->where('is_pre_order', $isPreOrder)
             ->when($from, fn($q) => $q->whereDate('purchase_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('purchase_date', '<=', $to))
             ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
@@ -824,7 +826,9 @@ class ReportController extends Controller
         $subcategoryId = $request->filled('subcategory_id') ? (int) $request->input('subcategory_id') : null;
         $categoryIds = $this->resolveCategoryFilterIds($categoryId, $subcategoryId);
 
+        $isPreOrder = $request->boolean('is_pre_order');
         $query = Purchase::with(['supplier'])
+            ->where('is_pre_order', $isPreOrder)
             ->when($from, fn($q) => $q->whereDate('purchase_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('purchase_date', '<=', $to))
             ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
@@ -874,7 +878,9 @@ class ReportController extends Controller
         $subcategoryId = $request->filled('subcategory_id') ? (int) $request->input('subcategory_id') : null;
         $categoryIds = $this->resolveCategoryFilterIds($categoryId, $subcategoryId);
 
+        $isPreOrder = $request->boolean('is_pre_order');
         $query = Purchase::with(['supplier'])
+            ->where('is_pre_order', $isPreOrder)
             ->when($from, fn($q) => $q->whereDate('purchase_date', '>=', $from))
             ->when($to, fn($q) => $q->whereDate('purchase_date', '<=', $to))
             ->when($request->filled('store_id'), fn($q) => $q->where('store_id', $request->input('store_id')))
@@ -1182,7 +1188,7 @@ class ReportController extends Controller
         ?int $storeId = null
     )
     {
-        $query = Product::with(['category', 'categories', 'brand', 'brands', 'unit', 'saleItems', 'purchaseItems']);
+        $query = Product::with(['category', 'categories', 'brand', 'brands', 'unit', 'saleItems', 'purchaseItems'])->where('is_pre_order', request()->boolean('is_pre_order'));
         if ($storeId) {
             $query->with(['storeStocks' => function($q) use ($storeId) {
                 $q->where('store_id', $storeId);

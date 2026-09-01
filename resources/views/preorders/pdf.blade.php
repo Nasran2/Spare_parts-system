@@ -8,30 +8,16 @@ body{font-family:DejaVu Sans,Arial,sans-serif;font-size:11px;color:{{ $pdfSettin
 @endphp
 .logo{max-height:65px;max-width:145px;float:left;margin-right:14px;border-radius:{{ $logoRadius }};object-fit:cover;}.title{font-size:23px;color:{{ $pdfSettings['line_color'] ?? '#1d4ed8' }};margin:0}.right{float:right;text-align:right}.clear{clear:both}.muted{color:#6b7280}.box{border:1px solid #d1d5db;border-radius:5px;padding:9px;margin-top:10px}.grid{width:100%;border-collapse:separate;border-spacing:8px 0}.grid td{width:50%;vertical-align:top}.items{width:100%;border-collapse:collapse;margin-top:13px}.items th,.items td{border:1px solid #d1d5db;padding:6px}.items th{background:{{ $pdfSettings['heading_color'] ?? '#eff6ff' }};text-align:left;color:{{ $pdfSettings['line_color'] ?? '#1e40af' }}}.num{text-align:right}.totals{width:310px;margin-left:auto;margin-top:12px;border-collapse:collapse}.totals td{padding:4px 7px}.grand{font-size:14px;font-weight:bold;border-top:2px solid {{ $pdfSettings['line_color'] ?? '#1d4ed8' }};color:{{ $pdfSettings['line_color'] ?? '#1d4ed8' }}}.vehicle-img{max-width:210px;max-height:125px;object-fit:contain;border:1px solid #ddd;padding:3px}.badge{display:inline-block;padding:2px 7px;border:1px solid #64748b;border-radius:10px}.footer{margin-top:20px;text-align:center;color:#6b7280;font-size:10px}.notes{white-space:pre-wrap}
 </style></head><body>
-<div class="header">
-    @if(!empty($shop['logo']) && is_file(public_path($shop['logo'])))
-        <img class="logo" src="{{ public_path($shop['logo']) }}">
-    @endif
-    <div class="right">
-        <span class="badge">{{ $preOrder->pre_order_number }}</span><br>
-        <span class="muted">Date: {{ $preOrder->pre_order_date->format('Y-m-d') }}</span>
-        @if($preOrder->expected_delivery_date)
-            <br><span class="muted">Expected Delivery: {{ $preOrder->expected_delivery_date->format('Y-m-d') }}</span>
-        @endif
-        @if($kind === 'invoice' && $preOrder->sale)
-            <br><strong>Invoice: {{ $preOrder->sale->sale_no }}</strong>
-        @endif
-    </div>
-    <h1 class="title">{{ $kind === 'quotation' ? 'QUOTATION' : 'PRE-ORDER INVOICE' }}</h1>
-    <strong style="font-size:15px">{{ $shop['name'] }}</strong>
-    @if($shop['tagline'])<div class="muted">{{ $shop['tagline'] }}</div>@endif
-    <div class="muted">
-        {{ $shop['address'] }}
-        @if($shop['phone']) · {{ $shop['phone'] }} @endif
-        @if($shop['email']) · {{ $shop['email'] }} @endif
-    </div>
-    <div class="clear"></div>
-</div>
+@include('pdf.partials.letterhead', [
+    'documentTitle' => $kind === 'quotation' ? 'Quotation' : 'Pre-Order Invoice',
+    'documentReference' => $preOrder->pre_order_number,
+    'documentMeta' => [
+        'Date' => $preOrder->pre_order_date->format('Y-m-d'),
+        'Expected Delivery' => $preOrder->expected_delivery_date?->format('Y-m-d'),
+        'Invoice' => $kind === 'invoice' && $preOrder->sale ? $preOrder->sale->sale_no : null,
+    ],
+    'showGeneratedAt' => false,
+])
 <table class="grid"><tr><td class="box"><strong>Customer</strong><br>{{ $preOrder->customer->name }}@if($preOrder->customer->phone)<br>{{ $preOrder->customer->phone }}@endif @if($preOrder->customer->email)<br>{{ $preOrder->customer->email }}@endif @if($preOrder->customer->address)<br>{{ $preOrder->customer->address }}@endif</td><td class="box"><strong>Vehicle</strong><br>{{ $preOrder->vehicle_name }}@if($preOrder->vehicle_description)<br>{{ $preOrder->vehicle_description }}@endif</td></tr></table>
 @if($preOrder->vehicle_image_absolute_path)<div class="box"><strong>Vehicle Image</strong><br><img class="vehicle-img" src="{{ $preOrder->vehicle_image_absolute_path }}"></div>@endif
 <table class="items"><thead><tr><th>#</th><th>Product / Part</th><th class="num">Qty</th><th class="num">Unit Price</th><th class="num">Discount</th><th class="num">Total</th></tr></thead><tbody>@foreach($preOrder->items as $i=>$item) @php $isSeparate = $preOrder->pdf_tax_display === 'separate'; $isExclHidden = $preOrder->pdf_tax_display === 'exclusive_hidden'; $tm = $isExclHidden ? (1 + ((float)$preOrder->custom_tax_rate / 100)) : 1; $dispFinal = (float)$item->final_price * $tm; $dispDiscount = (float)$item->discount_amount * $tm; $dispLineTotal = $isSeparate ? ((float)$item->gross_amount - (float)$item->discount_amount) : (float)$item->line_total; @endphp <tr><td>{{ $i+1 }}</td><td><strong>{{ $item->original_product_name }}</strong>@if($item->description)<br><span class="muted">{{ $item->description }}</span>@endif</td><td class="num">{{ $item->quantity }}</td><td class="num">{{ $currency }}{{ number_format($dispFinal,2) }}</td><td class="num">{{ $currency }}{{ number_format($dispDiscount,2) }}</td><td class="num">{{ $currency }}{{ number_format($dispLineTotal,2) }}</td></tr>@endforeach</tbody></table>

@@ -21,28 +21,15 @@
     </style>
 </head>
 <body>
-    <div class="header">
-        @if(!empty($shop['logo']))
-            <img src="{{ public_path($shop['logo']) }}" alt="Logo">
-        @endif
-        <div>
-            <h1>Quotation</h1>
-            <div style="font-size:16px; font-weight:bold; margin-top:4px;">{{ $shop['name'] }}</div>
-            @if(!empty($shop['tagline']))
-                <div class="muted">{{ $shop['tagline'] }}</div>
-            @endif
-            @if(!empty($shop['address']))
-                <div class="muted">{{ $shop['address'] }}</div>
-            @endif
-            @if($shop['phone'])<div class="muted">Tel: {{ $shop['phone'] }}</div>@endif
-            @if($shop['email'])<div class="muted">Email: {{ $shop['email'] }}</div>@endif
-        </div>
-        <div style="margin-left:auto; text-align:right;">
-            <div><span class="badge">{{ $sale->sale_no }}</span></div>
-            <div class="muted">Date: {{ ($sale->sale_date ?? $sale->created_at)->format('Y-m-d') }}</div>
-            <div class="muted">Valid for: {{ $shop['valid_days'] }} days</div>
-        </div>
-    </div>
+    @include('pdf.partials.letterhead', [
+        'documentTitle' => 'Quotation',
+        'documentReference' => $sale->sale_no,
+        'documentMeta' => [
+            'Date' => ($sale->sale_date ?? $sale->created_at)->format('Y-m-d'),
+            'Valid for' => $shop['valid_days'].' days',
+        ],
+        'showGeneratedAt' => false,
+    ])
 
     <div class="section">
         <table>
