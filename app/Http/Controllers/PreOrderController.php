@@ -175,9 +175,16 @@ class PreOrderController extends Controller
             $item->current_selling_price = $item->product ? $this->service->currentSellingPrice($item) : null;
         }
 
+        $pendingCustomerCheques = \App\Models\ChequePayment::with('customer')
+            ->where('status', 'pending')
+            ->where('type', 'customer')
+            ->orderBy('cheque_date')
+            ->get();
+
         return view('preorders.show', [
             'preOrder' => $preOrder,
             'currency' => Setting::get('currency_symbol', 'Rs '),
+            'pendingCustomerCheques' => $pendingCustomerCheques,
         ]);
     }
 

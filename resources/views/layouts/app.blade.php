@@ -489,6 +489,9 @@
                     @if($navUser?->hasPermission('preorder_reports'))
                     <a href="{{ route('preorders.report') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('preorders.report') ? 'active' : '' }}"><i class="fas fa-chart-column w-4"></i><span>Pre-Order Report</span></a>
                     <a href="{{ route('preorders.customer-report') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('preorders.customer-report') ? 'active' : '' }}"><i class="fas fa-users w-4"></i><span>Customer Report</span></a>
+                    @if($navUser?->hasPermission('reports.purchase'))
+                    <a href="{{ route('reports.purchase', ['is_pre_order' => 1]) }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.purchase') && request('is_pre_order') == '1' ? 'active' : '' }}"><i class="fas fa-truck-loading w-4"></i><span>Purchase Report</span></a>
+                    @endif
                     @endif
                 </div>
             </div>

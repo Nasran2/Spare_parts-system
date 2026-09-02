@@ -462,6 +462,7 @@
             <button onclick="closeSupplierModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
         </div>
         <form id="quickSupplierForm">
+            <input type="hidden" name="is_active" value="1">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Name <span class="text-red-500">*</span></label>

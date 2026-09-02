@@ -193,18 +193,45 @@
                                 </button>
                             </div>
                         </div>
-                        <div>
+                                 <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-1">Payment Method</label>
-                            <select id="purchase_payment_method" class="w-full border rounded px-3 py-2">
+                            <select id="purchase_payment_method" name="purchase_payment_method" class="w-full border rounded px-3 py-2" onchange="togglePurchaseChequeFields()">
                                 <option value="cash">Cash</option>
                                 <option value="bank_transfer">Bank Transfer</option>
                                 <option value="card">Card</option>
                                 <option value="mobile_payment">Mobile Payment</option>
+                                <option value="customer_cheque">Party Cheque (From Customer)</option>
+                                <option value="own_cheque">Own Cheque (To Supplier)</option>
                             </select>
                         </div>
                         <div>
-                            <label class="block text-sm font-semibold text-gray-700 mb-1">Amount Paid (Due: <span id="purchase_due_display">0.00</span>)</label>
-                            <input type="number" step="0.01" min="0" id="purchase_paid_amount" class="w-full border rounded px-3 py-2" value="0.00" />
+                            <label class="block text-sm font-semibold text-gray-700 mb-1">Amount Paid (Due: <span id="purchase_due_amount">0.00</span>)</label>
+                            <input type="number" id="purchase_amount_paid" name="purchase_amount_paid" class="w-full border rounded px-3 py-2" step="0.01" min="0" value="0.00">
+                        </div>
+                        <div id="purchase_cheque_details" class="md:col-span-2 hidden bg-gray-50 p-4 rounded-lg mt-2 space-y-4">
+                            <div id="purchase_party_cheque_fields" class="hidden">
+                                <label class="block text-sm font-semibold text-gray-700 mb-1">Select Customer Cheque <span class="text-red-500">*</span></label>
+                                <select id="purchase_cheque_id" name="purchase_cheque_id" class="w-full border rounded px-3 py-2" onchange="partyChequeSelected(this)">
+                                    <option value="">Select Party Cheque...</option>
+                                    @foreach($pendingCustomerCheques ?? [] as $c)
+                                        <option value="{{ $c->id }}" data-amount="{{ $c->amount }}">{{ $c->bank_name }} - {{ $c->cheque_number }} - Rs {{ number_format($c->amount, 2) }} ({{ $c->customer ? $c->customer->name : 'Unknown' }})</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div id="purchase_own_cheque_fields" class="hidden grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-1">Bank Name <span class="text-red-500">*</span></label>
+                                    <input type="text" id="purchase_bank_name" name="purchase_bank_name" class="w-full border rounded px-3 py-2" placeholder="e.g. BOC">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-1">Cheque Date <span class="text-red-500">*</span></label>
+                                    <input type="date" id="purchase_cheque_date" name="purchase_cheque_date" class="w-full border rounded px-3 py-2">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-1">Cheque Number <span class="text-red-500">*</span></label>
+                                    <input type="text" id="purchase_cheque_number" name="purchase_cheque_number" class="w-full border rounded px-3 py-2" placeholder="Cheque No">
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -283,7 +310,7 @@ function attachQuickProductListeners() {
     const secretCodeInput = document.getElementById('quick_secret_cost_code');
     const sellingSecretCodeInput = document.getElementById('quick_secret_selling_code');
     const qtyInput = form.querySelector('input[name="stock_quantity"]');
-    const dueDisplay = document.getElementById('purchase_due_display');
+    const dueDisplay = document.getElementById('purchase_due_amount');
 
     if (!costInput || !sellingInput || !percentInput || !fixedInput || !secretCodeInput) return;
 
@@ -371,7 +398,7 @@ function openCreateProductForSync(item) {
     form.reset();
     form.querySelector('[name="name"]').value = item.name;
     document.getElementById('purchase_details_container')?.classList.add('hidden');
-    document.getElementById('purchase_due_display').textContent = '0.00';
+    document.getElementById('purchase_due_amount').textContent = '0.00';
     attachQuickProductListeners();
     openModal('createProductSyncModal');
 }
@@ -420,13 +447,42 @@ document.getElementById('createProductSyncForm')?.addEventListener('submit', asy
         const productId = createData.product.id;
         
         // 2. Mark as purchase (if checked)
+        
+function togglePurchaseChequeFields() {
+    const method = document.getElementById('purchase_payment_method').value;
+    const container = document.getElementById('purchase_cheque_details');
+    const partyFields = document.getElementById('purchase_party_cheque_fields');
+    const ownFields = document.getElementById('purchase_own_cheque_fields');
+    
+    if (method === 'customer_cheque' || method === 'own_cheque') {
+        container.classList.remove('hidden');
+        if (method === 'customer_cheque') {
+            partyFields.classList.remove('hidden');
+            ownFields.classList.add('hidden');
+        } else {
+            partyFields.classList.add('hidden');
+            ownFields.classList.remove('hidden');
+        }
+    } else {
+        container.classList.add('hidden');
+        partyFields.classList.add('hidden');
+        ownFields.classList.add('hidden');
+    }
+}
+
+function partyChequeSelected(select) {
+    const selectedOption = select.options[select.selectedIndex];
+    if (selectedOption && selectedOption.dataset.amount) {
+        document.getElementById('purchase_amount_paid').value = selectedOption.dataset.amount;
+    }
+}
         const markAsPurchase = document.getElementById('mark_as_purchase').checked;
         if (markAsPurchase) {
             btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Logging Purchase...';
             
             const supplierId = document.getElementById('purchase_supplier_id').value;
             const paymentMethod = document.getElementById('purchase_payment_method').value;
-            const paidAmount = document.getElementById('purchase_paid_amount').value;
+            const paidAmount = document.getElementById('purchase_amount_paid').value;
             const qty = parseFloat(formData.get('stock_quantity') || 0);
             const cost = parseFloat(formData.get('cost_price') || 0);
             const sell = parseFloat(formData.get('selling_price') || 0);
@@ -445,7 +501,11 @@ document.getElementById('createProductSyncForm')?.addEventListener('submit', asy
                 }],
                 payments: [{
                     method: paymentMethod,
-                    amount: paidAmount
+                    amount: paidAmount,
+                    cheque_id: document.getElementById('purchase_cheque_id') ? document.getElementById('purchase_cheque_id').value : null,
+                    bank_name: document.getElementById('purchase_bank_name') ? document.getElementById('purchase_bank_name').value : null,
+                    cheque_date: document.getElementById('purchase_cheque_date') ? document.getElementById('purchase_cheque_date').value : null,
+                    cheque_number: document.getElementById('purchase_cheque_number') ? document.getElementById('purchase_cheque_number').value : null
                 }]
             };
             
@@ -500,6 +560,65 @@ document.getElementById('createProductSyncForm')?.addEventListener('submit', asy
     }
 });
 
+
+
+</script>
+
+<!-- Supplier Modal -->
+<div id="supplierModal" style="z-index: 1000;" class="fixed inset-0 hidden items-center justify-center">
+    <div class="absolute inset-0 bg-black opacity-50" onclick="closeSupplierModal()"></div>
+    <div class="bg-white rounded-lg shadow-lg w-full max-w-2xl relative z-[1001] p-6 max-h-screen overflow-y-auto">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold">Add New Supplier</h3>
+            <button onclick="closeSupplierModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+        </div>
+        <form id="quickSupplierForm">
+            <input type="hidden" name="is_active" value="1">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Name <span class="text-red-500">*</span></label>
+                    <input type="text" name="name" required class="w-full border rounded px-3 py-2" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Company Name</label>
+                    <input type="text" name="company_name" class="w-full border rounded px-3 py-2" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Supplier TIN</label>
+                    <input type="text" name="tin" inputmode="numeric" pattern="[0-9]{9,12}" maxlength="12" class="w-full border rounded px-3 py-2" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Email</label>
+                    <input type="email" name="email" class="w-full border rounded px-3 py-2" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Phone <span class="text-red-500">*</span></label>
+                    <input type="text" name="phone" required class="w-full border rounded px-3 py-2" />
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Address</label>
+                    <input type="text" name="address" class="w-full border rounded px-3 py-2" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">City</label>
+                    <input type="text" name="city" class="w-full border rounded px-3 py-2" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Country</label>
+                    <input type="text" name="country" class="w-full border rounded px-3 py-2" />
+                </div>
+            </div>
+            <div class="mt-6 flex items-center gap-2">
+                <button type="submit" class="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                    <i class="fas fa-plus mr-2"></i>Create Supplier
+                </button>
+                <button type="button" onclick="closeSupplierModal()" class="px-6 py-2 bg-gray-200 rounded hover:bg-gray-300">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
 // Supplier Modal Logic
 function openSupplierModal() {
     document.getElementById('supplierModal').classList.remove('hidden');
@@ -547,60 +666,5 @@ document.getElementById('quickSupplierForm').addEventListener('submit', async fu
         btn.innerHTML = originalText;
     }
 });
-
 </script>
-
-<!-- Supplier Modal -->
-<div id="supplierModal" style="z-index: 1000;" class="fixed inset-0 hidden items-center justify-center">
-    <div class="absolute inset-0 bg-black opacity-50" onclick="closeSupplierModal()"></div>
-    <div class="bg-white rounded-lg shadow-lg w-full max-w-2xl relative z-[1001] p-6 max-h-screen overflow-y-auto">
-        <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold">Add New Supplier</h3>
-            <button onclick="closeSupplierModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
-        </div>
-        <form id="quickSupplierForm">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Name <span class="text-red-500">*</span></label>
-                    <input type="text" name="name" required class="w-full border rounded px-3 py-2" />
-                </div>
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Company Name</label>
-                    <input type="text" name="company_name" class="w-full border rounded px-3 py-2" />
-                </div>
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Supplier TIN</label>
-                    <input type="text" name="tin" inputmode="numeric" pattern="[0-9]{9,12}" maxlength="12" class="w-full border rounded px-3 py-2" />
-                </div>
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Email</label>
-                    <input type="email" name="email" class="w-full border rounded px-3 py-2" />
-                </div>
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Phone <span class="text-red-500">*</span></label>
-                    <input type="text" name="phone" required class="w-full border rounded px-3 py-2" />
-                </div>
-                <div class="md:col-span-2">
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Address</label>
-                    <input type="text" name="address" class="w-full border rounded px-3 py-2" />
-                </div>
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">City</label>
-                    <input type="text" name="city" class="w-full border rounded px-3 py-2" />
-                </div>
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Country</label>
-                    <input type="text" name="country" class="w-full border rounded px-3 py-2" />
-                </div>
-            </div>
-            <div class="mt-6 flex items-center gap-2">
-                <button type="submit" class="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-                    <i class="fas fa-plus mr-2"></i>Create Supplier
-                </button>
-                <button type="button" onclick="closeSupplierModal()" class="px-6 py-2 bg-gray-200 rounded hover:bg-gray-300">Cancel</button>
-            </div>
-        </form>
-    </div>
-</div>
-
 @endsection
