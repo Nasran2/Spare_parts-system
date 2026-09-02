@@ -107,6 +107,7 @@
             <div><h3 class="text-lg font-semibold text-gray-800"><i class="fas fa-gears text-blue-600 mr-2"></i>Products / Parts</h3><p class="text-sm text-gray-500 mt-1">Products with zero stock remain selectable. Add temporary items for parts not yet in the catalogue.</p></div>
             <div class="flex flex-col sm:flex-row gap-2 relative">
                 <div class="relative"><input type="search" id="product-search" autocomplete="off" placeholder="Search name or SKU..." class="w-full sm:w-72 px-3 py-2.5 border border-gray-300 rounded-lg"><div id="product-results" class="hidden absolute right-0 left-0 mt-1 bg-white border rounded-lg shadow-xl z-30 max-h-72 overflow-y-auto"></div></div>
+                <button type="button" onclick="openCreateProductModal()" class="px-4 py-2.5 bg-green-100 text-green-800 rounded-lg hover:bg-green-200 whitespace-nowrap"><i class="fas fa-plus mr-2"></i>Create Product</button>
                 <button type="button" onclick="addTemporaryItem()" class="px-4 py-2.5 bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200 whitespace-nowrap"><i class="fas fa-link-slash mr-2"></i>Unlinked Product</button>
             </div>
         </div>
@@ -164,7 +165,143 @@
     </div>
 </div>
 
+@include('preorders.partials.product_modal')
+
 <script>
+function openModal(id) { const m=document.getElementById(id); m.classList.remove('hidden'); m.classList.add('flex'); }
+function closeModal(id) { const m=document.getElementById(id); m.classList.add('hidden'); m.classList.remove('flex'); }
+
+function openCreateProductModal() {
+    const form = document.getElementById('createProductSyncForm');
+    if (form) {
+        form.reset();
+        document.getElementById('purchase_details_container')?.classList.add('hidden');
+        const due = document.getElementById('purchase_due_amount');
+        if (due) due.textContent = '0.00';
+        if(typeof attachQuickProductListeners === 'function') attachQuickProductListeners();
+    }
+    openModal('createProductSyncModal');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('createProductSyncForm')?.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const form = this;
+        const btn = form.querySelector('button[type="submit"]');
+        
+        if(!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+        
+        btn.disabled = true;
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Creating...';
+        
+        try {
+            const formData = new FormData(form);
+            formData.append('is_pre_order', '1');
+
+            const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+            
+            // 1. Create the product
+            const createRes = await fetch('/products', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Accept': 'application/json'
+                },
+                body: formData
+            });
+            
+            const createData = await createRes.json();
+            if (!createRes.ok || !createData.success) {
+                let msg = createData.message || 'Error creating product';
+                if (createData.errors) {
+                    msg += '\n' + Object.values(createData.errors).map(e => e.join(', ')).join('\n');
+                }
+                throw new Error(msg);
+            }
+            
+            const productId = createData.product.id;
+            
+            // 2. Mark as purchase (if checked)
+            if (document.getElementById('mark_as_purchase')?.checked) {
+                const supplierId = formData.get('purchase_supplier_id');
+                const paymentMethod = formData.get('purchase_payment_method');
+                const paidAmount = parseFloat(formData.get('purchase_amount_paid') || 0);
+                
+                if (!supplierId) {
+                    throw new Error('Please select a supplier for the purchase.');
+                }
+
+                const qty = parseFloat(formData.get('stock_quantity') || 0);
+                const cost = parseFloat(formData.get('cost_price') || 0);
+                const sell = parseFloat(formData.get('selling_price') || 0);
+
+                const purchasePayload = {
+                    is_pre_order: 1,
+                    supplier_id: supplierId,
+                    purchase_date: new Date().toISOString().split('T')[0],
+                    status: 'received',
+                    items: [{
+                        product_id: productId,
+                        quantity: qty,
+                        unit_cost: cost,
+                        selling_price: sell,
+                        add_to_price_stock: true
+                    }],
+                    payments: [{
+                        method: paymentMethod,
+                        amount: paidAmount,
+                        cheque_id: document.getElementById('purchase_cheque_id') ? document.getElementById('purchase_cheque_id').value : null,
+                        bank_name: document.getElementById('purchase_bank_name') ? document.getElementById('purchase_bank_name').value : null,
+                        cheque_date: document.getElementById('purchase_cheque_date') ? document.getElementById('purchase_cheque_date').value : null,
+                        cheque_number: document.getElementById('purchase_cheque_number') ? document.getElementById('purchase_cheque_number').value : null
+                    }]
+                };
+                
+                const purchRes = await fetch('/purchases', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(purchasePayload)
+                });
+                
+                if (!purchRes.ok) {
+                    const purchData = await purchRes.json();
+                    let msg = purchData.message || 'Error logging purchase';
+                    if (purchData.errors) {
+                        msg += '\n' + Object.values(purchData.errors).map(e => e.join(', ')).join('\n');
+                    }
+                    throw new Error(msg + '\n(Note: Product was created successfully)');
+                }
+            }
+            
+            // 3. Add to grid
+            addRow({
+                product_id: productId,
+                name: createData.product.name,
+                stock: formData.get('stock_quantity') || 0,
+                quantity: 1,
+                unit_price: formData.get('selling_price') || 0,
+                tax: defaultTax
+            });
+            
+            closeModal('createProductSyncModal');
+            
+        } catch(err) {
+            alert(err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    });
+});
+
 const initialItems = @json($initialItems);
 const currency = @json($currency);
 const defaultTax = {

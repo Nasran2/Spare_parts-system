@@ -124,6 +124,30 @@ class PreOrderService
         });
     }
 
+    public function unsyncProduct(PreOrder $preOrder, PreOrderItem $item, int $userId): void
+    {
+        if (!$item->product_id) return;
+        
+        \Illuminate\Support\Facades\DB::transaction(function () use ($preOrder, $item, $userId) {
+            $old = $item->only(['product_id', 'product_price_id', 'quoted_price', 'final_price', 'sync_status']);
+            
+            // Restore stock if it was deducted
+            $this->restorePreOrderStock($preOrder, $item);
+            
+            $item->update([
+                'product_id' => null,
+                'product_price_id' => null,
+                'sync_status' => 'unlinked',
+            ]);
+            
+            $this->activity($preOrder, $userId, 'product_unsynced',
+                'Unlinked inventory product from “'.$item->original_product_name.'”.',
+                $old,
+                $item->fresh()->only(['product_id', 'product_price_id', 'quoted_price', 'final_price', 'sync_status'])
+            );
+        });
+    }
+
     public function syncProduct(PreOrder $preOrder, PreOrderItem $item, Product $product, ?int $productPriceId, int $userId, string $priceAction = 'keep', ?float $customPrice = null): PreOrder
     {
         return DB::transaction(function () use ($preOrder, $item, $product, $productPriceId, $userId, $priceAction, $customPrice) {
@@ -603,9 +627,17 @@ class PreOrderService
         foreach ($normalized as $index => $entry) {
             $item = $entry['item'];
             $tax = $invoice['lines'][$index];
+            
+            $priceId = $item['product_price_id'] ?? null;
+            if (empty($priceId) && !empty($entry['product'])) {
+                $priceId = $entry['product']->prices()->where('status', 'active')->where('is_default', true)->value('id') 
+                           ?? $entry['product']->prices()->where('status', 'active')->value('id')
+                           ?? $entry['product']->prices()->value('id');
+            }
+
             $resultItems[] = [
                 'product_id' => $entry['product']?->id,
-                'product_price_id' => $item['product_price_id'] ?? null,
+                'product_price_id' => $priceId,
                 'original_product_name' => trim((string) $item['original_product_name']),
                 'description' => $item['description'] ?? null,
                 'quantity' => (int) $item['quantity'],

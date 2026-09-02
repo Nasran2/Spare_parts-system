@@ -243,6 +243,8 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
         ->middleware('permission:preorder_complete')->name('preorders.complete');
     Route::post('preorders/{preOrder}/items/{item}/sync', [PreOrderController::class, 'syncProduct'])
         ->middleware('permission:preorder_sync_product')->name('preorders.items.sync');
+    Route::post('preorders/{preOrder}/items/{item}/unsync', [PreOrderController::class, 'unsyncProduct'])
+        ->middleware('permission:preorder_sync_product')->name('preorders.items.unsync');
     Route::post('preorders/{preOrder}/items/{item}/price', [PreOrderController::class, 'changePrice'])
         ->middleware('permission:preorder_change_price')->name('preorders.items.price');
     Route::post('preorders/{preOrder}/payments', [PreOrderController::class, 'addPayment'])

@@ -268,6 +268,16 @@ class PreOrderController extends Controller
         return redirect()->route('preorders.show', $preOrder)->with('success', 'Pre-Order completed as sale '.$preOrder->sale->sale_no.'.');
     }
 
+    public function unsyncProduct(Request $request, PreOrder $preOrder, PreOrderItem $item)
+    {
+        $this->authorizeStore($request, $preOrder->store_id);
+        abort_unless($item->pre_order_id === $preOrder->id, 404);
+        
+        $this->service->unsyncProduct($preOrder, $item, (int) $request->user()->id);
+
+        return response()->json(['success' => true]);
+    }
+
     public function syncProduct(Request $request, PreOrder $preOrder, PreOrderItem $item)
     {
         $this->authorizeStore($request, $preOrder->store_id);
