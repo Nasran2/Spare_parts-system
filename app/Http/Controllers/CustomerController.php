@@ -159,11 +159,18 @@ class CustomerController extends Controller
         $controls = DashboardVisibilityService::configForUser(Auth::user());
         $customerDisplayValue = fn ($value) => DashboardVisibilityService::customerValue((float) $value, $controls);
 
+        $periodGenericPayments = (float) $customer->payments()
+            ->whereNull('sale_id')
+            ->whereNull('pre_order_id')
+            ->when($start, fn($q) => $q->whereDate('payment_date', '>=', $start))
+            ->when($end, fn($q) => $q->whereDate('payment_date', '<=', $end))
+            ->sum('amount');
+
         $periodTotals = [
             'invoice' => (float) $sales->sum('total_amount') + (float) $preOrders->where('status', 'pending')->sum('grand_total'),
-            'paid' => (float) $sales->sum('paid_amount') + (float) $preOrders->where('status', 'pending')->sum('paid_amount'),
+            'paid' => (float) $sales->sum('paid_amount') + (float) $preOrders->where('status', 'pending')->sum('paid_amount') + $periodGenericPayments,
         ];
-        $periodTotals['balance'] = max(0, $periodTotals['invoice'] - $periodTotals['paid']);
+        $periodTotals['balance'] = $periodTotals['invoice'] - $periodTotals['paid'];
         $periodTotals = [
             'invoice' => $customerDisplayValue($periodTotals['invoice']),
             'paid' => $customerDisplayValue($periodTotals['paid']),
@@ -177,12 +184,13 @@ class CustomerController extends Controller
                 
         $overallPreOrders = $customer->preOrders;
 
+        $genericPayments = (float) $customer->payments()->whereNull('sale_id')->whereNull('pre_order_id')->sum('amount');
         $overallTotals = [
             'invoice' => (float) $overallSales->sum('total_amount') + (float) $overallPreOrders->where('status', 'pending')->sum('grand_total'),
-            'paid' => (float) $overallSales->sum('paid_amount') + (float) $overallPreOrders->where('status', 'pending')->sum('paid_amount'),
+            'paid' => (float) $overallSales->sum('paid_amount') + (float) $overallPreOrders->where('status', 'pending')->sum('paid_amount') + $genericPayments,
         ];
-        $genericPayments = (float) $customer->payments()->whereNull('sale_id')->sum('amount');
-        $overallTotals['balance'] = max(0, $overallTotals['invoice'] - $overallTotals['paid']) + (float) $customer->opening_balance - $genericPayments;
+        
+        $overallTotals['balance'] = $overallTotals['invoice'] - $overallTotals['paid'] + (float) $customer->opening_balance;
         $overallTotals['sales_due'] = $customer->sales_due_amount;
         $overallTotals['pre_order_due'] = $customer->pre_order_due_amount;
         

@@ -765,6 +765,7 @@ function closeAdvanceModal() {
                         <option value="card">Card</option>
                         <option value="bank_transfer">Bank Transfer</option>
                         <option value="cheque">Cheque</option>
+                        <option value="due_payment">Due Payment</option>
                     </select>
                 </div>
                 <div>

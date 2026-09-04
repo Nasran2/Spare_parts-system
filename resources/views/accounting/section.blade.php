@@ -330,6 +330,7 @@
                             <option value="bank_transfer">Bank Transfer</option>
                             <option value="card">Card</option>
                             <option value="mobile_payment">Mobile Payment</option>
+                            <option value="due_payment">Due Payment</option>
                         </select>
                     </div>
                     

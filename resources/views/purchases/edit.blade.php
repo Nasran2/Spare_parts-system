@@ -140,6 +140,7 @@
                                 <option value="card" @selected($selectedPaymentMethod === 'card')>Card</option>
                                 <option value="bank_transfer" @selected($selectedPaymentMethod === 'bank_transfer')>Main Account (Bank Transfer)</option>
                                 <option value="cheque" @selected($selectedPaymentMethod === 'cheque')>Cheque</option>
+                                <option value="due_payment" @selected($selectedPaymentMethod === 'due_payment')>Due Payment</option>
                                 <option value="credit" @selected($selectedPaymentMethod === 'credit')>Credit</option>
                             </select>
                         </div>

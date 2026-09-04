@@ -230,6 +230,7 @@
                             <option value="bank_transfer">Bank Transfer</option>
                             <option value="cheque">Cheque Payment</option>
                             <option value="mobile_payment">Mobile Payment</option>
+                            <option value="due_payment">Due Payment</option>
                         </select>
                         <input id="cash-amount" type="number" step="0.01" min="0" class="col-span-7 h-11 px-3 rounded-lg border border-slate-200 bg-white text-sm font-semibold focus:ring-2 focus:ring-indigo-500" placeholder="Amount">
                         <button id="btn-checkout" type="button" class="col-span-5 py-2.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-semibold"><i class="fas fa-check mr-1"></i>Pay</button>
@@ -387,6 +388,7 @@
                         <option value="bank_transfer">Bank Transfer</option>
                         <option value="cheque">Cheque Payment</option>
                         <option value="mobile_payment">Mobile Payment</option>
+                        <option value="due_payment">Due Payment</option>
                     </select>
                     <input type="number" step="0.01" min="0" id="cash-amount" class="w-full px-3 py-2 border-2 border-emerald-300 rounded-lg focus:ring-2 focus:ring-emerald-500" placeholder="Enter cash amount">
                     <div id="cheque-fields" class="hidden mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -3009,6 +3011,7 @@
                     <option value="bank_transfer">Bank Transfer</option>
                     <option value="cheque">Cheque Payment</option>
                     <option value="mobile_payment">Mobile Payment</option>
+                    <option value="due_payment">Due Payment</option>
                 </select>
             </div>
             <div class="col-span-10 md:col-span-6">

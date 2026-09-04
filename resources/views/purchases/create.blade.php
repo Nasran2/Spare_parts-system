@@ -1183,6 +1183,7 @@ function recalcGrandTotal() {
                         <option value="cash">Cash</option>
                         <option value="bank_transfer">Bank Transfer</option>
                         <option value="card">Card</option>
+                        <option value="due_payment">Due Payment</option>
                         <option value="customer_cheque">Party Cheque</option>
                         <option value="own_cheque">Own Cheque</option>
                     </select>

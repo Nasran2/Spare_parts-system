@@ -115,6 +115,7 @@
                     <option value="bank_transfer">Bank Transfer</option>
                     <option value="card">Card</option>
                     <option value="mobile_payment">Mobile Payment</option>
+                    <option value="due_payment">Due Payment</option>
                 </select>
                 <input type="number" step="0.01" min="0.01" name="amount" placeholder="Amount" class="border rounded-lg px-3 py-2" required>
                 <input name="cheque_number" placeholder="Cheque number" class="border rounded-lg px-3 py-2">
