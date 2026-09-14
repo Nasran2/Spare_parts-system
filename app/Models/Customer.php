@@ -46,7 +46,7 @@ class Customer extends Model
      */
     public function getDueAmountAttribute()
     {
-        return $this->sales_due_amount + $this->pre_order_due_amount;
+        return $this->sales_due_amount;
     }
 
     public function getSalesDueAmountAttribute()

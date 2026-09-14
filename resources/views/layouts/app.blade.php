@@ -468,18 +468,6 @@
                     @if($navUser?->hasPermission('preorder_create'))
                     <a href="{{ route('preorders.create') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('preorders.create') ? 'active' : '' }}"><i class="fas fa-plus-circle w-4"></i><span>Create Pre-Order</span></a>
                     @endif
-                                        @if($navUser?->hasPermission('products.view'))
-                    <a href="{{ route('products.index', ['is_pre_order' => 1]) }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('products.index') && request('is_pre_order') == 1 ? 'active' : '' }}"><i class="fas fa-box w-4"></i><span>Pre-Order Products</span></a>
-                    @endif
-                    @if($navUser?->hasPermission('products.create'))
-                    <a href="{{ route('products.create', ['is_pre_order' => 1]) }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('products.create') && request('is_pre_order') == 1 ? 'active' : '' }}"><i class="fas fa-box-open w-4"></i><span>Add Pre-Order Product</span></a>
-                    @endif
-                    @if($navUser?->hasPermission('purchases.view'))
-                    <a href="{{ route('purchases.index', ['is_pre_order' => 1]) }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('purchases.index') && request('is_pre_order') == 1 ? 'active' : '' }}"><i class="fas fa-shopping-cart w-4"></i><span>Pre-Order Purchases</span></a>
-                    @endif
-                    @if($navUser?->hasPermission('purchases.create'))
-                    <a href="{{ route('purchases.create', ['is_pre_order' => 1]) }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('purchases.create') && request('is_pre_order') == 1 ? 'active' : '' }}"><i class="fas fa-cart-plus w-4"></i><span>Add Pre-Order Purchase</span></a>
-                    @endif
                     @if($navUser?->hasPermission('preorder_view'))
                     <a href="{{ route('preorders.index') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('preorders.index') ? 'active' : '' }}"><i class="fas fa-list w-4"></i><span>All Pre-Orders</span></a>
                     <a href="{{ route('preorders.status','pending') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600"><i class="fas fa-clock w-4 text-amber-500"></i><span>Pending</span></a>
@@ -489,9 +477,6 @@
                     @if($navUser?->hasPermission('preorder_reports'))
                     <a href="{{ route('preorders.report') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('preorders.report') ? 'active' : '' }}"><i class="fas fa-chart-column w-4"></i><span>Pre-Order Report</span></a>
                     <a href="{{ route('preorders.customer-report') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('preorders.customer-report') ? 'active' : '' }}"><i class="fas fa-users w-4"></i><span>Customer Report</span></a>
-                    @if($navUser?->hasPermission('reports.purchase'))
-                    <a href="{{ route('reports.purchase', ['is_pre_order' => 1]) }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.purchase') && request('is_pre_order') == '1' ? 'active' : '' }}"><i class="fas fa-truck-loading w-4"></i><span>Purchase Report</span></a>
-                    @endif
                     @endif
                 </div>
             </div>
@@ -805,12 +790,7 @@
                         <span>Pre-Order Purchase Report</span>
                     </a>
                     @endif
-                    @if($navUser?->hasPermission('reports.profit-loss'))
-                    <a href="{{ route('reports.profit-loss') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.profit-loss') ? 'active' : '' }}">
-                        <i class="fas fa-coins w-4"></i>
-                        <span>Profit & Loss</span>
-                    </a>
-                    @endif
+
                     @if($navUser?->hasPermission('reports.stock'))
                     <a href="{{ route('reports.stock') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('reports.stock') && !request()->has('is_pre_order') ? 'active' : '' }}">
                         <i class="fas fa-warehouse w-4"></i>

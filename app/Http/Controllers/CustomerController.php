@@ -167,8 +167,8 @@ class CustomerController extends Controller
             ->sum('amount');
 
         $periodTotals = [
-            'invoice' => (float) $sales->sum('total_amount') + (float) $preOrders->where('status', 'pending')->sum('grand_total'),
-            'paid' => (float) $sales->sum('paid_amount') + (float) $preOrders->where('status', 'pending')->sum('paid_amount') + $periodGenericPayments,
+            'invoice' => (float) $sales->sum('total_amount'),
+            'paid' => (float) $sales->sum('paid_amount') + $periodGenericPayments,
         ];
         $periodTotals['balance'] = $periodTotals['invoice'] - $periodTotals['paid'];
         $periodTotals = [
@@ -186,20 +186,18 @@ class CustomerController extends Controller
 
         $genericPayments = (float) $customer->payments()->whereNull('sale_id')->whereNull('pre_order_id')->sum('amount');
         $overallTotals = [
-            'invoice' => (float) $overallSales->sum('total_amount') + (float) $overallPreOrders->where('status', 'pending')->sum('grand_total'),
-            'paid' => (float) $overallSales->sum('paid_amount') + (float) $overallPreOrders->where('status', 'pending')->sum('paid_amount') + $genericPayments,
+            'invoice' => (float) $overallSales->sum('total_amount'),
+            'paid' => (float) $overallSales->sum('paid_amount') + $genericPayments,
         ];
         
         $overallTotals['balance'] = $overallTotals['invoice'] - $overallTotals['paid'] + (float) $customer->opening_balance;
         $overallTotals['sales_due'] = $customer->sales_due_amount;
-        $overallTotals['pre_order_due'] = $customer->pre_order_due_amount;
         
         $overallTotals = [
             'invoice' => $customerDisplayValue($overallTotals['invoice']),
             'paid' => $customerDisplayValue($overallTotals['paid']),
             'balance' => $customerDisplayValue($overallTotals['balance']),
             'sales_due' => $customerDisplayValue($overallTotals['sales_due']),
-            'pre_order_due' => $customerDisplayValue($overallTotals['pre_order_due']),
         ];
 
         $isActive = PrivacyModeService::isActiveForUser(Auth::user()) && PrivacyModeService::shouldMaskForCurrentPage();
@@ -246,44 +244,7 @@ class CustomerController extends Controller
             }
         }
         
-        foreach ($preOrders as $preOrder) {
-            $transactions[] = [
-                'date' => optional($preOrder->pre_order_date)->toDateString() ?: optional($preOrder->created_at)->toDateString(),
-                'reference' => $preOrder->pre_order_number,
-                'invoice' => $preOrder->pre_order_number,
-                'sale_id' => null,
-                'pre_order_id' => $preOrder->id,
-                'sale_date' => optional($preOrder->pre_order_date)->toDateString() ?: optional($preOrder->created_at)->toDateString(),
-                'type' => 'Pre-Order',
-                'location' => optional($preOrder->store)->name ?? config('app.name'),
-                'payment_status' => $preOrder->payment_status,
-                'debit' => $customerDisplayValue($preOrder->grand_total),
-                'credit' => 0.0,
-                'paid' => $customerDisplayValue($preOrder->paid_amount),
-                'due' => $customerDisplayValue($preOrder->due_amount),
-                'payment_method' => null,
-                'notes' => 'Status: ' . ucfirst($preOrder->status),
-            ];
-
-            if ((float) $preOrder->paid_amount > 0) {
-                $transactions[] = [
-                    'date' => optional($preOrder->pre_order_date)->toDateString() ?: optional($preOrder->created_at)->toDateString(),
-                    'reference' => 'PAY-'.$preOrder->pre_order_number,
-                    'invoice' => $preOrder->pre_order_number,
-                    'sale_id' => null,
-                    'pre_order_id' => $preOrder->id,
-                    'sale_date' => optional($preOrder->pre_order_date)->toDateString() ?: optional($preOrder->created_at)->toDateString(),
-                    'type' => 'Payment',
-                    'location' => optional($preOrder->store)->name ?? config('app.name'),
-                    'payment_status' => 'paid',
-                    'debit' => 0.0,
-                    'credit' => $customerDisplayValue($preOrder->paid_amount),
-                    'payment_method' => null,
-                    'notes' => 'Pre-Order Payment for '.$preOrder->pre_order_number,
-                ];
-            }
-        }
-        
+        // Pre-orders have been intentionally omitted from the main customer ledger
         $genericPaymentsList = $customer->payments()->whereNull('sale_id')->get();
         foreach ($genericPaymentsList as $gp) {
             $pDate = optional($gp->payment_date)->toDateString() ?: $gp->created_at->toDateString();
@@ -589,7 +550,7 @@ class CustomerController extends Controller
             }
         }
 
-        if ($type === 'pre_orders' || $type === 'all') {
+        if ($type === 'pre_orders') {
             foreach ($preOrders as $preOrder) {
                 $transactions[] = [
                     'date' => optional($preOrder->pre_order_date)->toDateString() ?: optional($preOrder->created_at)->toDateString(),
@@ -652,7 +613,6 @@ class CustomerController extends Controller
             'paid' => $customerDisplayValue($totalPaid),
             'balance' => $customerDisplayValue(max(0, $totalInvoice - $totalPaid)),
             'sales_due' => $customerDisplayValue($customer->sales_due_amount),
-            'pre_order_due' => $customerDisplayValue($customer->pre_order_due_amount),
         ];
 
         $title = 'Customer Ledger';

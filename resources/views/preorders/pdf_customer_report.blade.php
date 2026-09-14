@@ -91,7 +91,7 @@
                     <td class="center">{{ number_format($customer->total_preorders) }}</td>
                     <td class="right">{{ number_format((float)$customer->total_amount, 2) }}</td>
                     <td class="right">{{ number_format((float)$customer->paid_amount, 2) }}</td>
-                    <td class="right">{{ number_format((float)$customer->due_amount, 2) }}</td>
+                    <td style="text-align: right; color: #d32f2f; font-weight: bold;">{{ number_format((float)$customer->preorder_due_amount, 2) }}</td>
                 </tr>
                 @empty
                 <tr>

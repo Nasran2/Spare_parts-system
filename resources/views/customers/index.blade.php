@@ -110,18 +110,7 @@
                                     </span>
                                 </div>
                                 @endif
-                                @if($customer->pre_order_due_amount > 0)
-                                <div class="text-xs text-gray-500 font-semibold w-full flex justify-between" title="Pre-Order Due">
-                                    <span>Pre-Order:</span> 
-                                    <span class="font-bold text-orange-500 ml-2">
-                                        @if($position === 'before')
-                                            {{ $currency }} {{ $maskMoney($customer->pre_order_due_amount, $hideAmounts) }}
-                                        @else
-                                            {{ $maskMoney($customer->pre_order_due_amount, $hideAmounts) }} {{ $currency }}
-                                        @endif
-                                    </span>
-                                </div>
-                                @endif
+
                             </div>
                         </td>
                         <td class="px-6 py-4 text-center">
@@ -517,15 +506,9 @@ function renderAccountSummary(periodTotals, overallTotals, start, end) {
     const wrap = document.getElementById('accountSummary');
     let duesHtml = '';
     const hasSalesDue = Number(overallTotals.sales_due) > 0;
-    const hasPreOrderDue = Number(overallTotals.pre_order_due) > 0;
     
-    if (hasSalesDue || hasPreOrderDue) {
-        if (hasSalesDue) {
-            duesHtml += `<div class="flex justify-between text-sm pl-2 border-l-2 border-orange-400"><span class="text-gray-600">Sales Due</span><span class="font-semibold text-orange-600">${CURRENCY}${fmt(overallTotals.sales_due)}</span></div>`;
-        }
-        if (hasPreOrderDue) {
-            duesHtml += `<div class="flex justify-between text-sm pl-2 border-l-2 border-purple-400"><span class="text-gray-600">Pre-Order Due</span><span class="font-semibold text-purple-600">${CURRENCY}${fmt(overallTotals.pre_order_due)}</span></div>`;
-        }
+    if (hasSalesDue) {
+        duesHtml += `<div class="flex justify-between text-sm pl-2 border-l-2 border-orange-400"><span class="text-gray-600">Sales Due</span><span class="font-semibold text-orange-600">${CURRENCY}${fmt(overallTotals.sales_due)}</span></div>`;
     }
 
     wrap.innerHTML = `

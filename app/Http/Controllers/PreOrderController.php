@@ -66,7 +66,7 @@ class PreOrderController extends Controller
             ->whereHas('preOrders')
             ->where('is_active', true)
             ->orderBy('name')
-            ->with('preOrders');
+            ->with(['preOrders', 'preOrders.payments']);
             
         if ($request->filled('customer_id')) {
             $customersQuery->where('id', $request->customer_id);
@@ -87,7 +87,7 @@ class PreOrderController extends Controller
             $customer->total_preorders = $preOrders->count();
             $customer->total_amount = $preOrders->where('status', '!=', 'cancelled')->sum('grand_total');
             $customer->paid_amount = $preOrders->sum('paid_amount');
-            $customer->due_amount = max(0, $customer->total_amount - $customer->paid_amount);
+            $customer->preorder_due_amount = max(0, $customer->total_amount - $customer->paid_amount);
         }
         
         // Filter out customers who have 0 pre-orders in the date range if date range is applied

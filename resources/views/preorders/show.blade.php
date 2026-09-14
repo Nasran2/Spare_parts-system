@@ -31,10 +31,7 @@
 
             <div class="bg-white rounded-xl shadow p-5"><h3 class="font-semibold text-gray-800 border-b pb-3 mb-4"><i class="fas fa-car-side text-blue-600 mr-2"></i>Vehicle Information</h3><div class="grid grid-cols-1 md:grid-cols-3 gap-5">@if($preOrder->vehicle_image_url)<div><img src="{{ $preOrder->vehicle_image_url }}" alt="{{ $preOrder->vehicle_name }}" class="w-full max-h-56 object-contain bg-gray-50 border rounded-xl"></div>@endif<div class="{{ $preOrder->vehicle_image_url ? 'md:col-span-2':'md:col-span-3' }}"><div class="text-xl font-bold">{{ $preOrder->vehicle_name }}</div>@if($preOrder->vehicle_description)<p class="mt-4 text-sm text-gray-600 whitespace-pre-wrap">{{ $preOrder->vehicle_description }}</p>@endif @if($preOrder->instructions)<div class="mt-4 p-3 bg-blue-50 text-blue-900 rounded-lg text-sm whitespace-pre-wrap"><strong>Instructions</strong><br>{{ $preOrder->instructions }}</div>@endif</div></div></div>
 
-            <div class="bg-white rounded-xl shadow overflow-hidden"><div class="px-5 py-4 border-b flex justify-between"><h3 class="font-semibold text-gray-800"><i class="fas fa-gears text-blue-600 mr-2"></i>Products / Parts & Sync Status</h3><span class="text-sm text-gray-500">{{ $preOrder->items->count() }} item(s)</span></div><div class="overflow-x-auto"><table class="w-full min-w-[1150px] text-sm"><thead class="bg-gray-50 text-xs uppercase text-gray-600"><tr><th class="p-3 text-left">Part</th><th class="p-3 text-center">Stock / Sync</th><th class="p-3 text-right">Qty</th><th class="p-3 text-right">Quoted</th><th class="p-3 text-right">Current</th><th class="p-3 text-right">Final</th><th class="p-3 text-right">Discount</th><th class="p-3 text-right">Total</th><th class="p-3 text-center">Action</th></tr></thead><tbody class="divide-y">@foreach($preOrder->items as $item) @php $isSeparate = $preOrder->pdf_tax_display === 'separate'; $isExclHidden = $preOrder->pdf_tax_display === 'exclusive_hidden'; $tm = $isExclHidden ? (1 + ((float)$preOrder->custom_tax_rate / 100)) : 1; $dispQuoted = (float)$item->quoted_price * $tm; $dispCurrent = $item->current_selling_price !== null ? (float)$item->current_selling_price * $tm : null; $dispFinal = (float)$item->final_price * $tm; $dispDiscount = (float)$item->discount_amount * $tm; $dispLineTotal = $isSeparate ? ((float)$item->gross_amount - (float)$item->discount_amount) : (float)$item->line_total; @endphp <tr><td class="p-3"><div class="font-semibold">{{ $item->original_product_name }}</div>@if($item->description)<div class="text-xs text-gray-500 mt-1">{{ $item->description }}</div>@endif @if($item->product)<div class="text-xs text-green-600 mt-1">Linked: {{ $item->product->name }}{{ $item->product->sku ? ' · '.$item->product->sku : '' }}</div>@endif</td><td class="p-3 text-center"><div class="flex items-center justify-center gap-2">@if(!$item->product_id)<span class="px-2 py-1 bg-amber-100 text-amber-800 rounded-full text-xs whitespace-nowrap">⚠ Not Synced</span>@elseif($item->current_stock<=0)<span class="px-2 py-1 bg-amber-100 text-amber-800 rounded-full text-xs whitespace-nowrap">⚠ 0 Stock</span>@else<span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs whitespace-nowrap">✓ Synced · {{ $item->current_stock }}</span>@endif @if($preOrder->status==='pending' && auth()->user()->hasPermission('preorder_sync_product'))<button type="button" onclick="openSync({{ json_encode(['id'=>$item->id,'name'=>$item->original_product_name,'quoted'=>(float)$item->quoted_price,'is_synced'=>$item->product_id?true:false]) }}, event)" class="p-1 {{ $item->product_id ? 'text-indigo-600 hover:bg-indigo-50 border border-indigo-600' : 'text-indigo-600 hover:bg-indigo-50' }} rounded inline-flex items-center" title="{{ $item->product_id ? 'Remove Sync' : 'Sync Product' }}"><i class="fas {{ $item->product_id ? 'fa-unlink' : 'fa-link' }}"></i></button>
-@if(auth()->user()->hasPermission('products.create'))
-<button type="button" onclick="openCreateProductForSync({{ json_encode(['id'=>$item->id,'name'=>$item->original_product_name]) }})" class="p-1 text-green-600 hover:bg-green-50 rounded inline-flex items-center ml-1" title="Create New Product & Sync"><i class="fas fa-plus"></i></button>
-@endif @endif</div></td><td class="p-3 text-right">{{ $item->quantity }}</td><td class="p-3 text-right">{{ $currency }}{{ number_format($dispQuoted,2) }}</td><td class="p-3 text-right">{{ $dispCurrent !== null ? $currency.number_format($dispCurrent,2) : '—' }}</td><td class="p-3 text-right font-semibold {{ $dispQuoted !== $dispFinal ? 'text-blue-700':'' }}">{{ $currency }}{{ number_format($dispFinal,2) }}</td><td class="p-3 text-right">{{ $currency }}{{ number_format($dispDiscount,2) }}</td><td class="p-3 text-right font-semibold">{{ $currency }}{{ number_format($dispLineTotal,2) }}</td><td class="p-3"><div class="flex justify-center gap-1">@if($preOrder->status==='pending' && $item->product && auth()->user()->hasPermission('preorder_change_price'))<button onclick="openPrice({{ json_encode(['id'=>$item->id,'name'=>$item->original_product_name,'quoted'=>(float)$item->quoted_price,'current'=>$item->current_selling_price,'final'=>(float)$item->final_price]) }})" class="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Change Price"><i class="fas fa-tags"></i></button>@endif</div></td></tr>@endforeach</tbody></table></div></div>
+            <div class="bg-white rounded-xl shadow overflow-hidden"><div class="px-5 py-4 border-b flex justify-between"><h3 class="font-semibold text-gray-800"><i class="fas fa-gears text-blue-600 mr-2"></i>Products / Parts</h3><span class="text-sm text-gray-500">{{ $preOrder->items->count() }} item(s)</span></div><div class="overflow-x-auto"><table class="w-full min-w-[1150px] text-sm"><thead class="bg-gray-50 text-xs uppercase text-gray-600"><tr><th class="p-3 text-left">Part</th><th class="p-3 text-right">Qty</th><th class="p-3 text-right">Quoted</th><th class="p-3 text-right">Current</th><th class="p-3 text-right">Final</th><th class="p-3 text-right">Discount</th><th class="p-3 text-right">Total</th></tr></thead><tbody class="divide-y">@foreach($preOrder->items as $item) @php $isSeparate = $preOrder->pdf_tax_display === 'separate'; $isExclHidden = $preOrder->pdf_tax_display === 'exclusive_hidden'; $tm = $isExclHidden ? (1 + ((float)$preOrder->custom_tax_rate / 100)) : 1; $dispQuoted = (float)$item->quoted_price * $tm; $dispCurrent = $item->current_selling_price !== null ? (float)$item->current_selling_price * $tm : null; $dispFinal = (float)$item->final_price * $tm; $dispDiscount = (float)$item->discount_amount * $tm; $dispLineTotal = $isSeparate ? ((float)$item->gross_amount - (float)$item->discount_amount) : (float)$item->line_total; @endphp <tr><td class="p-3"><div class="font-semibold">{{ $item->original_product_name }}</div>@if($item->description)<div class="text-xs text-gray-500 mt-1">{{ $item->description }}</div>@endif </td><td class="p-3 text-right">{{ $item->quantity }}</td><td class="p-3 text-right">{{ $currency }}{{ number_format($dispQuoted,2) }}</td><td class="p-3 text-right">{{ $dispCurrent !== null ? $currency.number_format($dispCurrent,2) : '—' }}</td><td class="p-3 text-right font-semibold {{ $dispQuoted !== $dispFinal ? 'text-blue-700':'' }}">{{ $currency }}{{ number_format($dispFinal,2) }}</td><td class="p-3 text-right">{{ $currency }}{{ number_format($dispDiscount,2) }}</td><td class="p-3 text-right font-semibold">{{ $currency }}{{ number_format($dispLineTotal,2) }}</td></tr>@endforeach</tbody></table></div></div>
         </div>
 
         <div class="space-y-6">
@@ -53,19 +50,15 @@
 {{-- Reopen confirmation --}}
 <div id="reopen-modal" class="modal fixed inset-0 hidden items-center justify-center bg-black/50 z-[80] p-4"><div class="bg-white rounded-xl shadow-2xl max-w-lg w-full"><form method="POST" action="{{ route('preorders.reopen',$preOrder) }}">@csrf<div class="p-6"><h3 class="text-xl font-bold">Reopen {{ ucfirst($preOrder->status) }} Pre-Order?</h3>@if($preOrder->status==='completed')<div class="mt-3 p-3 bg-amber-50 text-amber-900 rounded-lg text-sm"><strong>Safe reversal:</strong> the linked sale, stock deductions, payments, cheques, tax and accounting effects will be reversed atomically.</div>@endif<label class="block text-sm font-medium mt-5 mb-2">Reason (optional)</label><textarea name="reason" class="w-full p-3 border rounded-lg" rows="3"></textarea></div><div class="p-4 bg-gray-50 flex justify-end gap-2"><button type="button" onclick="closeModal('reopen-modal')" class="px-4 py-2 bg-gray-200 rounded-lg">Keep Current Status</button><button class="px-4 py-2 bg-amber-500 text-white rounded-lg">Confirm Reopen</button></div></form></div></div>
 
-{{-- Sync modal --}}
-<div id="sync-modal" class="modal fixed inset-0 hidden items-center justify-center bg-black/50 z-[80] p-4"><div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full"><form method="POST" id="sync-form">@csrf<div class="p-6"><h3 class="text-xl font-bold">Sync Product</h3><p class="text-sm text-gray-500 mt-1">Original description remains unchanged in history.</p><div class="mt-4 relative"><input id="sync-search" type="search" placeholder="Search product name or SKU..." class="w-full p-3 border rounded-lg"><div id="sync-results" class="absolute w-full bg-white border rounded-lg shadow-xl mt-1 max-h-60 overflow-y-auto hidden z-10"></div></div><input type="hidden" name="product_id" id="sync-product-id"><input type="hidden" name="product_price_id" id="sync-price-id"><div id="sync-selected" class="hidden mt-4 p-3 bg-green-50 text-green-900 rounded-lg"></div><div class="mt-4"><label class="block text-sm font-medium mb-2">Price decision</label><select name="price_action" id="sync-price-action" class="w-full p-2.5 border rounded-lg"><option value="keep">Keep Quoted Price</option><option value="current">Use Current Product Price</option><option value="custom">Enter New Price</option></select><input type="number" name="custom_price" id="sync-custom-price" step="0.01" min="0" placeholder="New price" class="hidden mt-2 w-full p-2.5 border rounded-lg"></div></div><div class="p-4 bg-gray-50 flex justify-end gap-2"><button type="button" onclick="closeModal('sync-modal')" class="px-4 py-2 bg-gray-200 rounded-lg">Cancel</button><button class="px-5 py-2 bg-indigo-600 text-white rounded-lg">Link Product</button></div></form></div></div>
 
-{{-- Price modal --}}
-<div id="price-modal" class="modal fixed inset-0 hidden items-center justify-center bg-black/50 z-[80] p-4"><div class="bg-white rounded-xl shadow-2xl max-w-lg w-full"><form method="POST" id="price-form">@csrf<div class="p-6"><h3 class="text-xl font-bold">Change Item Price</h3><div id="price-summary" class="mt-3 p-3 bg-gray-50 rounded-lg text-sm"></div><select name="price_action" id="price-action" class="mt-4 w-full p-3 border rounded-lg"><option value="keep">Keep Quoted Price</option><option value="current">Use Current Product Price</option><option value="custom">Enter New Price</option></select><input name="custom_price" id="custom-price" type="number" min="0" step="0.01" class="hidden mt-3 w-full p-3 border rounded-lg" placeholder="New price"></div><div class="p-4 bg-gray-50 flex justify-end gap-2"><button type="button" onclick="closeModal('price-modal')" class="px-4 py-2 bg-gray-200 rounded-lg">Cancel</button><button class="px-5 py-2 bg-blue-600 text-white rounded-lg">Apply & Log</button></div></form></div></div>
 
 {{-- Complete modal --}}
-<div id="complete-modal" class="modal fixed inset-0 hidden items-center justify-center bg-black/50 z-[80] p-4"><div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[92vh] overflow-y-auto"><form method="POST" action="{{ route('preorders.complete',$preOrder) }}">@csrf<div class="p-6"><h3 class="text-xl font-bold">Complete Pre-Order</h3><p class="text-sm text-gray-500">This creates a real sale and deducts linked stock once.</p><div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4"><div class="p-3 bg-gray-50 rounded"><span class="text-xs text-gray-500">Customer</span><div class="font-semibold">{{ $preOrder->customer->name }}</div></div><div class="p-3 bg-gray-50 rounded"><span class="text-xs text-gray-500">Items</span><div class="font-semibold">{{ $preOrder->items->count() }}</div></div><div class="p-3 bg-blue-50 rounded"><span class="text-xs text-blue-600">Grand Total</span><div class="font-bold text-blue-800">{{ $currency }}{{ number_format((float)$preOrder->grand_total,2) }}</div></div></div><div class="mt-4 overflow-x-auto"><table class="w-full text-sm"><thead><tr class="bg-gray-50"><th class="p-2 text-left">Item</th><th class="p-2 text-right">Needed</th><th class="p-2 text-right">Available</th><th class="p-2">Ready</th></tr></thead><tbody>@foreach($preOrder->items as $item)<tr class="border-b"><td class="p-2">{{ $item->original_product_name }}</td><td class="p-2 text-right">{{ $item->quantity }}</td><td class="p-2 text-right">{{ $item->current_stock ?? '—' }}</td><td class="p-2 text-center">{!! $item->product_id && $item->current_stock >= $item->quantity ? '<span class="text-green-600">✓</span>' : '<span class="text-red-600">Needs attention</span>' !!}</td></tr>@endforeach</tbody></table></div><div class="mt-5 flex justify-between items-center"><h4 class="font-semibold">Payments (multiple methods supported)</h4><button type="button" onclick="addCompletionPayment()" class="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-sm"><i class="fas fa-plus mr-1"></i>Add Method</button></div><div id="completion-payments" class="space-y-3 mt-3"></div><div class="mt-4 p-3 bg-gray-50 rounded-lg flex flex-wrap justify-between gap-3 text-sm"><span>Invoice: <strong>{{ $currency }}{{ number_format((float)$preOrder->grand_total,2) }}</strong></span><span>Allocated: <strong id="allocated-total">{{ $currency }}0.00</strong></span><span>Remaining Due: <strong id="completion-due" class="text-red-600">{{ $currency }}{{ number_format((float)$preOrder->grand_total,2) }}</strong></span></div></div><div class="p-4 bg-gray-50 flex justify-end gap-2"><button type="button" onclick="closeModal('complete-modal')" class="px-4 py-2 bg-gray-200 rounded-lg">Review Again</button><button class="px-5 py-2 bg-green-600 text-white rounded-lg">Confirm Complete</button></div></form></div></div>
+<div id="complete-modal" class="modal fixed inset-0 hidden items-center justify-center bg-black/50 z-[80] p-4"><div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[92vh] overflow-y-auto"><form method="POST" action="{{ route('preorders.complete',$preOrder) }}">@csrf<div class="p-6"><h3 class="text-xl font-bold">Complete Pre-Order</h3><p class="text-sm text-gray-500">This completes the pre order.</p><div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4"><div class="p-3 bg-gray-50 rounded"><span class="text-xs text-gray-500">Customer</span><div class="font-semibold">{{ $preOrder->customer->name }}</div></div><div class="p-3 bg-gray-50 rounded"><span class="text-xs text-gray-500">Items</span><div class="font-semibold">{{ $preOrder->items->count() }}</div></div><div class="p-3 bg-blue-50 rounded"><span class="text-xs text-blue-600">Grand Total</span><div class="font-bold text-blue-800">{{ $currency }}{{ number_format((float)$preOrder->grand_total,2) }}</div></div></div><div class="mt-4 overflow-x-auto"><table class="w-full text-sm"><thead><tr class="bg-gray-50"><th class="p-2 text-left">Item</th><th class="p-2 text-right">Needed</th></tr></thead><tbody>@foreach($preOrder->items as $item)<tr class="border-b"><td class="p-2">{{ $item->original_product_name }}</td><td class="p-2 text-right">{{ $item->quantity }}</td></tr>@endforeach</tbody></table></div><div class="mt-5 flex justify-between items-center"><h4 class="font-semibold">Payments (multiple methods supported)</h4><button type="button" onclick="addCompletionPayment()" class="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-sm"><i class="fas fa-plus mr-1"></i>Add Method</button></div><div id="completion-payments" class="space-y-3 mt-3"></div><div class="mt-4 p-3 bg-gray-50 rounded-lg flex flex-wrap justify-between gap-3 text-sm"><span>Invoice: <strong>{{ $currency }}{{ number_format((float)$preOrder->grand_total,2) }}</strong></span><span>Allocated: <strong id="allocated-total">{{ $currency }}0.00</strong></span><span>Remaining Due: <strong id="completion-due" class="text-red-600">{{ $currency }}{{ number_format((float)$preOrder->grand_total,2) }}</strong></span></div></div><div class="p-4 bg-gray-50 flex justify-end gap-2"><button type="button" onclick="closeModal('complete-modal')" class="px-4 py-2 bg-gray-200 rounded-lg">Review Again</button><button class="px-5 py-2 bg-green-600 text-white rounded-lg">Confirm Complete</button></div></form></div></div>
 
 {{-- Future payment modal --}}
 <div id="payment-modal" class="modal fixed inset-0 hidden items-center justify-center bg-black/50 z-[80] p-4"><div class="bg-white rounded-xl shadow-2xl max-w-lg w-full"><form method="POST" action="{{ route('preorders.payments.store',$preOrder) }}">@csrf<div class="p-6 space-y-4"><h3 class="text-xl font-bold">Collect Payment</h3><div class="p-3 bg-red-50 text-red-800 rounded-lg">Remaining due: <strong>{{ $currency }}{{ number_format((float)$preOrder->due_amount,2) }}</strong></div><div><label class="text-sm font-medium">Amount *</label><input name="amount" type="number" min="0.01" max="{{ $preOrder->due_amount }}" step="0.01" required class="mt-1 w-full p-3 border rounded-lg"></div><div><label class="text-sm font-medium">Method *</label><select name="payment_method" id="future-method" class="mt-1 w-full p-3 border rounded-lg"><option value="cash">Cash</option><option value="bank_deposit">Bank Deposit</option><option value="bank_transfer">Bank Transfer</option><option value="card">Card</option><option value="mobile_payment">Mobile Payment</option><option value="cheque">Cheque</option><option value="due_payment">Due Payment</option></select></div><div><label class="text-sm font-medium">Date *</label><input name="payment_date" type="date" value="{{ now()->format('Y-m-d') }}" required class="mt-1 w-full p-3 border rounded-lg"></div><div><label class="text-sm font-medium">Reference</label><input name="reference_no" class="mt-1 w-full p-3 border rounded-lg"></div><div id="future-cheque" class="hidden grid grid-cols-2 gap-3"><input name="cheque_number" placeholder="Cheque number" class="p-3 border rounded-lg"><input name="cheque_date" type="date" class="p-3 border rounded-lg"><input name="bank_name" placeholder="Bank" class="p-3 border rounded-lg"><input name="account_name" placeholder="Account name" class="p-3 border rounded-lg"></div><textarea name="notes" placeholder="Notes" class="w-full p-3 border rounded-lg"></textarea></div><div class="p-4 bg-gray-50 flex justify-end gap-2"><button type="button" onclick="closeModal('payment-modal')" class="px-4 py-2 bg-gray-200 rounded-lg">Cancel</button><button class="px-5 py-2 bg-blue-600 text-white rounded-lg">Save Payment</button></div></form></div></div>
 
-@include('preorders.partials.product_modal')
+
 <script>
 const currency=@json($currency);
 function openModal(id){const m=document.getElementById(id);m.classList.remove('hidden');m.classList.add('flex');if(id==='complete-modal')enhanceCompleteSummary()}
@@ -73,176 +66,13 @@ function closeModal(id){const m=document.getElementById(id);m.classList.add('hid
 document.querySelector('.fa-clock-rotate-left')?.closest('.bg-white')?.setAttribute('id','payment-history');
 document.querySelector('.fa-list-check')?.closest('.bg-white')?.setAttribute('id','activity-history');
 function enhanceCompleteSummary(){if(document.getElementById('complete-extra-summary'))return;const target=document.querySelector('#complete-modal .overflow-x-auto');if(!target)return;const summary=document.createElement('div');summary.id='complete-extra-summary';summary.className='grid grid-cols-3 gap-3 mt-3';summary.innerHTML=`<div class="p-3 bg-gray-50 rounded"><span class="text-xs text-gray-500">Subtotal</span><div class="font-semibold">{{ $currency }}{{ number_format((float)$preOrder->subtotal,2) }}</div></div><div class="p-3 bg-red-50 rounded"><span class="text-xs text-red-600">Discount</span><div class="font-semibold text-red-800">{{ $currency }}{{ number_format((float)$preOrder->discount_amount,2) }}</div></div>@if($preOrder->pdf_tax_display !== 'inclusive')<div class="p-3 bg-gray-50 rounded"><span class="text-xs text-gray-500">Tax</span><div class="font-semibold">{{ $currency }}{{ number_format((float)$preOrder->tax_amount,2) }}</div></div>@endif`;target.before(summary)}
-const syncBase=@json(url('preorders/'.$preOrder->id.'/items'));
-function openSync(item, event){
-    if (item.is_synced) {
-        if (confirm('This product is already synced to the inventory. Do you want to remove the sync?')) {
-            if (event && event.currentTarget) {
-                const btn = event.currentTarget;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-                btn.disabled = true;
-            }
-            fetch(`${syncBase}/${item.id}/unsync`, {
-                method: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-                    'Accept': 'application/json'
-                }
-            }).then(() => window.location.reload());
-        }
-        return;
-    }
-    document.getElementById('sync-form').action=`${syncBase}/${item.id}/sync`;document.getElementById('sync-product-id').value='';document.getElementById('sync-price-id').value='';document.getElementById('sync-selected').classList.add('hidden');document.getElementById('sync-search').value='';openModal('sync-modal');
-}
-let syncTimer;document.getElementById('sync-search')?.addEventListener('input',function(){clearTimeout(syncTimer);syncTimer=setTimeout(async()=>{const u=new URL(@json(route('preorders.search-products')),location.origin);u.searchParams.set('q',this.value);u.searchParams.set('store_id',@json($preOrder->store_id));const r=await fetch(u,{headers:{Accept:'application/json'}});if(!r.ok)return;const data=await r.json(),box=document.getElementById('sync-results');box.innerHTML='';data.forEach(p=>{const b=document.createElement('button');b.type='button';b.className='w-full p-3 text-left border-b hover:bg-blue-50';b.textContent=`${p.name} · SKU ${p.sku||'—'} · Stock ${p.stock} · ${currency}${Number(p.selling_price).toFixed(2)}`;b.onclick=()=>{document.getElementById('sync-product-id').value=p.id;document.getElementById('sync-price-id').value=p.product_price_id||'';const s=document.getElementById('sync-selected');s.textContent=`Selected: ${p.name} · Stock ${p.stock} · Current price ${currency}${Number(p.selling_price).toFixed(2)}`;s.classList.remove('hidden');box.classList.add('hidden')};box.appendChild(b)});box.classList.remove('hidden')},250)});
-document.getElementById('sync-price-action')?.addEventListener('change',function(){document.getElementById('sync-custom-price').classList.toggle('hidden',this.value!=='custom')});
-function openPrice(item){document.getElementById('price-form').action=`${syncBase}/${item.id}/price`;document.getElementById('price-summary').textContent=`${item.name} — Quoted ${currency}${item.quoted.toFixed(2)}, Current ${currency}${Number(item.current||0).toFixed(2)}, Final ${currency}${item.final.toFixed(2)}`;openModal('price-modal')}
-document.getElementById('price-action')?.addEventListener('change',function(){document.getElementById('custom-price').classList.toggle('hidden',this.value!=='custom')});
+
 const total={{ (float)$preOrder->grand_total }};let paymentIndex=0;
 function addCompletionPayment(){const i=paymentIndex++,row=document.createElement('div');row.className='payment-row border rounded-lg p-3';row.innerHTML=`<div class="grid grid-cols-1 md:grid-cols-5 gap-2"><select name="payments[${i}][method]" class="method p-2 border rounded"><option value="cash">Cash</option><option value="bank_deposit">Bank Deposit</option><option value="bank_transfer">Bank Transfer</option><option value="card">Card</option><option value="mobile_payment">Mobile</option><option value="cheque">Cheque</option><option value="due">Due (no collection)</option></select><input name="payments[${i}][amount]" type="number" min="0" step="0.01" placeholder="Amount" class="amount p-2 border rounded"><input name="payments[${i}][date]" type="date" value="{{ now()->format('Y-m-d') }}" class="p-2 border rounded"><input name="payments[${i}][reference]" placeholder="Reference" class="p-2 border rounded"><button type="button" class="text-red-600" onclick="this.closest('.payment-row').remove();calcPayments()"><i class="fas fa-trash"></i></button></div><div class="cheque-fields hidden grid grid-cols-1 md:grid-cols-4 gap-2 mt-2"><input name="payments[${i}][cheque_number]" placeholder="Cheque number" class="p-2 border rounded"><input name="payments[${i}][cheque_date]" type="date" class="p-2 border rounded"><input name="payments[${i}][bank_name]" placeholder="Bank" class="p-2 border rounded"><input name="payments[${i}][account_name]" placeholder="Account name" class="p-2 border rounded"></div>`;document.getElementById('completion-payments').appendChild(row);row.querySelector('.method').onchange=function(){row.querySelector('.cheque-fields').classList.toggle('hidden',this.value!=='cheque');calcPayments()};row.querySelector('.amount').oninput=calcPayments;calcPayments()}
 function calcPayments(){let allocated=0;document.querySelectorAll('.payment-row').forEach(r=>{if(r.querySelector('.method').value!=='due')allocated+=Number(r.querySelector('.amount').value||0)});document.getElementById('allocated-total').textContent=currency+allocated.toFixed(2);document.getElementById('completion-due').textContent=currency+Math.max(0,total-allocated).toFixed(2)}
 document.getElementById('future-method')?.addEventListener('change',function(){document.getElementById('future-cheque').classList.toggle('hidden',this.value!=='cheque')});
 
-// Setup Quick Product Constants
-function openCreateProductForSync(item) {
-    document.getElementById('cps_item_id').value = item.id;
-    const form = document.getElementById('createProductSyncForm');
-    form.reset();
-    form.querySelector('[name="name"]').value = item.name;
-    document.getElementById('purchase_details_container')?.classList.add('hidden');
-    document.getElementById('purchase_due_amount').textContent = '0.00';
-    attachQuickProductListeners();
-    openModal('createProductSyncModal');
-}
 
-document.getElementById('createProductSyncForm')?.addEventListener('submit', async function(e) {
-    e.preventDefault();
-    const form = this;
-    const btn = form.querySelector('button[type="submit"]');
-    const itemId = document.getElementById('cps_item_id').value;
-    
-    // Validate
-    if(!form.checkValidity()) {
-        form.reportValidity();
-        return;
-    }
-    
-    btn.disabled = true;
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Creating...';
-    
-    try {
-        const formData = new FormData(form);
-        formData.append('is_pre_order', '1');
-
-        const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
-        
-        // 1. Create the product
-        const createRes = await fetch('/products', {
-            method: 'POST',
-            headers: {
-                'X-CSRF-TOKEN': csrfToken,
-                'Accept': 'application/json'
-            },
-            body: formData
-        });
-        
-        const createData = await createRes.json();
-        if (!createRes.ok) {
-            let msg = createData.message || 'Error creating product';
-            if (createData.errors) {
-                msg += '\n' + Object.values(createData.errors).map(e => e.join(', ')).join('\n');
-            }
-            throw new Error(msg);
-        }
-        
-        const productId = createData.product.id;
-        
-        // 2. Mark as purchase (if checked)
-
-        const markAsPurchase = document.getElementById('mark_as_purchase').checked;
-        if (markAsPurchase) {
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Logging Purchase...';
-            
-            const supplierId = document.getElementById('purchase_supplier_id').value;
-            const paymentMethod = document.getElementById('purchase_payment_method').value;
-            const paidAmount = document.getElementById('purchase_amount_paid').value;
-            const qty = parseFloat(formData.get('stock_quantity') || 0);
-            const cost = parseFloat(formData.get('cost_price') || 0);
-            const sell = parseFloat(formData.get('selling_price') || 0);
-
-            const purchasePayload = {
-                is_pre_order: 1,
-                supplier_id: supplierId,
-                purchase_date: new Date().toISOString().split('T')[0],
-                status: 'received',
-                items: [{
-                    product_id: productId,
-                    quantity: qty,
-                    unit_cost: cost,
-                    selling_price: sell,
-                    add_to_price_stock: true
-                }],
-                payments: [{
-                    method: paymentMethod,
-                    amount: paidAmount,
-                    cheque_id: document.getElementById('purchase_cheque_id') ? document.getElementById('purchase_cheque_id').value : null,
-                    bank_name: document.getElementById('purchase_bank_name') ? document.getElementById('purchase_bank_name').value : null,
-                    cheque_date: document.getElementById('purchase_cheque_date') ? document.getElementById('purchase_cheque_date').value : null,
-                    cheque_number: document.getElementById('purchase_cheque_number') ? document.getElementById('purchase_cheque_number').value : null
-                }]
-            };
-            
-            const purchRes = await fetch('/purchases', {
-                method: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': csrfToken,
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(purchasePayload)
-            });
-            
-            if (!purchRes.ok) {
-                const purchData = await purchRes.json();
-                let msg = purchData.message || 'Error logging purchase';
-                if (purchData.errors) {
-                    msg += '\n' + Object.values(purchData.errors).map(e => e.join(', ')).join('\n');
-                }
-                throw new Error(msg + '\n(Note: Product was created successfully)');
-            }
-        }
-        
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Syncing...';
-        
-        // 3. Sync the product
-        const syncUrl = `/preorders/${ @json($preOrder->id) }/items/${itemId}/sync`;
-        const syncRes = await fetch(syncUrl, {
-            method: 'POST',
-            headers: {
-                'X-CSRF-TOKEN': csrfToken,
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                product_id: productId,
-                price_action: 'current'
-            })
-        });
-        
-        if (!syncRes.ok) {
-            const syncData = await syncRes.json();
-            throw new Error(syncData.message || 'Error syncing product. Product created, but sync failed.');
-        }
-        
-        window.location.reload();
-        
-    } catch(err) {
-        alert(err.message);
-        btn.disabled = false;
-        btn.innerHTML = originalText;
-    }
-});
 
 
 
