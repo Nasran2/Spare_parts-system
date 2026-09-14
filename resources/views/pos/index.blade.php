@@ -132,6 +132,18 @@
 
         </div>
 
+        @if(!empty($editSaleId))
+            <div class="bg-indigo-600 text-white px-4 py-2 flex justify-between items-center z-50 shadow-md">
+                <div class="font-bold text-sm">
+                    <i class="fas fa-edit mr-2"></i> EDIT MODE: Editing Sale ID #{{ $editSaleId }}
+                </div>
+                <a href="{{ route('pos.cancel_edit') }}" class="text-xs bg-indigo-800 hover:bg-indigo-900 px-3 py-1.5 rounded-lg border border-indigo-500 font-semibold transition">
+                    <i class="fas fa-times mr-1"></i> Cancel Edit
+                </a>
+            </div>
+            <input type="hidden" id="edit_sale_id" value="{{ $editSaleId }}">
+        @endif
+
         <!-- POS Content: Products LEFT + Cart RIGHT -->
         <div class="flex-1 overflow-hidden flex bg-slate-100" style="min-height:0">
 
@@ -161,10 +173,17 @@
             <div id="pos-cart-panel" class="w-full lg:w-[440px] lg:shrink-0 bg-white flex flex-col overflow-hidden">
 
                 <!-- Customer selector -->
+                @php
+                    $customerName = 'Walk-in Customer';
+                    if (!empty($editCustomerId)) {
+                        $c = collect($customers)->firstWhere('id', $editCustomerId);
+                        if ($c) $customerName = $c->name;
+                    }
+                @endphp
                 <div class="px-3 py-2 border-b border-slate-200 bg-slate-50 flex items-center gap-2">
                     <div class="pos-customer-picker relative flex-1" data-customers='@json($customerList)'>
-                        <input type="text" class="pos-customer-search w-full h-9 px-3 pr-8 border border-slate-200 bg-white rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" placeholder="Search customer name / phone / email" autocomplete="off" value="Walk-in Customer">
-                        <input id="customer-select" type="hidden" class="pos-customer-id" value="">
+                        <input type="text" class="pos-customer-search w-full h-9 px-3 pr-8 border border-slate-200 bg-white rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" placeholder="Search customer name / phone / email" autocomplete="off" value="{{ $customerName }}">
+                        <input id="customer-select" type="hidden" class="pos-customer-id" value="{{ $editCustomerId ?? '' }}">
                         <i class="fas fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
                         <div class="pos-customer-results hidden absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg"></div>
                     </div>
@@ -2867,6 +2886,7 @@
         let chequeDate = document.getElementById('cheque-date')?.value || '';
         let chequeNumber = document.getElementById('cheque-number')?.value || '';
         let chequeBank = document.getElementById('cheque-bank')?.value || '';
+        let chequeName = document.getElementById('cheque-name')?.value || '';
         if (Array.isArray(payloadExtra.payments)) {
             const missingCheque = payloadExtra.payments.find(p => p.method === 'cheque' && (!p.cheque_date || !String(p.cheque_number || '').trim()));
             if (missingCheque) {
@@ -2894,6 +2914,7 @@
                 cheque_bank: chequeBank || null,
                 cheque_name: chequeName || null,
                 use_advance: useAdvance,
+                edit_sale_id: document.getElementById('edit_sale_id')?.value || null,
                 ...payloadExtra
             });
         } catch(err){

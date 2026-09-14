@@ -39,7 +39,7 @@
                     @forelse($preOrders as $order)
                     <tr class="hover:bg-gray-50">
                         <td class="px-4 py-3 font-mono font-bold text-blue-700"><a href="{{ route('preorders.show', $order) }}">{{ $order->pre_order_number }}</a>@if($order->sale)<div class="text-xs text-gray-500">{{ $order->sale->sale_no }}</div>@endif</td>
-                        <td class="px-4 py-3">{{ $order->pre_order_date->format('Y-m-d') }}</td><td class="px-4 py-3 font-medium"><a href="{{ route('customers.show', $order->customer_id) }}" class="text-blue-600 hover:underline">{{ $order->customer->name }}</a></td><td class="px-4 py-3">{{ $order->customer->phone ?: '—' }}</td><td class="px-4 py-3">{{ $order->vehicle_name }}</td>
+                        <td class="px-4 py-3">{{ $order->pre_order_date->format('Y-m-d') }}</td><td class="px-4 py-3 font-medium"><a href="javascript:void(0)" onclick="openCustomerModal({{ $order->customer_id }})" class="text-blue-600 hover:underline">{{ $order->customer->name }}</a></td><td class="px-4 py-3">{{ $order->customer->phone ?: '—' }}</td><td class="px-4 py-3">{{ $order->vehicle_name }}</td>
                         <td class="px-4 py-3 text-right font-semibold">{{ $currency }}{{ number_format((float)$order->grand_total, 2) }}</td><td class="px-4 py-3 text-right">{{ $currency }}{{ number_format((float)$order->paid_amount, 2) }}</td><td class="px-4 py-3 text-right {{ (float)$order->due_amount > 0 ? 'text-red-600 font-semibold':'' }}">{{ $currency }}{{ number_format((float)$order->due_amount, 2) }}</td>
                         <td class="px-4 py-3 text-center"><span class="px-2 py-1 rounded-full text-xs font-semibold {{ $statusColors[$order->status] ?? 'bg-gray-100' }}">{{ ucfirst($order->status) }}</span></td><td class="px-4 py-3 text-center"><span class="px-2 py-1 rounded-full text-xs font-semibold {{ $paymentColors[$order->payment_status] ?? 'bg-gray-100' }}">{{ $order->payment_status === 'partial' ? 'Partially Paid' : ucfirst($order->payment_status) }}</span></td>
                         <td class="px-4 py-3">{{ $order->expected_delivery_date?->format('Y-m-d') ?? '—' }}</td><td class="px-4 py-3">{{ $order->creator?->name ?? '—' }}</td>
@@ -52,4 +52,58 @@
         @if($preOrders->hasPages())<div class="p-4 border-t">{{ $preOrders->links() }}</div>@endif
     </div>
 </div>
+
+<!-- Modal Container -->
+<div id="customerModal" class="fixed inset-0 z-50 flex items-center justify-center hidden bg-black bg-opacity-50">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto relative">
+        <div id="customerModalContent">
+            <!-- Modal Content will be injected here via AJAX -->
+            <div class="p-10 text-center text-gray-500">
+                <i class="fas fa-spinner fa-spin text-3xl mb-3"></i>
+                <p>Loading customer details...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function openCustomerModal(customerId) {
+        const modal = document.getElementById('customerModal');
+        const content = document.getElementById('customerModalContent');
+        
+        modal.classList.remove('hidden');
+        content.innerHTML = `
+            <div class="p-10 text-center text-gray-500">
+                <i class="fas fa-spinner fa-spin text-3xl mb-3"></i>
+                <p>Loading customer details...</p>
+            </div>
+        `;
+
+        fetch(`/preorders/customer/${customerId}/modal`)
+            .then(res => res.text())
+            .then(html => {
+                content.innerHTML = html;
+            })
+            .catch(err => {
+                content.innerHTML = `
+                    <div class="p-10 text-center text-red-500">
+                        <i class="fas fa-exclamation-triangle text-3xl mb-3"></i>
+                        <p>Error loading customer details. Please try again.</p>
+                        <button type="button" class="mt-4 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300" onclick="closeCustomerModal()">Close</button>
+                    </div>
+                `;
+            });
+    }
+
+    function closeCustomerModal() {
+        document.getElementById('customerModal').classList.add('hidden');
+    }
+
+    // Close modal when clicking outside
+    document.getElementById('customerModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeCustomerModal();
+        }
+    });
+</script>
 @endsection

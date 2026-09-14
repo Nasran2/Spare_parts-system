@@ -760,7 +760,47 @@ class SaleController extends Controller
      */
     public function edit(string $id)
     {
-        //
+        if (! \Illuminate\Support\Facades\Auth::user()?->hasPermission('sales.edit')) {
+            return redirect()->back()->with('error', 'You do not have permission to edit sales.');
+        }
+
+        $sale = Sale::with(['items.product'])->findOrFail($id);
+
+        if ($sale->returns()->exists()) {
+            return redirect()->back()->with('error', 'Cannot edit a sale that has returns associated with it.');
+        }
+
+        // Format cart
+        $cart = [
+            'items' => [],
+            'discount' => ['type' => 'fixed', 'value' => (float)$sale->discount],
+            'tax_rate' => (float)($sale->tax_snapshot['rate'] ?? 0),
+        ];
+
+        foreach ($sale->items as $item) {
+            $key = $item->product_id . '_' . ($item->product_price_id ?: 'null');
+            $cart['items'][$key] = [
+                'id' => $item->product_id,
+                'price_id' => $item->product_price_id,
+                'name' => $item->product ? $item->product->name : 'Unknown Product',
+                'price' => (float)$item->unit_price,
+                'qty' => (float)$item->quantity,
+                'unit_id' => $item->unit_id,
+                'unit_multiplier' => 1,
+                'discount_type' => $item->discount_type ?: 'fixed',
+                'discount_value' => (float)$item->discount_amount,
+                'tax_rate' => 0,
+                'description' => $item->description,
+            ];
+        }
+
+        \Illuminate\Support\Facades\Session::put('pos.cart', $cart);
+        \Illuminate\Support\Facades\Session::put('pos.edit_sale_id', $sale->id);
+        if ($sale->customer_id) {
+            \Illuminate\Support\Facades\Session::put('pos.customer_id', $sale->customer_id);
+        }
+
+        return redirect()->route('pos.index');
     }
 
     /**

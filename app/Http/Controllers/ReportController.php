@@ -1516,6 +1516,7 @@ class ReportController extends Controller
 
         [$from, $to] = $this->dateRange($request);
         $query = Payment::with(['customer', 'sale'])
+            ->whereNull('pre_order_id')
             ->where(function ($q) {
                 $q->whereNotNull('sale_id')->orWhereNotNull('customer_id');
             })
@@ -1814,6 +1815,7 @@ class ReportController extends Controller
 
         [$from, $to] = $this->dateRange($request);
         $payments = Payment::with(['customer','sale'])
+            ->whereNull('pre_order_id')
             ->where(function ($q) { $q->whereNotNull('sale_id')->orWhereNotNull('customer_id'); })
             ->when(!empty($hiddenCustomerIds), fn ($q) => $q->where(fn ($cq) => $cq->whereNull('customer_id')->orWhereNotIn('customer_id', $hiddenCustomerIds)))
             ->when(!empty($hiddenSaleIds), fn ($q) => $q->where(fn ($sq) => $sq->whereNull('sale_id')->orWhereNotIn('sale_id', $hiddenSaleIds)))
@@ -1849,6 +1851,7 @@ class ReportController extends Controller
 
         [$from, $to] = $this->dateRange($request);
         $payments = Payment::with(['customer','sale'])
+            ->whereNull('pre_order_id')
             ->where(function ($q) { $q->whereNotNull('sale_id')->orWhereNotNull('customer_id'); })
             ->when(!empty($hiddenCustomerIds), fn ($q) => $q->where(fn ($cq) => $cq->whereNull('customer_id')->orWhereNotIn('customer_id', $hiddenCustomerIds)))
             ->when(!empty($hiddenSaleIds), fn ($q) => $q->where(fn ($sq) => $sq->whereNull('sale_id')->orWhereNotIn('sale_id', $hiddenSaleIds)))

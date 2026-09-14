@@ -113,6 +113,14 @@ class PreOrderController extends Controller
     }
 
 
+    public function customerModal(Customer $customer)
+    {
+        $preOrders = $customer->preOrders()->orderBy('pre_order_date', 'desc')->get();
+        $payments = $customer->payments()->whereNotNull('pre_order_id')->with('preOrder')->orderBy('payment_date', 'desc')->get();
+
+        return view('preorders.partials.customer_modal', compact('customer', 'preOrders', 'payments'));
+    }
+
     public function create(Request $request)
     {
         return view('preorders.create', $this->formData($request));

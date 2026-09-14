@@ -182,6 +182,11 @@
                                 <a href="{{ route('sales.print', $sale->id) }}" target="_blank" class="p-2 text-green-600 hover:bg-green-50 rounded-lg transition" title="Print">
                                     <i class="fas fa-print"></i>
                                 </a>
+                                @if(auth()->user()?->hasPermission('sales.edit'))
+                                <a href="{{ route('sales.edit', $sale->id) }}" class="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                @endif
                                 @if($sale->payment_status !== 'paid' && (float) ($sale->due_amount ?? 0) > 0)
                                 <button onclick="openPaymentModal({{ $sale->id }}, '{{ $privacyInvoiceLabel }}', {{ $sale->due_amount }}, '{{ $sale->customer ? $sale->customer->name : 'Walk-in Customer' }}', {{ \App\Support\SecretPos::isHidden($sale->total_amount) ? 'true' : 'false' }})" 
                                         class="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition" 

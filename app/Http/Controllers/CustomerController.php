@@ -245,7 +245,7 @@ class CustomerController extends Controller
         }
         
         // Pre-orders have been intentionally omitted from the main customer ledger
-        $genericPaymentsList = $customer->payments()->whereNull('sale_id')->get();
+        $genericPaymentsList = $customer->payments()->whereNull('sale_id')->whereNull('pre_order_id')->get();
         foreach ($genericPaymentsList as $gp) {
             $pDate = optional($gp->payment_date)->toDateString() ?: $gp->created_at->toDateString();
             $transactions[] = [

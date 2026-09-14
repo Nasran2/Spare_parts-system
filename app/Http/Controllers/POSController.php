@@ -84,6 +84,8 @@ class POSController extends Controller
             'productPayload' => $productPayload,
             'posMode' => $mode,
             'isQuotationMode' => $mode === 'quotation',
+            'editSaleId' => \Illuminate\Support\Facades\Session::get('pos.edit_sale_id'),
+            'editCustomerId' => \Illuminate\Support\Facades\Session::get('pos.customer_id'),
         ];
     }
 
@@ -109,6 +111,17 @@ class POSController extends Controller
     public function create()
     {
         //
+    }
+
+    /**
+     * Cancel edit mode and clear cart.
+     */
+    public function cancelEdit()
+    {
+        \Illuminate\Support\Facades\Session::forget('pos.edit_sale_id');
+        \Illuminate\Support\Facades\Session::forget('pos.customer_id');
+        \Illuminate\Support\Facades\Session::forget('pos.cart');
+        return redirect()->route('pos.index');
     }
 
     /**
@@ -468,6 +481,19 @@ class POSController extends Controller
             return response()->json(['message' => 'You do not have permission to print Tax Bills.'], 403);
         }
 
+        $editSaleId = $request->input('edit_sale_id');
+        $saleToEdit = null;
+        $previousPaidAmount = 0;
+        $previousHeldChequeAmount = 0;
+        if ($editSaleId) {
+            $saleToEdit = Sale::with('items')->find($editSaleId);
+            if (!$saleToEdit) {
+                return response()->json(['message' => 'The sale to edit could not be found.'], 422);
+            }
+            $previousPaidAmount = $saleToEdit->paid_amount;
+            $previousHeldChequeAmount = $saleToEdit->held_cheque_amount;
+        }
+
         DB::beginTransaction();
         try {
             $userId = Auth::id();
@@ -785,9 +811,12 @@ class POSController extends Controller
                 }
 
                 $cashLikePaid = max(0, $paidCash - $chequeHeldAmount);
-                $totalPaid = $cashLikePaid + $returnCredit;
+                $totalPaid = $cashLikePaid + $returnCredit + $previousPaidAmount;
                 $salePaid = min($effectiveTotalAmount, $totalPaid);
-                $heldChequeForSale = min(max(0, $effectiveTotalAmount - $salePaid), $chequeHeldAmount);
+                
+                $totalHeldCheque = $chequeHeldAmount + $previousHeldChequeAmount;
+                $heldChequeForSale = min(max(0, $effectiveTotalAmount - $salePaid), $totalHeldCheque);
+                
                 $due = $effectiveTotalAmount - $salePaid - $heldChequeForSale;
                 if ($due < 0) {
                     $due = 0;
@@ -808,36 +837,75 @@ class POSController extends Controller
                 }
 
                 $firstChequeDetail = collect($chequePaymentDetails)->first();
+                $notes = $request->string('notes')
+                    .(! empty($returnItemsData) ? ' (Exchange/Return Processed)' : '')
+                    .(($hasCard && $cardFee > 0)
+                        ? ($cardFeeMode === 'customer'
+                            ? " (Card fee charged to customer: {$cardFeeRate}% = {$cardFee})"
+                            : " (Card fee paid by seller: {$cardFeeRate}% = {$cardFee})")
+                        : '');
 
-                DatabaseAutoIncrementRepair::repairPrimaryId('sales');
-                $sale = Sale::create([
-                    'store_id' => $storeId,
-                    'customer_id' => $customerId,
-                    'user_id' => $userId,
-                    'sale_date' => now(),
-                    'subtotal' => $subtotal,
-                    'tax' => $taxAmount,
-                    'rounding_adjustment' => $taxInvoice['totals']['rounding_adjustment'],
-                    'tax_template_version' => $taxSettings->active_template_version,
-                    'discount' => $discountAmount,
-                    'total_amount' => $effectiveTotalAmount,
-                    'paid_amount' => $salePaid,
-                    'held_cheque_amount' => $heldChequeForSale,
-                    'tendered_amount' => $tenderedAmount,
-                    'due_amount' => $due,
-                    'payment_status' => ($due > 0 || $heldChequeForSale > 0) ? 'partial' : 'paid',
-                    'payment_method' => $paymentMethod,
-                    'cheque_number' => $chequeHeldAmount > 0 ? ($firstChequeDetail['cheque_number'] ?? null) : null,
-                    'bank_reference' => $chequeHeldAmount > 0 ? ($firstChequeDetail['bank_name'] ?? null) : null,
-                    'sale_type' => 'sale',
-                    'notes' => $request->string('notes')
-                        .(! empty($returnItemsData) ? ' (Exchange/Return Processed)' : '')
-                        .(($hasCard && $cardFee > 0)
-                            ? ($cardFeeMode === 'customer'
-                                ? " (Card fee charged to customer: {$cardFeeRate}% = {$cardFee})"
-                                : " (Card fee paid by seller: {$cardFeeRate}% = {$cardFee})")
-                            : ''),
-                ]);
+                if ($saleToEdit) {
+                    // Revert old items stock
+                    foreach ($saleToEdit->items as $item) {
+                        \App\Models\Product::where('id', $item->product_id)->increment('stock_quantity', (int) $item->quantity);
+                        if ($item->product_price_id && (bool) Setting::get('use_price_wise_stock', true)) {
+                            \App\Models\ProductPrice::whereKey($item->product_price_id)->increment('stock_qty', (int) $item->quantity);
+                        }
+                    }
+                    app(\App\Services\TaxPostingService::class)->reverse('sale', $saleToEdit->id, 'Sale edited');
+
+                    // Delete old items and tax records
+                    $saleToEdit->items()->delete();
+                    \App\Models\TransactionTaxLine::where('transaction_type', 'sale')->where('transaction_id', $saleToEdit->id)->delete();
+
+                    $saleToEdit->update([
+                        'store_id' => $storeId,
+                        'customer_id' => $customerId,
+                        'subtotal' => $subtotal,
+                        'tax' => $taxAmount,
+                        'rounding_adjustment' => $taxInvoice['totals']['rounding_adjustment'],
+                        'tax_template_version' => $taxSettings->active_template_version,
+                        'discount' => $discountAmount,
+                        'total_amount' => $effectiveTotalAmount,
+                        'paid_amount' => $salePaid,
+                        'held_cheque_amount' => $heldChequeForSale,
+                        'tendered_amount' => $tenderedAmount,
+                        'due_amount' => $due,
+                        'payment_status' => ($due > 0 || $heldChequeForSale > 0) ? 'partial' : 'paid',
+                        'notes' => $saleToEdit->notes . "\n" . $notes,
+                    ]);
+                    
+                    $sale = $saleToEdit;
+                    
+                    \Illuminate\Support\Facades\Session::forget('pos.edit_sale_id');
+                    \Illuminate\Support\Facades\Session::forget('pos.customer_id');
+                } else {
+                    DatabaseAutoIncrementRepair::repairPrimaryId('sales');
+                    $sale = Sale::create([
+                        'store_id' => $storeId,
+                        'customer_id' => $customerId,
+                        'user_id' => $userId,
+                        'sale_date' => now(),
+                        'subtotal' => $subtotal,
+                        'tax' => $taxAmount,
+                        'rounding_adjustment' => $taxInvoice['totals']['rounding_adjustment'],
+                        'tax_template_version' => $taxSettings->active_template_version,
+                        'discount' => $discountAmount,
+                        'total_amount' => $effectiveTotalAmount,
+                        'paid_amount' => $salePaid,
+                        'held_cheque_amount' => $heldChequeForSale,
+                        'tendered_amount' => $tenderedAmount,
+                        'due_amount' => $due,
+                        'payment_status' => ($due > 0 || $heldChequeForSale > 0) ? 'partial' : 'paid',
+                        'payment_method' => $paymentMethod,
+                        'cheque_number' => $chequeHeldAmount > 0 ? ($firstChequeDetail['cheque_number'] ?? null) : null,
+                        'bank_reference' => $chequeHeldAmount > 0 ? ($firstChequeDetail['bank_name'] ?? null) : null,
+                        'sale_type' => 'sale',
+                        'notes' => $notes,
+                    ]);
+                }
+
 
                 $salePaymentAccounting = app(SalePaymentAccountingService::class);
 

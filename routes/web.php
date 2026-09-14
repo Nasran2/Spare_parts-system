@@ -230,6 +230,9 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
     Route::get('preorders/status/{status}', [PreOrderController::class, 'index'])
         ->whereIn('status', ['pending', 'completed', 'cancelled'])
         ->middleware('permission:preorder_view')->name('preorders.status');
+    Route::get('preorders/customer/{customer}/modal', [PreOrderController::class, 'customerModal'])
+        ->middleware('permission:preorder_view')
+        ->name('preorders.customer_modal');
     Route::resource('preorders', PreOrderController::class)->except(['destroy'])
         ->parameters(['preorders' => 'preOrder'])
         ->middlewareFor(['index', 'show'], 'permission:preorder_view')
@@ -322,6 +325,9 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
         ->middleware('permission:pos.access')
         ->name('pos.cart.remove');
     Route::post('pos/cart/clear', [POSController::class, 'clearCart'])
+        ->middleware('permission:pos.access')
+        ->name('pos.cart.clear');
+    Route::get('pos/cancel-edit', [POSController::class, 'cancelEdit'])
         ->middleware('permission:pos.access')
         ->name('pos.cart.clear');
     Route::post('pos/cart/discount', [POSController::class, 'setDiscount'])
