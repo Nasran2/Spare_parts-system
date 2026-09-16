@@ -123,13 +123,13 @@
                     <div><label class="block text-sm font-medium text-gray-700 mb-2">Order Discount</label><select name="bill_discount_type" id="bill_discount_type" class="px-3 py-2.5 border rounded-lg"><option value="fixed" @selected(old('bill_discount_type', $editing ? $preOrder->bill_discount_type : 'fixed') === 'fixed')>Fixed</option><option value="percentage" @selected(old('bill_discount_type', $editing ? $preOrder->bill_discount_type : '') === 'percentage')>Percentage</option></select></div>
                     <div><label class="block text-sm font-medium text-gray-700 mb-2">Value</label><input type="number" min="0" step="0.01" name="bill_discount_value" id="bill_discount_value" value="{{ old('bill_discount_value', $editing ? $preOrder->bill_discount_value : 0) }}" class="w-40 px-3 py-2.5 border rounded-lg"></div>
                 </div>
-                <div class="flex gap-3 items-end border-t pt-4">
-                    <div class="flex-1"><label class="block text-sm font-medium text-gray-700 mb-2">Tax Percentage (%)</label><input type="number" min="0" step="0.01" name="custom_tax_rate" id="custom_tax_rate" value="{{ old('custom_tax_rate', $editing && $preOrder->custom_tax_rate !== null ? (float)$preOrder->custom_tax_rate : (float)$taxSettings->default_vat_rate) }}" class="w-full px-3 py-2.5 border rounded-lg"></div>
+                <div class="hidden gap-3 items-end border-t pt-4">
+                    <div class="flex-1"><label class="block text-sm font-medium text-gray-700 mb-2">Tax Percentage (%)</label><input type="number" min="0" step="0.01" name="custom_tax_rate" id="custom_tax_rate" value="{{ old('custom_tax_rate', $editing && $preOrder->custom_tax_rate !== null ? (float)$preOrder->custom_tax_rate : 0) }}" class="w-full px-3 py-2.5 border rounded-lg"></div>
                     <div class="flex-1">
                         <label class="block text-sm font-medium text-gray-700 mb-2">PDF Tax Display</label>
                         <select name="pdf_tax_display" id="pdf_tax_display" class="w-full px-3 py-2.5 border rounded-lg">
-                            <option value="separate" @selected(old('pdf_tax_display', $editing ? $preOrder->pdf_tax_display : 'separate') === 'separate')>Show Tax Separately</option>
-                            <option value="exclusive_hidden" @selected(old('pdf_tax_display', $editing ? $preOrder->pdf_tax_display : '') === 'exclusive_hidden')>Hide Tax / Add to Price</option>
+                            <option value="separate" @selected(old('pdf_tax_display', $editing ? $preOrder->pdf_tax_display : '') === 'separate')>Show Tax Separately</option>
+                            <option value="exclusive_hidden" @selected(old('pdf_tax_display', $editing ? $preOrder->pdf_tax_display : 'exclusive_hidden') === 'exclusive_hidden')>Hide Tax / Add to Price</option>
                             <option value="inclusive" @selected(old('pdf_tax_display', $editing ? $preOrder->pdf_tax_display : '') === 'inclusive')>Hide Tax / Inclusive Price</option>
                         </select>
                     </div>
