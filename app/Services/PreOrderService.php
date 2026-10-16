@@ -37,15 +37,33 @@ class PreOrderService
             }
 
             $old = $preOrder->exists ? $preOrder->only([
-                'customer_id', 'store_id', 'pre_order_date', 'document_type', 'vehicle_name',
-                'vehicle_description', 'expected_delivery_date', 'grand_total', 'custom_tax_rate', 'pdf_tax_display',
+                'customer_id',
+                'store_id',
+                'pre_order_date',
+                'document_type',
+                'vehicle_name',
+                'vehicle_description',
+                'expected_delivery_date',
+                'grand_total',
+                'custom_tax_rate',
+                'pdf_tax_display',
             ]) : null;
 
             $preOrder->fill(Arr::only($data, [
-                'customer_id', 'store_id', 'pre_order_date', 'document_type', 'vehicle_name',
-                'vehicle_description', 'vehicle_image',
-                'instructions', 'notes', 'expected_delivery_date', 'bill_discount_type',
-                'bill_discount_value', 'custom_tax_rate', 'pdf_tax_display'
+                'customer_id',
+                'store_id',
+                'pre_order_date',
+                'document_type',
+                'vehicle_name',
+                'vehicle_description',
+                'vehicle_image',
+                'instructions',
+                'notes',
+                'expected_delivery_date',
+                'bill_discount_type',
+                'bill_discount_value',
+                'custom_tax_rate',
+                'pdf_tax_display'
             ]));
             $preOrder->updated_by = $userId;
             $preOrder->save();
@@ -64,8 +82,13 @@ class PreOrderService
                     $this->restorePreOrderStock($preOrder, $oldItem);
                 }
             }
-            $oldItems = $oldItemModels->map(fn ($item) => $item->only([
-                'id', 'product_id', 'original_product_name', 'quantity', 'quoted_price', 'final_price',
+            $oldItems = $oldItemModels->map(fn($item) => $item->only([
+                'id',
+                'product_id',
+                'original_product_name',
+                'quantity',
+                'quoted_price',
+                'final_price',
             ]))->values()->all();
             $preOrder->items()->delete();
             foreach ($calculated['items'] as $itemData) {
@@ -86,13 +109,13 @@ class PreOrderService
             if (! $creating) {
                 $oldNames = collect($oldItems)->pluck('original_product_name')->countBy();
                 $newNames = $newItems->pluck('original_product_name')->countBy();
-                $added = $newNames->flatMap(fn ($count, $name) => array_fill(0, max(0, $count - ($oldNames[$name] ?? 0)), $name))->values()->all();
-                $removed = $oldNames->flatMap(fn ($count, $name) => array_fill(0, max(0, $count - ($newNames[$name] ?? 0)), $name))->values()->all();
+                $added = $newNames->flatMap(fn($count, $name) => array_fill(0, max(0, $count - ($oldNames[$name] ?? 0)), $name))->values()->all();
+                $removed = $oldNames->flatMap(fn($count, $name) => array_fill(0, max(0, $count - ($newNames[$name] ?? 0)), $name))->values()->all();
                 if ($added) {
-                    $this->activity($preOrder, $userId, 'product_added', 'Product item(s) added: '.implode(', ', $added).'.', null, ['items' => $added]);
+                    $this->activity($preOrder, $userId, 'product_added', 'Product item(s) added: ' . implode(', ', $added) . '.', null, ['items' => $added]);
                 }
                 if ($removed) {
-                    $this->activity($preOrder, $userId, 'product_removed', 'Product item(s) removed: '.implode(', ', $removed).'.', ['items' => $removed], null);
+                    $this->activity($preOrder, $userId, 'product_removed', 'Product item(s) removed: ' . implode(', ', $removed) . '.', ['items' => $removed], null);
                 }
             }
 
@@ -115,8 +138,16 @@ class PreOrderService
                 $creating ? 'Pre-Order created.' : 'Pre-Order details and items updated.',
                 $old ? array_merge($old, ['items' => $oldItems]) : null,
                 array_merge($preOrder->only([
-                    'customer_id', 'store_id', 'pre_order_date', 'document_type', 'vehicle_name',
-                    'vehicle_description', 'expected_delivery_date', 'grand_total', 'custom_tax_rate', 'pdf_tax_display'
+                    'customer_id',
+                    'store_id',
+                    'pre_order_date',
+                    'document_type',
+                    'vehicle_name',
+                    'vehicle_description',
+                    'expected_delivery_date',
+                    'grand_total',
+                    'custom_tax_rate',
+                    'pdf_tax_display'
                 ]), ['items' => $newItems->toArray()])
             );
 
@@ -127,21 +158,24 @@ class PreOrderService
     public function unsyncProduct(PreOrder $preOrder, PreOrderItem $item, int $userId): void
     {
         if (!$item->product_id) return;
-        
+
         \Illuminate\Support\Facades\DB::transaction(function () use ($preOrder, $item, $userId) {
             $old = $item->only(['product_id', 'product_price_id', 'quoted_price', 'final_price', 'sync_status']);
-            
+
             // Restore stock if it was deducted
             $this->restorePreOrderStock($preOrder, $item);
-            
+
             $item->update([
                 'product_id' => null,
                 'product_price_id' => null,
                 'sync_status' => 'unlinked',
             ]);
-            
-            $this->activity($preOrder, $userId, 'product_unsynced',
-                'Unlinked inventory product from “'.$item->original_product_name.'”.',
+
+            $this->activity(
+                $preOrder,
+                $userId,
+                'product_unsynced',
+                'Unlinked inventory product from “' . $item->original_product_name . '”.',
                 $old,
                 $item->fresh()->only(['product_id', 'product_price_id', 'quoted_price', 'final_price', 'sync_status'])
             );
@@ -187,8 +221,11 @@ class PreOrderService
             ]);
             $this->deductStock($preOrder, $item);
             $this->recalculate($preOrder);
-            $this->activity($preOrder, $userId, 'product_synced',
-                'Linked “'.$item->original_product_name.'” to product “'.$product->name.'”.',
+            $this->activity(
+                $preOrder,
+                $userId,
+                'product_synced',
+                'Linked “' . $item->original_product_name . '” to product “' . $product->name . '”.',
                 $old,
                 $item->fresh()->only(['product_id', 'product_price_id', 'quoted_price', 'final_price', 'sync_status'])
             );
@@ -219,8 +256,11 @@ class PreOrderService
 
             $item->update(['final_price' => $newPrice]);
             $this->recalculate($preOrder);
-            $this->activity($preOrder, $userId, 'price_changed',
-                'Price changed for “'.$item->original_product_name.'”.',
+            $this->activity(
+                $preOrder,
+                $userId,
+                'price_changed',
+                'Price changed for “' . $item->original_product_name . '”.',
                 ['final_price' => $oldPrice],
                 ['final_price' => $newPrice, 'action' => $action]
             );
@@ -237,15 +277,18 @@ class PreOrderService
                 throw ValidationException::withMessages(['status' => 'Only pending Pre-Orders can be cancelled.']);
             }
             $preOrder->update([
-                'status' => 'cancelled', 'cancelled_at' => now(), 'cancelled_by' => $userId,
-                'cancellation_reason' => $reason, 'updated_by' => $userId,
+                'status' => 'cancelled',
+                'cancelled_at' => now(),
+                'cancelled_by' => $userId,
+                'cancellation_reason' => $reason,
+                'updated_by' => $userId,
             ]);
             foreach ($preOrder->items as $item) {
                 if ($item->product_id) {
                     $this->restorePreOrderStock($preOrder, $item);
                 }
             }
-            $this->activity($preOrder, $userId, 'cancelled', 'Pre-Order cancelled.'.($reason ? ' Reason: '.$reason : ''), ['status' => 'pending'], ['status' => 'cancelled']);
+            $this->activity($preOrder, $userId, 'cancelled', 'Pre-Order cancelled.' . ($reason ? ' Reason: ' . $reason : ''), ['status' => 'pending'], ['status' => 'cancelled']);
 
             return $preOrder->fresh();
         });
@@ -257,15 +300,18 @@ class PreOrderService
             $preOrder = PreOrder::lockForUpdate()->findOrFail($preOrder->id);
             if ($preOrder->status === 'cancelled') {
                 $preOrder->update([
-                    'status' => 'pending', 'cancelled_at' => null, 'cancelled_by' => null,
-                    'cancellation_reason' => null, 'updated_by' => $userId,
+                    'status' => 'pending',
+                    'cancelled_at' => null,
+                    'cancelled_by' => null,
+                    'cancellation_reason' => null,
+                    'updated_by' => $userId,
                 ]);
                 foreach ($preOrder->items as $item) {
                     if ($item->product_id) {
                         $this->deductStock($preOrder, $item);
                     }
                 }
-                $this->activity($preOrder, $userId, 'reopened', 'Cancelled Pre-Order reopened.'.($reason ? ' Reason: '.$reason : ''), ['status' => 'cancelled'], ['status' => 'pending']);
+                $this->activity($preOrder, $userId, 'reopened', 'Cancelled Pre-Order reopened.' . ($reason ? ' Reason: ' . $reason : ''), ['status' => 'cancelled'], ['status' => 'pending']);
 
                 return $preOrder->fresh();
             }
@@ -298,17 +344,25 @@ class PreOrderService
             $preOrder->update(['sale_id' => null]);
             $sale->delete();
             $preOrder->update([
-                'status' => 'pending', 'payment_status' => 'unpaid', 'paid_amount' => 0,
-                'held_cheque_amount' => 0, 'due_amount' => $preOrder->grand_total,
-                'completed_at' => null, 'completed_by' => null, 'updated_by' => $userId,
+                'status' => 'pending',
+                'payment_status' => 'unpaid',
+                'paid_amount' => 0,
+                'held_cheque_amount' => 0,
+                'due_amount' => $preOrder->grand_total,
+                'completed_at' => null,
+                'completed_by' => null,
+                'updated_by' => $userId,
             ]);
             foreach ($preOrder->items as $item) {
                 if ($item->product_id) {
                     $this->deductStock($preOrder, $item);
                 }
             }
-            $this->activity($preOrder, $userId, 'completion_reversed',
-                'Completed Pre-Order reopened and sale '.$saleNumber.' safely reversed.'.($reason ? ' Reason: '.$reason : ''),
+            $this->activity(
+                $preOrder,
+                $userId,
+                'completion_reversed',
+                'Completed Pre-Order reopened and sale ' . $saleNumber . ' safely reversed.' . ($reason ? ' Reason: ' . $reason : ''),
                 ['status' => 'completed', 'sale_no' => $saleNumber, 'payments' => $paymentSnapshot, 'cheques' => $chequeSnapshot],
                 ['status' => 'pending', 'sale_id' => null]
             );
@@ -324,18 +378,47 @@ class PreOrderService
             if ($preOrder->status !== 'pending' || $preOrder->sale_id) {
                 throw ValidationException::withMessages(['status' => 'This Pre-Order has already been completed or is not pending.']);
             }
-            if ($preOrder->items->isEmpty() || $preOrder->items->contains(fn ($item) => ! $item->product_id)) {
-                throw ValidationException::withMessages(['items' => 'Link every Pre-Order item to an actual product before completion.']);
+            if ($preOrder->items->isEmpty()) {
+                throw ValidationException::withMessages(['items' => 'Cannot complete a Pre-Order without any items.']);
+            }
+            if ($preOrder->items->contains(fn($item) => ! $item->product_id)) {
+                $defaultUnit = \App\Models\Unit::first();
+                if (!$defaultUnit) {
+                    $defaultUnit = \App\Models\Unit::create(['name' => 'pcs', 'short_name' => 'pcs']);
+                }
+
+                foreach ($preOrder->items as $item) {
+                    if (!$item->product_id) {
+                        $product = \App\Models\Product::create([
+                            'name' => $item->original_product_name,
+                            'sku' => 'CUS-' . strtoupper(uniqid()),
+                            'unit_id' => $defaultUnit->id,
+                            'cost_price' => 0,
+                            'selling_price' => $item->final_price,
+                            'stock_quantity' => 0,
+                            'is_active' => true,
+                            'is_pre_order' => false,
+                            'description' => $item->description,
+                        ]);
+
+                        $item->update([
+                            'product_id' => $product->id,
+                            'sync_status' => 'linked'
+                        ]);
+                    }
+                }
+                // Refresh the items relationship so the sale items get the correct product_ids
+                $preOrder->load('items');
             }
 
             $normalized = $this->normalizePayments($payments, (float) $preOrder->grand_total);
-            
+
             $advanceCash = (float) $preOrder->paid_amount;
             $advanceHeld = (float) $preOrder->held_cheque_amount;
-            
+
             $newCashPaid = collect($normalized)->where('method', '!=', 'cheque')->sum('amount');
             $newHeld = collect($normalized)->where('method', 'cheque')->sum('amount');
-            
+
             $cashPaid = $advanceCash + $newCashPaid;
             $held = $advanceHeld + $newHeld;
             $due = max(0, round((float) $preOrder->grand_total - $cashPaid - $held, 2));
@@ -359,7 +442,7 @@ class PreOrderService
                 'payment_status' => ($due <= 0 && $held <= 0) ? 'paid' : (($cashPaid > 0 || $held > 0) ? 'partial' : 'unpaid'),
                 'payment_method' => $firstMethod,
                 'sale_type' => 'sale',
-                'notes' => trim('Completed from '.$preOrder->pre_order_number.'. '.$preOrder->notes),
+                'notes' => trim('Completed from ' . $preOrder->pre_order_number . '. ' . $preOrder->notes),
             ]);
 
             $taxPairs = [];
@@ -410,13 +493,21 @@ class PreOrderService
             $sale->loadMissing(['customer', 'store']);
             app(TaxPostingService::class)->postSale($sale, $taxPairs, TaxSetting::current($sale->sale_date));
             $preOrder->update([
-                'sale_id' => $sale->id, 'status' => 'completed', 'completed_at' => now(),
-                'completed_by' => $userId, 'paid_amount' => $sale->paid_amount,
-                'held_cheque_amount' => $sale->held_cheque_amount, 'due_amount' => $sale->due_amount,
-                'payment_status' => $sale->payment_status, 'updated_by' => $userId,
+                'sale_id' => $sale->id,
+                'status' => 'completed',
+                'completed_at' => now(),
+                'completed_by' => $userId,
+                'paid_amount' => $sale->paid_amount,
+                'held_cheque_amount' => $sale->held_cheque_amount,
+                'due_amount' => $sale->due_amount,
+                'payment_status' => $sale->payment_status,
+                'updated_by' => $userId,
             ]);
-            $this->activity($preOrder, $userId, 'completed',
-                'Pre-Order completed as sale '.$sale->sale_no.'.',
+            $this->activity(
+                $preOrder,
+                $userId,
+                'completed',
+                'Pre-Order completed as sale ' . $sale->sale_no . '.',
                 ['status' => 'pending'],
                 ['status' => 'completed', 'sale_id' => $sale->id, 'sale_no' => $sale->sale_no]
             );
@@ -432,7 +523,7 @@ class PreOrderService
             if ($preOrder->status === 'cancelled') {
                 throw ValidationException::withMessages(['status' => 'Payments cannot be collected for cancelled Pre-Orders.']);
             }
-            
+
             $amount = round((float) $data['amount'], 2);
             if ($amount <= 0 || $amount > (float) $preOrder->due_amount) {
                 throw ValidationException::withMessages(['amount' => 'Payment cannot exceed the remaining due amount.']);
@@ -446,19 +537,32 @@ class PreOrderService
 
                 if ($data['payment_method'] === 'cheque') {
                     $cheque = ChequePayment::create([
-                        'sale_id' => $sale->id, 'pre_order_id' => $preOrder->id, 'customer_id' => $sale->customer_id, 'user_id' => $userId,
-                        'cheque_date' => $data['cheque_date'], 'cheque_number' => $data['cheque_number'],
-                        'bank_name' => $data['bank_name'] ?? null, 'account_name' => $data['account_name'] ?? null,
-                        'amount' => $amount, 'status' => 'pending', 'notes' => $data['notes'] ?? null,
+                        'sale_id' => $sale->id,
+                        'pre_order_id' => $preOrder->id,
+                        'customer_id' => $sale->customer_id,
+                        'user_id' => $userId,
+                        'cheque_date' => $data['cheque_date'],
+                        'cheque_number' => $data['cheque_number'],
+                        'bank_name' => $data['bank_name'] ?? null,
+                        'account_name' => $data['account_name'] ?? null,
+                        'amount' => $amount,
+                        'status' => 'pending',
+                        'notes' => $data['notes'] ?? null,
                     ]);
                     $sale->held_cheque_amount = round((float) $sale->held_cheque_amount + $amount, 2);
                     app(SalePaymentAccountingService::class)->recordChequeHold($cheque, $sale, $userId);
                 } else {
                     $payment = Payment::create([
-                        'sale_id' => $sale->id, 'pre_order_id' => $preOrder->id, 'customer_id' => $sale->customer_id, 'user_id' => $userId,
-                        'amount' => $amount, 'payment_method' => $data['payment_method'],
-                        'reference_no' => $data['reference_no'] ?? null, 'payment_date' => $data['payment_date'],
-                        'notes' => $data['notes'] ?? null, 'store_id' => $sale->store_id,
+                        'sale_id' => $sale->id,
+                        'pre_order_id' => $preOrder->id,
+                        'customer_id' => $sale->customer_id,
+                        'user_id' => $userId,
+                        'amount' => $amount,
+                        'payment_method' => $data['payment_method'],
+                        'reference_no' => $data['reference_no'] ?? null,
+                        'payment_date' => $data['payment_date'],
+                        'notes' => $data['notes'] ?? null,
+                        'store_id' => $sale->store_id,
                     ]);
                     $sale->paid_amount = round((float) $sale->paid_amount + $amount, 2);
                     app(SalePaymentAccountingService::class)->recordSalePayment($payment, $sale, $userId);
@@ -469,25 +573,36 @@ class PreOrderService
             } else {
                 if ($data['payment_method'] === 'cheque') {
                     $cheque = ChequePayment::create([
-                        'pre_order_id' => $preOrder->id, 'customer_id' => $preOrder->customer_id, 'user_id' => $userId,
-                        'cheque_date' => $data['cheque_date'], 'cheque_number' => $data['cheque_number'],
-                        'bank_name' => $data['bank_name'] ?? null, 'account_name' => $data['account_name'] ?? null,
-                        'amount' => $amount, 'status' => 'pending', 'notes' => $data['notes'] ?? null,
+                        'pre_order_id' => $preOrder->id,
+                        'customer_id' => $preOrder->customer_id,
+                        'user_id' => $userId,
+                        'cheque_date' => $data['cheque_date'],
+                        'cheque_number' => $data['cheque_number'],
+                        'bank_name' => $data['bank_name'] ?? null,
+                        'account_name' => $data['account_name'] ?? null,
+                        'amount' => $amount,
+                        'status' => 'pending',
+                        'notes' => $data['notes'] ?? null,
                     ]);
                     $preOrder->held_cheque_amount = round((float) $preOrder->held_cheque_amount + $amount, 2);
                     app(SalePaymentAccountingService::class)->recordPreOrderChequeHold($cheque, $preOrder, $userId);
                 } else {
                     $payment = Payment::create([
-                        'pre_order_id' => $preOrder->id, 'customer_id' => $preOrder->customer_id, 'user_id' => $userId,
-                        'amount' => $amount, 'payment_method' => $data['payment_method'],
-                        'reference_no' => $data['reference_no'] ?? null, 'payment_date' => $data['payment_date'],
-                        'notes' => $data['notes'] ?? null, 'store_id' => $preOrder->store_id,
+                        'pre_order_id' => $preOrder->id,
+                        'customer_id' => $preOrder->customer_id,
+                        'user_id' => $userId,
+                        'amount' => $amount,
+                        'payment_method' => $data['payment_method'],
+                        'reference_no' => $data['reference_no'] ?? null,
+                        'payment_date' => $data['payment_date'],
+                        'notes' => $data['notes'] ?? null,
+                        'store_id' => $preOrder->store_id,
                     ]);
                     $preOrder->paid_amount = round((float) $preOrder->paid_amount + $amount, 2);
                     app(SalePaymentAccountingService::class)->recordPreOrderPayment($payment, $preOrder, $userId);
                 }
                 $preOrder->due_amount = max(0, round((float) $preOrder->grand_total - (float) $preOrder->paid_amount - (float) $preOrder->held_cheque_amount, 2));
-                
+
                 if ($preOrder->due_amount <= 0 && $preOrder->held_cheque_amount <= 0) {
                     $preOrder->payment_status = 'paid';
                 } elseif ($preOrder->paid_amount > 0 || $preOrder->held_cheque_amount > 0) {
@@ -498,8 +613,11 @@ class PreOrderService
                 $preOrder->save();
             }
 
-            $this->activity($preOrder, $userId, 'payment_added',
-                'Payment of Rs '.number_format($amount, 2).' added via '.str_replace('_', ' ', $data['payment_method']).'.',
+            $this->activity(
+                $preOrder,
+                $userId,
+                'payment_added',
+                'Payment of Rs ' . number_format($amount, 2) . ' added via ' . str_replace('_', ' ', $data['payment_method']) . '.',
                 null,
                 ['amount' => $amount, 'method' => $data['payment_method']]
             );
@@ -515,7 +633,7 @@ class PreOrderService
             if (ChequePayment::where('payment_id', $payment->id)->exists()) {
                 throw ValidationException::withMessages(['payment' => 'Passed cheque payments must be managed through Cheque Management.']);
             }
-            
+
             $amount = (float) $payment->amount;
             $snapshot = $payment->only(['amount', 'payment_method', 'payment_date', 'reference_no', 'notes']);
 
@@ -534,7 +652,7 @@ class PreOrderService
                 $payment->delete();
                 $preOrder->paid_amount = max(0, round((float) $preOrder->paid_amount - $amount, 2));
                 $preOrder->due_amount = max(0, round((float) $preOrder->grand_total - (float) $preOrder->paid_amount - (float) $preOrder->held_cheque_amount, 2));
-                
+
                 if ($preOrder->due_amount <= 0 && $preOrder->held_cheque_amount <= 0) {
                     $preOrder->payment_status = 'paid';
                 } elseif ($preOrder->paid_amount > 0 || $preOrder->held_cheque_amount > 0) {
@@ -604,7 +722,7 @@ class PreOrderService
                 throw ValidationException::withMessages(['items' => 'One of the selected products is not active.']);
             }
             $rules = $calculator->productRules($product, $settings, 'sale');
-            
+
             $vatRate = $customTaxRate !== null ? $customTaxRate : $rules['vat_rate'];
             $priceMode = $pdfTaxDisplay === 'inclusive' ? 'inclusive' : $rules['price_mode'];
             $vatAllowed = true;
@@ -615,8 +733,10 @@ class PreOrderService
                 'quantity' => (string) $item['quantity'],
                 'line_discount_type' => $item['discount_type'] === 'percentage' ? 'percentage' : 'fixed',
                 'line_discount_value' => (string) $item['discount_value'],
-                'tax_status' => $taxStatus, 'vat_rate' => $vatRate,
-                'price_mode' => $priceMode, 'vat_allowed' => $vatAllowed,
+                'tax_status' => $taxStatus,
+                'vat_rate' => $vatRate,
+                'price_mode' => $priceMode,
+                'vat_allowed' => $vatAllowed,
                 'vat_enabled' => true,
             ];
             $normalized[] = compact('item', 'product');
@@ -627,12 +747,12 @@ class PreOrderService
         foreach ($normalized as $index => $entry) {
             $item = $entry['item'];
             $tax = $invoice['lines'][$index];
-            
+
             $priceId = $item['product_price_id'] ?? null;
             if (empty($priceId) && !empty($entry['product'])) {
-                $priceId = $entry['product']->prices()->where('status', 'active')->where('is_default', true)->value('id') 
-                           ?? $entry['product']->prices()->where('status', 'active')->value('id')
-                           ?? $entry['product']->prices()->value('id');
+                $priceId = $entry['product']->prices()->where('status', 'active')->where('is_default', true)->value('id')
+                    ?? $entry['product']->prices()->where('status', 'active')->value('id')
+                    ?? $entry['product']->prices()->value('id');
             }
 
             $resultItems[] = [
@@ -645,8 +765,10 @@ class PreOrderService
                 'final_price' => round((float) $item['unit_price'], 2),
                 'discount_type' => $item['discount_type'],
                 'discount_value' => round((float) $item['discount_value'], 2),
-                'gross_amount' => $tax['gross_amount'], 'discount_amount' => $tax['discount_amount'],
-                'tax_amount' => $tax['vat_amount'], 'line_total' => $tax['total_amount'],
+                'gross_amount' => $tax['gross_amount'],
+                'discount_amount' => $tax['discount_amount'],
+                'tax_amount' => $tax['vat_amount'],
+                'line_total' => $tax['total_amount'],
                 'sync_status' => $entry['product'] ? 'linked' : 'unlinked',
                 'tax_snapshot' => $tax,
                 'notes' => $item['notes'] ?? null,
@@ -662,23 +784,27 @@ class PreOrderService
         $calculator = app(TaxCalculationService::class);
         $settings = TaxSetting::current();
         $inputs = [];
-        
+
         $customTaxRate = $preOrder->custom_tax_rate;
         $pdfTaxDisplay = $preOrder->pdf_tax_display;
 
         foreach ($preOrder->items as $item) {
             $rules = $calculator->productRules($item->product, $settings, 'sale');
-            
+
             $vatRate = $customTaxRate !== null ? (float) $customTaxRate : $rules['vat_rate'];
             $priceMode = $pdfTaxDisplay === 'inclusive' ? 'inclusive' : $rules['price_mode'];
             $vatAllowed = true;
             $taxStatus = $customTaxRate !== null ? 'standard' : $rules['tax_status'];
 
             $inputs[] = [
-                'unit_price' => (string) $item->final_price, 'quantity' => (string) $item->quantity,
-                'line_discount_type' => $item->discount_type, 'line_discount_value' => (string) $item->discount_value,
-                'tax_status' => $taxStatus, 'vat_rate' => $vatRate,
-                'price_mode' => $priceMode, 'vat_allowed' => $vatAllowed,
+                'unit_price' => (string) $item->final_price,
+                'quantity' => (string) $item->quantity,
+                'line_discount_type' => $item->discount_type,
+                'line_discount_value' => (string) $item->discount_value,
+                'tax_status' => $taxStatus,
+                'vat_rate' => $vatRate,
+                'price_mode' => $priceMode,
+                'vat_allowed' => $vatAllowed,
                 'vat_enabled' => true,
             ];
         }
@@ -686,14 +812,20 @@ class PreOrderService
         foreach ($preOrder->items as $index => $item) {
             $tax = $invoice['lines'][$index];
             $item->update([
-                'gross_amount' => $tax['gross_amount'], 'discount_amount' => $tax['discount_amount'],
-                'tax_amount' => $tax['vat_amount'], 'line_total' => $tax['total_amount'], 'tax_snapshot' => $tax,
+                'gross_amount' => $tax['gross_amount'],
+                'discount_amount' => $tax['discount_amount'],
+                'tax_amount' => $tax['vat_amount'],
+                'line_total' => $tax['total_amount'],
+                'tax_snapshot' => $tax,
             ]);
         }
         $preOrder->update([
-            'subtotal' => $invoice['totals']['gross'], 'discount_amount' => $invoice['totals']['discount'],
-            'tax_amount' => $invoice['totals']['vat'], 'rounding_adjustment' => $invoice['totals']['rounding_adjustment'],
-            'grand_total' => $invoice['totals']['total'], 'due_amount' => $invoice['totals']['total'],
+            'subtotal' => $invoice['totals']['gross'],
+            'discount_amount' => $invoice['totals']['discount'],
+            'tax_amount' => $invoice['totals']['vat'],
+            'rounding_adjustment' => $invoice['totals']['rounding_adjustment'],
+            'grand_total' => $invoice['totals']['total'],
+            'due_amount' => $invoice['totals']['total'],
         ]);
     }
 
@@ -727,7 +859,7 @@ class PreOrderService
     {
         $available = $this->currentStock($item->product, $preOrder->store_id, $item->product_price_id);
         if ($available < (float) $item->quantity) {
-            throw ValidationException::withMessages(['items' => $item->original_product_name.' has only '.$available.' available; '.$item->quantity.' required.']);
+            throw ValidationException::withMessages(['items' => $item->original_product_name . ' has only ' . $available . ' available; ' . $item->quantity . ' required.']);
         }
     }
 
@@ -735,12 +867,12 @@ class PreOrderService
     {
         $product = Product::lockForUpdate()->findOrFail($item->product_id);
         if ((float) $product->stock_quantity < (float) $item->quantity) {
-            throw ValidationException::withMessages(['items' => 'Insufficient total stock for '.$item->original_product_name.'.']);
+            throw ValidationException::withMessages(['items' => 'Insufficient total stock for ' . $item->original_product_name . '.']);
         }
         if ((bool) Setting::get('use_price_wise_stock', true) && $item->product_price_id) {
             $price = ProductPrice::lockForUpdate()->findOrFail($item->product_price_id);
             if ((float) $price->stock_qty < (float) $item->quantity) {
-                throw ValidationException::withMessages(['items' => 'Insufficient price-level stock for '.$item->original_product_name.'.']);
+                throw ValidationException::withMessages(['items' => 'Insufficient price-level stock for ' . $item->original_product_name . '.']);
             }
             $price->decrement('stock_qty', $item->quantity);
         }
@@ -755,7 +887,7 @@ class PreOrderService
                     ->whereNull('product_price_id')->first();
             }
             if (! $stock || (float) $stock->quantity < (float) $item->quantity) {
-                throw ValidationException::withMessages(['items' => 'Insufficient store stock for '.$item->original_product_name.'.']);
+                throw ValidationException::withMessages(['items' => 'Insufficient store stock for ' . $item->original_product_name . '.']);
             }
             $stock->decrement('quantity', $item->quantity);
         }
@@ -807,8 +939,10 @@ class PreOrderService
                     ->where('product_id', $item->product_id)->whereNull('product_price_id')->first();
             }
             $stock ??= StoreStock::withoutGlobalScopes()->create([
-                'store_id' => $sale->store_id, 'product_id' => $item->product_id,
-                'product_price_id' => $priceId, 'quantity' => 0,
+                'store_id' => $sale->store_id,
+                'product_id' => $item->product_id,
+                'product_price_id' => $priceId,
+                'quantity' => 0,
             ]);
             $stock->increment('quantity', $item->quantity);
         }
@@ -825,16 +959,22 @@ class PreOrderService
     private function syncFinancials(PreOrder $preOrder, Sale $sale): void
     {
         $preOrder->update([
-            'paid_amount' => $sale->paid_amount, 'held_cheque_amount' => $sale->held_cheque_amount,
-            'due_amount' => $sale->due_amount, 'payment_status' => $sale->payment_status,
+            'paid_amount' => $sale->paid_amount,
+            'held_cheque_amount' => $sale->held_cheque_amount,
+            'due_amount' => $sale->due_amount,
+            'payment_status' => $sale->payment_status,
         ]);
     }
 
     private function activity(PreOrder $preOrder, int $userId, string $action, string $description, ?array $old = null, ?array $new = null): void
     {
         PreOrderActivity::create([
-            'pre_order_id' => $preOrder->id, 'user_id' => $userId, 'action' => $action,
-            'description' => $description, 'old_values' => $old, 'new_values' => $new,
+            'pre_order_id' => $preOrder->id,
+            'user_id' => $userId,
+            'action' => $action,
+            'description' => $description,
+            'old_values' => $old,
+            'new_values' => $new,
             'ip_address' => request()?->ip(),
         ]);
     }

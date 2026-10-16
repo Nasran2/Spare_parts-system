@@ -75,11 +75,17 @@
                 <span class="font-semibold text-gray-700">Filter Period:</span>
             </div>
             @php
-                $qs = [ 'start' => request('start_date'), 'end' => request('end_date') ];
+                $hasDateRange = request()->filled('start_date') && request()->filled('end_date');
+                $qs = [ 'start' => $hasDateRange ? request('start_date') : null, 'end' => $hasDateRange ? request('end_date') : null ];
                 $today = \Carbon\Carbon::today()->format('Y-m-d');
                 $yesterday = \Carbon\Carbon::yesterday()->format('Y-m-d');
                 $end = $qs['end'] ?: $today;
                 $start = $qs['start'] ?: $today;
+                $reportDates = ['from' => $start, 'to' => $end];
+                $salesDates = ['date_from' => $start, 'date_to' => $end];
+                $stockFilters = ['all_product_types' => 1, 'active_only' => 1];
+                $lowStockFilters = $stockFilters + ['low_stock' => 1];
+                $trendingDates = ['from' => now()->subDays(30)->toDateString(), 'to' => $today];
                 $isToday = ($start === $today && $end === $today);
                 $isYesterday = ($start === $yesterday && $end === $yesterday);
                 $endC = \Carbon\Carbon::parse($end);
@@ -101,8 +107,8 @@
                     <i class="fas fa-calendar-alt mr-1"></i> This Month
                 </button>
                 <div class="flex items-center gap-2">
-                    <input type="date" id="custom_start" class="px-3 py-2 border rounded text-sm" />
-                    <input type="date" id="custom_end" class="px-3 py-2 border rounded text-sm" />
+                    <input type="date" id="custom_start" value="{{ $start }}" aria-label="Start date" class="px-3 py-2 border rounded text-sm" />
+                    <input type="date" id="custom_end" value="{{ $end }}" aria-label="End date" class="px-3 py-2 border rounded text-sm" />
                     <button type="button" data-range="custom" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-blue-700 transition">
                         <i class="fas fa-calendar mr-1"></i> Custom Range
                     </button>
@@ -117,7 +123,7 @@
         
         <!-- Total Sales -->
         @if(empty($dashboardControls['hide_total_sales']))
-        <div class="stat-card bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
+        <a href="{{ route('reports.sales', $reportDates) }}" title="View total sales report" class="block focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 stat-card bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-gray-600 mb-1">Total Sales</p>
@@ -130,12 +136,12 @@
                     <i class="fas fa-dollar-sign text-white text-2xl"></i>
                 </div>
             </div>
-        </div>
+        </a>
         @endif
 
         <!-- Total Purchase -->
         @if(empty($dashboardControls['hide_total_purchase']))
-        <div class="stat-card bg-white rounded-xl shadow-md p-6 border-l-4 border-orange-500">
+        <a href="{{ route('reports.purchase', $reportDates) }}" title="View total purchase report" class="block focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 stat-card bg-white rounded-xl shadow-md p-6 border-l-4 border-orange-500">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-gray-600 mb-1">Total Purchase</p>
@@ -148,12 +154,12 @@
                     <i class="fas fa-shopping-cart text-white text-2xl"></i>
                 </div>
             </div>
-        </div>
+        </a>
         @endif
 
         <!-- Net Profit -->
         @if(empty($dashboardControls['hide_profit_loss']))
-        <div class="stat-card bg-white rounded-xl shadow-md p-6 border-l-4 border-green-500">
+        <a href="{{ route('reports.profit-loss', $reportDates) }}" title="View net profit report" class="block focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 stat-card bg-white rounded-xl shadow-md p-6 border-l-4 border-green-500">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-gray-600 mb-1">Net Profit</p>
@@ -166,12 +172,12 @@
                     <i class="fas fa-chart-line text-white text-2xl"></i>
                 </div>
             </div>
-        </div>
+        </a>
         @endif
 
         <!-- Invoice Due -->
         @if(empty($dashboardControls['hide_invoice_details']))
-        <div class="stat-card bg-white rounded-xl shadow-md p-6 border-l-4 border-red-500">
+        <a href="{{ route('reports.due-bills', $reportDates) }}" title="View invoice due report" class="block focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 stat-card bg-white rounded-xl shadow-md p-6 border-l-4 border-red-500">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-gray-600 mb-1">Invoice Due</p>
@@ -184,7 +190,7 @@
                     <i class="fas fa-file-invoice-dollar text-white text-2xl"></i>
                 </div>
             </div>
-        </div>
+        </a>
         @endif
     </div>
     @endif
@@ -194,7 +200,7 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
         
         <!-- Total Expenses -->
-        <div class="stat-card bg-white rounded-xl shadow-md p-6">
+        <a href="{{ route('reports.expense', $reportDates) }}" title="View total expenses report" class="block focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 stat-card bg-white rounded-xl shadow-md p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-gray-600 mb-1">Total Expenses</p>
@@ -204,10 +210,10 @@
                     <i class="fas fa-wallet text-white text-xl"></i>
                 </div>
             </div>
-        </div>
+        </a>
 
         <!-- Total Products -->
-        <div class="stat-card bg-white rounded-xl shadow-md p-6">
+        <a href="{{ route('reports.stock', $stockFilters) }}" title="View total products report" class="block focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 stat-card bg-white rounded-xl shadow-md p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-gray-600 mb-1">Total Products</p>
@@ -217,10 +223,10 @@
                     <i class="fas fa-box text-white text-xl"></i>
                 </div>
             </div>
-        </div>
+        </a>
 
         <!-- Low Stock Items -->
-        <div class="stat-card bg-white rounded-xl shadow-md p-6">
+        <a href="{{ route('reports.stock', $lowStockFilters) }}" title="View low stock items report" class="block focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 stat-card bg-white rounded-xl shadow-md p-6">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-gray-600 mb-1">Low Stock Items</p>
@@ -230,7 +236,7 @@
                     <i class="fas fa-exclamation-triangle text-white text-xl"></i>
                 </div>
             </div>
-        </div>
+        </a>
     </div>
     @endif
 
@@ -239,7 +245,7 @@
         <div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-bold text-gray-800">
                 <i class="fas fa-money-check-alt text-indigo-600 mr-2"></i>
-                Cheque Payment Reminders
+                <a href="{{ route('cheque-payments.index', ['status' => 'pending']) }}" class="hover:text-blue-600 focus:outline-none focus:underline">Cheque Payment Reminders</a>
             </h3>
             <span class="text-xs font-semibold text-indigo-700 bg-indigo-50 px-3 py-1 rounded-full">{{ ($chequeReminders ?? collect())->count() }} pending</span>
         </div>
@@ -264,7 +270,7 @@
                             </div>
                         </td>
                         <td class="py-3 px-2 text-gray-700">
-                            <div class="font-semibold">{{ $cheque->cheque_number }}</div>
+                            <a href="{{ route('cheque-payments.index', ['search' => $cheque->cheque_number]) }}" class="font-semibold hover:text-blue-600 focus:outline-none focus:underline">{{ $cheque->cheque_number }}</a>
                             <div class="text-xs text-gray-500">{{ $cheque->bank_name ?: 'Bank not set' }}</div>
                         </td>
                         <td class="py-3 px-2 text-gray-600">{{ $cheque->customer->name ?? 'Customer' }}</td>
@@ -301,7 +307,7 @@
         <div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-bold text-gray-800">
                 <i class="fas fa-building text-amber-600 mr-2"></i>
-                Own Cheques Due Soon
+                <a href="{{ route('cheque-payments.index', ['status' => 'pending']) }}" class="hover:text-blue-600 focus:outline-none focus:underline">Own Cheques Due Soon</a>
             </h3>
             <span class="text-xs font-semibold text-amber-700 bg-amber-50 px-3 py-1 rounded-full">{{ ($ownChequeReminders ?? collect())->count() }} pending</span>
         </div>
@@ -326,7 +332,7 @@
                             </div>
                         </td>
                         <td class="py-3 px-2 text-gray-700">
-                            <div class="font-semibold">{{ $cheque->cheque_number }}</div>
+                            <a href="{{ route('cheque-payments.index', ['search' => $cheque->cheque_number]) }}" class="font-semibold hover:text-blue-600 focus:outline-none focus:underline">{{ $cheque->cheque_number }}</a>
                             <div class="text-xs text-gray-500">{{ $cheque->bank_name ?: 'Bank not set' }}</div>
                         </td>
                         <td class="py-3 px-2 text-gray-600">{{ $cheque->supplier->name ?? 'Supplier' }}</td>
@@ -363,16 +369,16 @@
             <div class="flex items-center justify-between mb-6">
                 <h3 class="text-lg font-bold text-gray-800">
                     <i class="fas fa-fire text-orange-600 mr-2"></i>
-                    Top Selling Products
+                    <a href="{{ route('reports.trending', $trendingDates) }}" class="hover:text-blue-600 focus:outline-none focus:underline">Top Selling Products</a>
                 </h3>
-                <a href="{{ route('reports.trending') }}" class="text-blue-600 hover:text-blue-700 text-sm font-medium">
+                <a href="{{ route('reports.trending', $trendingDates) }}" class="text-blue-600 hover:text-blue-700 text-sm font-medium">
                     View All <i class="fas fa-arrow-right ml-1"></i>
                 </a>
             </div>
             <div class="space-y-4">
                 @php $safeTopProducts = collect($topProducts ?? [])->filter(fn($p) => is_object($p)); @endphp
                 @forelse($safeTopProducts as $product)
-                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
+                <a href="{{ route('products.show', $product->id) }}" title="View product details" class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <div class="flex items-center space-x-3">
                         <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
                             <i class="fas fa-cog text-blue-600"></i>
@@ -386,7 +392,7 @@
                         <p class="font-bold text-gray-800">{{ !empty($dashboardControls['hide_qty_wise_data']) ? '—' : number_format(round($applyPct($product->sold_quantity, $qtyVisiblePct)), 0) }} sold</p>
                         <p class="text-xs text-green-600">{{ $currency }} {{ $maskAmount($product->total_sales) }}</p>
                     </div>
-                </div>
+                </a>
                 @empty
                 <div class="text-center py-8 text-gray-500">
                     <i class="fas fa-box-open text-4xl mb-2"></i>
@@ -407,9 +413,9 @@
             <div class="flex items-center justify-between mb-6">
                 <h3 class="text-lg font-bold text-gray-800">
                     <i class="fas fa-receipt text-green-600 mr-2"></i>
-                    Recent Sales
+                    <a href="{{ route('sales.index', $salesDates) }}" class="hover:text-blue-600 focus:outline-none focus:underline">Recent Sales</a>
                 </h3>
-                <a href="{{ route('sales.index') }}" class="text-blue-600 hover:text-blue-700 text-sm font-medium">
+                <a href="{{ route('sales.index', $salesDates) }}" class="text-blue-600 hover:text-blue-700 text-sm font-medium">
                     View All <i class="fas fa-arrow-right ml-1"></i>
                 </a>
             </div>
@@ -426,8 +432,10 @@
                     <tbody>
                         @php $safeRecentSales = collect($recentSales ?? [])->filter(fn($s) => is_object($s)); @endphp
                         @forelse($safeRecentSales as $sale)
-                        <tr class="border-b border-gray-100 hover:bg-gray-50">
-                            <td class="py-3 px-2 font-medium text-gray-800">{{ $sale->sale_no }}</td>
+                        <tr class="relative border-b border-gray-100 hover:bg-gray-50 focus-within:bg-blue-50">
+                            <td class="py-3 px-2 font-medium text-gray-800">
+                                <a href="{{ route('sales.show', $sale->id) }}" class="after:absolute after:inset-0 hover:text-blue-600 focus:outline-none focus:underline" title="View invoice {{ $sale->sale_no }}">{{ $sale->sale_no }}</a>
+                            </td>
                             <td class="py-3 px-2 text-gray-600">{{ !empty($dashboardControls['hide_supplier_names']) ? 'Hidden' : ($sale->customer->name ?? 'Walk-in') }}</td>
                             <td class="py-3 px-2 text-right font-semibold text-gray-800">{{ !empty($dashboardControls['hide_invoice_details']) ? '—' : ($currency . ' ' . $maskAmount($sale->total_amount)) }}</td>
                             <td class="py-3 px-2 text-center">
@@ -458,16 +466,16 @@
             <div class="flex items-center justify-between mb-6">
                 <h3 class="text-lg font-bold text-gray-800">
                     <i class="fas fa-exclamation-triangle text-red-600 mr-2"></i>
-                    Low Stock Alerts
+                    <a href="{{ route('reports.stock', $lowStockFilters) }}" class="hover:text-blue-600 focus:outline-none focus:underline">Low Stock Alerts</a>
                 </h3>
-                <a href="{{ route('reports.stock', ['low_stock' => 1]) }}" class="text-blue-600 hover:text-blue-700 text-sm font-medium">
+                <a href="{{ route('reports.stock', $lowStockFilters) }}" class="text-blue-600 hover:text-blue-700 text-sm font-medium">
                     View All <i class="fas fa-arrow-right ml-1"></i>
                 </a>
             </div>
             <div class="space-y-3">
                 @php $safeLowStock = collect($lowStockProducts ?? [])->filter(fn($p) => is_object($p)); @endphp
                 @forelse($safeLowStock as $product)
-                <div class="flex items-center justify-between p-3 bg-red-50 border border-red-200 rounded-lg">
+                <a href="{{ route('products.show', $product->id) }}" title="View product details" class="flex items-center justify-between p-3 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition focus:outline-none focus:ring-2 focus:ring-red-500">
                     <div class="flex items-center space-x-3">
                         <div class="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
                             <i class="fas fa-box text-red-600"></i>
@@ -481,7 +489,7 @@
                         <p class="font-bold text-red-600">{{ !empty($dashboardControls['hide_actual_stock_quantity']) ? '—' : number_format(round($applyPct($product->stock_quantity, $stockVisiblePct)), 0) }} left</p>
                         <p class="text-xs text-gray-500">Alert: {{ $product->alert_quantity }}</p>
                     </div>
-                </div>
+                </a>
                 @empty
                 <div class="text-center py-8 text-gray-500">
                     <i class="fas fa-check-circle text-4xl text-green-500 mb-2"></i>

@@ -369,7 +369,6 @@ class PreOrderController extends Controller
         $calculator = app(TaxCalculationService::class);
         $includeOriginal = $request->boolean('include_original');
         $products = Product::query()->with(['activePrices', 'taxSetting'])->where('is_active', true)
-            ->when(!$includeOriginal, fn ($query) => $query->where('is_pre_order', true))
             ->when($term !== '', fn ($query) => $query->where(fn ($q) => $q
                 ->where('name', 'like', "%{$term}%")->orWhere('sku', 'like', "%{$term}%")
                 ->orWhere('barcode', 'like', "%{$term}%")))

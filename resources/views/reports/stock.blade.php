@@ -82,6 +82,11 @@
 
     <div class="bg-white p-4 rounded shadow">
         <form id="stockReportFilters" method="GET" action="{{ route('reports.stock') }}" class="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+            @foreach(['all_product_types', 'active_only', 'is_pre_order'] as $scopeFilter)
+                @if(request()->boolean($scopeFilter))
+                    <input type="hidden" name="{{ $scopeFilter }}" value="1">
+                @endif
+            @endforeach
         <div>
             <label class="text-sm font-medium text-gray-600">Store</label>
             <select name="store_id" class="mt-1 border rounded px-3 py-2 text-sm w-48 bg-white">
@@ -144,6 +149,9 @@
                 <a href="{{ route('reports.stock') }}" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">Reset</a>
             </div>
         </form>
+        @if(request()->boolean('all_product_types') && request()->boolean('active_only'))
+            <p class="mt-3 text-xs text-gray-500">Showing active products, including pre-order products, to match the dashboard.</p>
+        @endif
     </div>
 
     <script>

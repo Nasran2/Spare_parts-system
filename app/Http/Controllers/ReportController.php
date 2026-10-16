@@ -1188,7 +1188,9 @@ class ReportController extends Controller
         ?int $storeId = null
     )
     {
-        $query = Product::with(['category', 'categories', 'brand', 'brands', 'unit', 'saleItems', 'purchaseItems'])->where('is_pre_order', request()->boolean('is_pre_order'));
+        $query = Product::with(['category', 'categories', 'brand', 'brands', 'unit', 'saleItems', 'purchaseItems'])
+            ->when(!request()->boolean('all_product_types'), fn ($q) => $q->where('is_pre_order', request()->boolean('is_pre_order')))
+            ->when(request()->boolean('active_only'), fn ($q) => $q->where('is_active', true));
         if ($storeId) {
             $query->with(['storeStocks' => function($q) use ($storeId) {
                 $q->where('store_id', $storeId);
