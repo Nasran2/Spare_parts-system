@@ -13,11 +13,12 @@ class PreOrderItem extends Model
         'pre_order_id', 'product_id', 'product_price_id', 'original_product_name',
         'description', 'quantity', 'quoted_price', 'final_price', 'discount_type',
         'discount_value', 'gross_amount', 'discount_amount', 'tax_amount',
-        'line_total', 'sync_status', 'tax_snapshot', 'notes',
+        'line_total', 'sync_status', 'tax_snapshot', 'notes', 'stock_deducted',
     ];
 
     protected $casts = [
         'quantity' => 'integer',
+        'stock_deducted' => 'boolean',
         'quoted_price' => 'decimal:2',
         'final_price' => 'decimal:2',
         'discount_value' => 'decimal:2',

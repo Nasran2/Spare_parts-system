@@ -8,8 +8,8 @@ use App\Models\Purchase;
 use App\Models\PurchaseItem;
 use App\Models\Setting;
 use App\Models\TaxSetting;
-use App\Services\DecimalMath;
 use App\Services\DashboardVisibilityService;
+use App\Services\DecimalMath;
 use App\Services\TaxCalculationService;
 use App\Services\TaxPostingService;
 use App\Support\PublicStorageSync;
@@ -31,6 +31,10 @@ class PurchaseController extends Controller
             $query->whereNotIn('supplier_id', $hiddenSupplierIds);
         }
         $query = SecretPos::excludeHiddenPurchaseRanges($query, 'total_amount');
+        $query->when($request->filled('search'), function ($q) use ($request) {
+            $term = '%'.trim($request->input('search')).'%';
+            $q->where(fn ($match) => $match->where('purchase_no', 'like', $term)->orWhere('status', 'like', $term)->orWhere('payment_status', 'like', $term)->orWhereHas('supplier', fn ($supplier) => $supplier->where('name', 'like', $term)));
+        });
         $purchases = $query->get();
         $controls = DashboardVisibilityService::configForUser(auth()->user());
 
@@ -52,7 +56,7 @@ class PurchaseController extends Controller
             ->get();
         $includeOriginal = $request->boolean('include_original');
         $products = \App\Models\Product::with('taxSetting')
-            ->when(!$includeOriginal, fn($q) => $q->where('is_pre_order', $isPreOrder))
+            ->when(! $includeOriginal, fn ($q) => $q->where('is_pre_order', $isPreOrder))
             ->orderBy('name')->get();
         $taxSettings = TaxSetting::current();
 
@@ -92,11 +96,11 @@ class PurchaseController extends Controller
             'store_ids' => 'required|array|min:1',
             'store_ids.*' => 'exists:stores,id',
         ];
-        
+
         if ($request->boolean('is_pre_order')) {
             $rules['store_ids'] = 'nullable|array';
         }
-        
+
         $validated = $request->validate($rules + [
             'reference_no' => 'nullable|string|max:255',
             'purchase_date' => 'nullable|date',
@@ -117,6 +121,10 @@ class PurchaseController extends Controller
             'payments.*.cheque_date' => 'nullable|date',
             'payments.*.cheque_number' => 'nullable|string',
             'payments.*.bank_name' => 'nullable|string',
+            'payments.*.bank_account_id' => 'nullable|integer|exists:bank_accounts,id',
+            'bank_account_id' => 'nullable|integer|exists:bank_accounts,id',
+            'payment_amount' => 'nullable|numeric|min:0',
+            'paid_amount' => 'nullable|numeric|min:0',
             'payment_method' => 'nullable|string',
             'document' => 'nullable|file|mimes:pdf,jpg,jpeg,png,csv,zip,doc,docx|max:5120',
             'notes' => 'nullable|string',
@@ -190,10 +198,10 @@ class PurchaseController extends Controller
                 PublicStorageSync::syncFile($documentPath);
             }
 
-                        // Payment calculation
+            // Payment calculation
             $payments = $validated['payments'] ?? [];
-            if (empty($payments) && !empty($validated['payment_method']) && isset($validated['payment_amount'])) {
-                $payments = [['method' => $validated['payment_method'], 'amount' => $validated['payment_amount']]];
+            if (empty($payments) && ! empty($validated['payment_method']) && isset($validated['payment_amount'])) {
+                $payments = [['method' => $validated['payment_method'], 'amount' => $validated['payment_amount'], 'bank_account_id' => $validated['bank_account_id'] ?? null]];
             }
 
             $paidAmount = 0;
@@ -201,8 +209,10 @@ class PurchaseController extends Controller
             $chequePaymentsData = [];
 
             foreach ($payments as $p) {
-                if (empty($p['method']) || empty($p['amount']) || $p['amount'] <= 0) continue;
-                if ($p['method'] === 'customer_cheque' && !empty($p['cheque_id'])) {
+                if (empty($p['method']) || empty($p['amount']) || $p['amount'] <= 0) {
+                    continue;
+                }
+                if ($p['method'] === 'customer_cheque' && ! empty($p['cheque_id'])) {
                     // It's a party cheque! We don't add this to paidAmount, we add it to paidAmount but it acts like cash because it's immediately passed.
                     // Wait, actually, if we give them a customer cheque, it acts as an immediate payment for the purchase.
                     $paidAmount += $p['amount'];
@@ -215,6 +225,7 @@ class PurchaseController extends Controller
                         'type' => 'own',
                         'amount' => $p['amount'],
                         'bank_name' => $p['bank_name'] ?? null,
+                        'bank_account_id' => \App\Support\PaymentBankAccount::resolve('own_cheque', $p['bank_account_id'] ?? null)?->id,
                         'cheque_number' => $p['cheque_number'] ?? null,
                         'cheque_date' => $p['cheque_date'] ?? null,
                     ];
@@ -225,7 +236,7 @@ class PurchaseController extends Controller
 
             $paidAmount = min($paidAmount, $grandTotal);
             $dueAmount = max(0, $grandTotal - $paidAmount - $heldOwnChequeAmount);
-            
+
             $paymentStatus = 'unpaid';
             if ($dueAmount <= 0 && $heldOwnChequeAmount <= 0) {
                 $paymentStatus = 'paid';
@@ -264,6 +275,8 @@ class PurchaseController extends Controller
                 'notes' => $validated['notes'] ?? null,
             ]);
 
+            $this->recordBankPayments($purchase, $payments, (float) $paidAmount);
+
             $shippingPerItemMinor = ($shippingType === 'divided' && $totalQtyMinor > 0)
                 ? DecimalMath::roundDiv(
                     DecimalMath::parse($shippingCost) * DecimalMath::SCALE,
@@ -271,7 +284,7 @@ class PurchaseController extends Controller
                 )
                 : 0;
 
-                        foreach ($chequePaymentsData as $cd) {
+            foreach ($chequePaymentsData as $cd) {
                 if ($cd['type'] === 'customer') {
                     $cheque = \App\Models\ChequePayment::find($cd['cheque_id']);
                     if ($cheque && $cheque->status === 'pending') {
@@ -289,9 +302,10 @@ class PurchaseController extends Controller
                         'cheque_date' => $cd['cheque_date'] ? \Carbon\Carbon::parse($cd['cheque_date'])->toDateString() : now()->toDateString(),
                         'cheque_number' => (string) $cd['cheque_number'],
                         'bank_name' => $cd['bank_name'],
+                        'bank_account_id' => $cd['bank_account_id'] ?? null,
                         'amount' => $cd['amount'],
                         'status' => 'pending',
-                        'notes' => 'Issued for Purchase #' . $purchase->id,
+                        'notes' => 'Issued for Purchase #'.$purchase->id,
                     ]);
                 }
             }
@@ -347,7 +361,7 @@ class PurchaseController extends Controller
 
                 // Increment store stock quantities for each store entered
                 $storeStockInput = $it['store_stock'] ?? [];
-                
+
                 if (empty($storeStockInput) && $it['quantity'] > 0) {
                     $defaultStore = \App\Models\Store::where('is_default', true)->first() ?? \App\Models\Store::first();
                     if ($defaultStore) {
@@ -465,7 +479,8 @@ class PurchaseController extends Controller
             ->orderBy('cheque_date')
             ->get();
 
-                $includeOriginal = request()->boolean('include_original');
+        $includeOriginal = request()->boolean('include_original');
+
         return view('purchases.edit', compact('purchase', 'suppliers', 'pendingCustomerCheques', 'isPreOrder', 'includeOriginal'));
     }
 
@@ -494,15 +509,19 @@ class PurchaseController extends Controller
             'payments.*.cheque_date' => 'nullable|date',
             'payments.*.cheque_number' => 'nullable|string',
             'payments.*.bank_name' => 'nullable|string',
+            'payments.*.bank_account_id' => 'nullable|integer|exists:bank_accounts,id',
+            'bank_account_id' => 'nullable|integer|exists:bank_accounts,id',
+            'payment_amount' => 'nullable|numeric|min:0',
+            'paid_amount' => 'nullable|numeric|min:0',
             'payment_method' => 'nullable|string',
             'document' => 'nullable|file|mimes:pdf,jpg,jpeg,png,csv,zip,doc,docx|max:5120',
             'notes' => 'nullable|string',
         ]);
 
         return DB::transaction(function () use ($request, $validated, $purchase) {
-                        $payments = $validated['payments'] ?? [];
-            if (empty($payments) && !empty($validated['payment_method']) && isset($validated['paid_amount'])) {
-                $payments = [['method' => $validated['payment_method'], 'amount' => $validated['paid_amount']]];
+            $payments = $validated['payments'] ?? [];
+            if (empty($payments) && ! empty($validated['payment_method']) && isset($validated['paid_amount'])) {
+                $payments = [['method' => $validated['payment_method'], 'amount' => max(0, (float) $validated['paid_amount'] - (float) $purchase->paid_amount), 'bank_account_id' => $validated['bank_account_id'] ?? null]];
             }
 
             $paidAmount = 0;
@@ -510,8 +529,10 @@ class PurchaseController extends Controller
             $chequePaymentsData = [];
 
             foreach ($payments as $p) {
-                if (empty($p['method']) || empty($p['amount']) || $p['amount'] <= 0) continue;
-                if ($p['method'] === 'customer_cheque' && !empty($p['cheque_id'])) {
+                if (empty($p['method']) || empty($p['amount']) || $p['amount'] <= 0) {
+                    continue;
+                }
+                if ($p['method'] === 'customer_cheque' && ! empty($p['cheque_id'])) {
                     $paidAmount += $p['amount'];
                     $chequePaymentsData[] = ['type' => 'customer', 'cheque_id' => $p['cheque_id'], 'amount' => $p['amount']];
                 } elseif ($p['method'] === 'own_cheque') {
@@ -520,6 +541,7 @@ class PurchaseController extends Controller
                         'type' => 'own',
                         'amount' => $p['amount'],
                         'bank_name' => $p['bank_name'] ?? null,
+                        'bank_account_id' => \App\Support\PaymentBankAccount::resolve('own_cheque', $p['bank_account_id'] ?? null)?->id,
                         'cheque_number' => $p['cheque_number'] ?? null,
                         'cheque_date' => $p['cheque_date'] ?? null,
                     ];
@@ -533,12 +555,12 @@ class PurchaseController extends Controller
             // For simplicity, we just add the newly submitted payments on top of the old ones.
             // But wait, the edit screen usually just lets you update the `paid_amount` directly.
             // If we're fully supporting multi-pay in edit, we should probably append the new payments.
-            
+
             $totalPaidAmount = min($purchase->paid_amount + $paidAmount, (float) $purchase->total_amount);
             $totalHeldAmount = $purchase->held_own_cheque_amount + $heldOwnChequeAmount;
-            
+
             $dueAmount = max(0, (float) $purchase->total_amount - $totalPaidAmount - $totalHeldAmount);
-            
+
             $paymentStatus = 'unpaid';
             if ($dueAmount <= 0 && $totalHeldAmount <= 0) {
                 $paymentStatus = 'paid';
@@ -546,7 +568,7 @@ class PurchaseController extends Controller
                 $paymentStatus = 'partial';
             }
 
-                        foreach ($chequePaymentsData as $cd) {
+            foreach ($chequePaymentsData as $cd) {
                 if ($cd['type'] === 'customer') {
                     $cheque = \App\Models\ChequePayment::find($cd['cheque_id']);
                     if ($cheque && $cheque->status === 'pending') {
@@ -563,9 +585,10 @@ class PurchaseController extends Controller
                         'cheque_date' => $cd['cheque_date'] ? \Carbon\Carbon::parse($cd['cheque_date'])->toDateString() : now()->toDateString(),
                         'cheque_number' => (string) $cd['cheque_number'],
                         'bank_name' => $cd['bank_name'],
+                        'bank_account_id' => $cd['bank_account_id'] ?? null,
                         'amount' => $cd['amount'],
                         'status' => 'pending',
-                        'notes' => 'Issued for Purchase #' . $purchase->id,
+                        'notes' => 'Issued for Purchase #'.$purchase->id,
                     ]);
                 }
             }
@@ -590,6 +613,8 @@ class PurchaseController extends Controller
                 'notes' => $validated['notes'] ?? null,
             ]);
 
+            $this->recordBankPayments($purchase, $payments, (float) $paidAmount);
+
             return redirect()->route('purchases.show', $purchase->id)
                 ->with('success', 'Purchase updated successfully');
         });
@@ -598,6 +623,27 @@ class PurchaseController extends Controller
     /**
      * Remove the specified resource from storage.
      */
+    private function recordBankPayments(Purchase $purchase, array $payments, float $limit): void
+    {
+        foreach ($payments as $data) {
+            if (in_array($data['method'] ?? '', ['own_cheque', 'customer_cheque', 'credit', 'due'], true)) {
+                continue;
+            }
+            $amount = min($limit, (float) ($data['amount'] ?? 0));
+            if ($amount <= 0) {
+                continue;
+            }
+            $payment = \App\Models\Payment::create([
+                'purchase_id' => $purchase->id, 'supplier_id' => $purchase->supplier_id,
+                'user_id' => auth()->id(), 'amount' => $amount,
+                'payment_method' => $data['method'], 'bank_account_id' => $data['bank_account_id'] ?? null,
+                'payment_date' => $purchase->purchase_date, 'notes' => 'Purchase payment',
+            ]);
+            app(\App\Services\BulkPaymentAccountingService::class)->recordSupplierPayment($payment, auth()->id());
+            $limit = round($limit - $amount, 2);
+        }
+    }
+
     public function destroy(string $id)
     {
         $purchase = \App\Models\Purchase::findOrFail($id);

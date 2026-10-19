@@ -10,6 +10,7 @@ class Expense extends Model
     use HasFactory;
 
     protected $fillable = [
+        'bank_account_id',
         'expense_category_id',
         'user_id',
         'expense_date',
@@ -19,6 +20,11 @@ class Expense extends Model
         'receipt',
         'store_id',
     ];
+
+    public function bankAccount()
+    {
+        return $this->belongsTo(\App\Models\Accounting\BankAccount::class);
+    }
 
     protected $casts = [
         'expense_date' => 'date',
@@ -42,13 +48,21 @@ class Expense extends Model
 
     protected static function booted()
     {
+        static::saving(function (self $expense) {
+            if (! $expense->exists || $expense->isDirty(['payment_method', 'bank_account_id'])) {
+                $expense->bank_account_id = \App\Support\PaymentBankAccount::resolve(
+                    $expense->payment_method ?? 'cash', $expense->bank_account_id
+                )?->id;
+            }
+        });
+
         static::addGlobalScope('hiddenStores', function (\Illuminate\Database\Eloquent\Builder $builder) {
             if (auth()->hasUser()) {
                 $hiddenStoreIds = \App\Services\DashboardVisibilityService::hiddenStoreIdsForUser(auth()->user());
-                if (!empty($hiddenStoreIds)) {
+                if (! empty($hiddenStoreIds)) {
                     $builder->where(function ($q) use ($hiddenStoreIds) {
                         $q->whereNotIn('expenses.store_id', $hiddenStoreIds)
-                          ->orWhereNull('expenses.store_id');
+                            ->orWhereNull('expenses.store_id');
                     });
                 }
             }

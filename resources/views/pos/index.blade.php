@@ -2909,6 +2909,7 @@
                 customer_id: customerId ? Number(customerId) : null,
                 store_id: document.getElementById('pos-location')?.value || null,
                 payment_method: method,
+                bank_account_id: window.PaymentBankAccounts?.value(document.getElementById('payment-method')),
                 cheque_date: chequeDate || null,
                 cheque_number: chequeNumber || null,
                 cheque_bank: chequeBank || null,
@@ -3092,7 +3093,7 @@
             if (method === 'cheque') {
                 chequeUsed = true;
             }
-            const payload = { method, amount: Math.round(amount * 100) / 100 };
+            const payload = { method, amount: Math.round(amount * 100) / 100, bank_account_id: window.PaymentBankAccounts?.value(row.querySelector('select.payment-method')) };
             if (method === 'cheque') {
                 payload.cheque_date = row.querySelector('.cheque-date')?.value || '';
                 payload.cheque_number = row.querySelector('.cheque-number')?.value || '';
@@ -3237,13 +3238,33 @@
         button.addEventListener('click', closeSalePrintChoice);
     });
 
-    // Initialize: fetch current empty cart by clearing then rendering
+    // Restore the unfinished bill; only explicit cancel, hold, or checkout clears it.
     (async function init(){
         try {
-            const cart = await postJSON('{{ route('pos.cart.clear') }}');
+            const response = await fetch('{{ route('pos.cart.current') }}', {credentials: 'same-origin', headers: {'Accept': 'application/json'}});
+            if (!response.ok) throw new Error('Unable to restore the unfinished bill.');
+            const cart = await response.json();
+            const location = document.getElementById('pos-location');
+            if (location && cart.context?.store_id) location.value = String(cart.context.store_id);
+            if (cart.context?.customer_id) {
+                const savedCustomers = JSON.parse(document.querySelector('.pos-customer-picker')?.getAttribute('data-customers') || '[]');
+                const savedCustomer = savedCustomers.find(customer => Number(customer.id) === Number(cart.context.customer_id));
+                if (savedCustomer) syncCustomerPickers(savedCustomer);
+            }
+            if (discountValue) discountValue.value = cart.discount?.value || '';
+            document.querySelectorAll('.discount-type').forEach(input => input.checked = input.value === (cart.discount?.type || 'fixed'));
             renderCart(cart);
         } catch(err){ console.error('Init cart failed', err); }
     })();
+
+    function saveCartContext() {
+        postJSON('{{ route('pos.cart.context') }}', {
+            customer_id: selectedCustomerId() || null,
+            store_id: document.getElementById('pos-location')?.value || null,
+        }).catch(error => showToast('warning', 'Could not save bill selections: ' + error.message));
+    }
+    document.getElementById('pos-location')?.addEventListener('change', saveCartContext);
+    document.querySelectorAll('.pos-customer-id').forEach(input => input.addEventListener('change', saveCartContext));
 
     })(); // end IIFE
 </script>

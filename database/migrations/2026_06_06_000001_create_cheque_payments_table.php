@@ -1,9 +1,9 @@
 <?php
 
+use App\Support\Migrations\Schema;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
@@ -86,9 +86,9 @@ return new class extends Migration
 
     private function upsertSetting(string $key, string $value, string $type, string $group): void
     {
-        DB::table('settings')->updateOrInsert(
-            ['key' => $key],
-            ['value' => $value, 'type' => $type, 'group' => $group, 'updated_at' => now(), 'created_at' => now()]
-        );
+        DB::table('settings')->insertOrIgnore([
+            'key' => $key, 'value' => $value, 'type' => $type, 'group' => $group,
+            'updated_at' => now(), 'created_at' => now(),
+        ]);
     }
 };

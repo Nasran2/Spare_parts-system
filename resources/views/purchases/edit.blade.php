@@ -138,7 +138,7 @@
                                 <option value="cash" @selected($selectedPaymentMethod === 'cash')>Main Account (Cash)</option>
                                 <option value="petty_cash" @selected($selectedPaymentMethod === 'petty_cash')>Petty Cash</option>
                                 <option value="card" @selected($selectedPaymentMethod === 'card')>Card</option>
-                                <option value="bank_transfer" @selected($selectedPaymentMethod === 'bank_transfer')>Main Account (Bank Transfer)</option>
+                                <option value="bank_transfer" @selected($selectedPaymentMethod === 'bank_transfer')>Bank Transfer</option>
                                 <option value="cheque" @selected($selectedPaymentMethod === 'cheque')>Cheque</option>
                                 <option value="due_payment" @selected($selectedPaymentMethod === 'due_payment')>Due Payment</option>
                                 <option value="credit" @selected($selectedPaymentMethod === 'credit')>Credit</option>

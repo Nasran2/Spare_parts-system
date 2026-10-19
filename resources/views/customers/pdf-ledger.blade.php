@@ -68,6 +68,12 @@
             <span>Total Paid:</span>
             <span class="text-right font-bold">{{ config('app.currency') }} {{ $overallTotals['paid'] ?? 0 }}</span>
         </div>
+        @if(($overallTotals['opening_balance'] ?? 0) != 0)
+        <div class="summary-row">
+            <span>Opening Balance:</span>
+            <span class="text-right font-bold">{{ config('app.currency') }} {{ $overallTotals['opening_balance'] }}</span>
+        </div>
+        @endif
         @if(isset($overallTotals['sales_due']) && $overallTotals['sales_due'] > 0)
         <div class="summary-row">
             <span style="color:#f97316;">Sales Due:</span>

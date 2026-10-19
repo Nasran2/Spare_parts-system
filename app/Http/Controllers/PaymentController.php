@@ -4,8 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Payment;
 use App\Models\Purchase;
-use App\Services\DashboardVisibilityService;
 use App\Services\BulkPaymentAccountingService;
+use App\Services\DashboardVisibilityService;
 use App\Support\SecretPos;
 use Illuminate\Http\Request;
 
@@ -51,10 +51,11 @@ class PaymentController extends Controller
             'supplier_id' => $purchase->supplier_id,
             'amount' => $request->amount,
             'payment_method' => $request->payment_method,
+            'bank_account_id' => $request->input('bank_account_id'),
             'payment_date' => $request->payment_date,
             'notes' => $request->notes,
         ]);
-        
+
         app(BulkPaymentAccountingService::class)->recordSupplierPayment($payment, $request->user()->id ?? null);
 
         // Update paid and due amounts

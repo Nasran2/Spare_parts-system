@@ -20,14 +20,14 @@
             </select>
             <div class="flex gap-2">
                 <button type="submit" class="w-full bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700">Apply</button>
-                <button type="submit" name="export" value="pdf" class="w-full bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 flex items-center justify-center gap-1" title="Export PDF">
+                <button data-legacy-export type="submit" name="export" value="pdf" class="w-full bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 flex items-center justify-center gap-1" title="Export PDF">
                     <i class="fas fa-file-pdf"></i> PDF
                 </button>
             </div>
         </form>
     </div>
     <div class="bg-white rounded-xl shadow overflow-x-auto">
-        <table class="w-full min-w-[900px] text-sm">
+        <table data-export-table class="w-full min-w-[900px] text-sm">
             <thead class="bg-gray-50">
                 <tr><th class="p-3 text-left">Customer Name</th><th class="p-3 text-center">Total Pre-Orders</th><th class="p-3 text-right">Total Amount</th><th class="p-3 text-right">Paid Amount</th><th class="p-3 text-right">Due Amount</th><th class="p-3 text-center">Actions</th></tr>
             </thead>

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Accounting\AccountingController;
+use App\Http\Controllers\Accounting\PettyCashTransferController;
 use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\BrandController;
@@ -14,16 +15,15 @@ use App\Http\Controllers\InformationController;
 use App\Http\Controllers\InventoryStoreController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\POSController;
+use App\Http\Controllers\PreOrderController;
 use App\Http\Controllers\PrivacyModeController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductPriceController;
 use App\Http\Controllers\ProductWriteOffController;
-use App\Http\Controllers\PreOrderController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\PurchaseReturnController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RoleController;
-use App\Http\Controllers\Accounting\PettyCashTransferController;
 use App\Http\Controllers\SaleController;
 use App\Http\Controllers\SaleReturnController;
 use App\Http\Controllers\SettingController;
@@ -68,6 +68,9 @@ Route::get('/customer/{customer}/pay/{sale}', [CustomerController::class, 'payme
 
 // Authenticated Routes
 Route::middleware(['auth', 'privacy_mode'])->group(function () {
+
+    Route::get('downloads/{module}/{format}', \App\Http\Controllers\BusinessExportController::class)
+        ->whereIn('format', ['pdf', 'excel'])->name('business.export');
 
     // Logout
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
@@ -201,7 +204,7 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
     Route::post('customers/{customer}/bulk-payment', [\App\Http\Controllers\BulkPaymentController::class, 'storeCustomerPayment'])
         ->middleware('permission:customers.edit')
         ->name('customers.bulk-payment.store');
-    Route::get('customers/{customer}/export-pdf/{type}', [CustomerController::class, 'exportPdf'])->name('customers.export-pdf');
+    Route::get('customers/{customer}/export-pdf/{type}', [CustomerController::class, 'exportPdf'])->middleware('permission:customers.view')->name('customers.export-pdf');
     Route::post('customers/{customer}/advance', [CustomerController::class, 'storeAdvance'])
         ->middleware('permission:customers.edit')
         ->name('customers.add-advance');
@@ -300,6 +303,8 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
         ->middleware('permission:pos.access')
         ->name('pos.recent-sales');
     // POS AJAX Cart Endpoints
+    Route::get('pos/cart', [POSController::class, 'currentCart'])->middleware('permission:pos.access')->name('pos.cart.current');
+    Route::post('pos/cart/context', [POSController::class, 'saveCartContext'])->middleware('permission:pos.access')->name('pos.cart.context');
     Route::post('pos/cart/add', [POSController::class, 'addToCart'])
         ->middleware('permission:pos.access')
         ->name('pos.cart.add');
@@ -329,7 +334,7 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
         ->name('pos.cart.clear');
     Route::get('pos/cancel-edit', [POSController::class, 'cancelEdit'])
         ->middleware('permission:pos.access')
-        ->name('pos.cart.clear');
+        ->name('pos.cancel_edit');
     Route::post('pos/cart/discount', [POSController::class, 'setDiscount'])
         ->middleware('permission:pos.access')
         ->name('pos.cart.discount');
@@ -360,6 +365,12 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
     Route::get('cheque-payments', [ChequePaymentController::class, 'index'])
         ->middleware('permission:cheque_payments.view')
         ->name('cheque-payments.index');
+    Route::get('cheque-payments/export/pdf', [ChequePaymentController::class, 'exportPdf'])
+        ->middleware('permission:cheque_payments.view')
+        ->name('cheque-payments.export.pdf');
+    Route::get('cheque-payments/export/excel', [ChequePaymentController::class, 'exportExcel'])
+        ->middleware('permission:cheque_payments.view')
+        ->name('cheque-payments.export.excel');
     Route::post('cheque-payments/{chequePayment}/pass', [ChequePaymentController::class, 'pass'])
         ->middleware('permission:cheque_payments.manage')
         ->name('cheque-payments.pass');
@@ -388,6 +399,11 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
         Route::get('accounts', [AccountingController::class, 'accounts'])->middleware('permission:accounting.accounts')->name('accounts');
         Route::get('transactions', [AccountingController::class, 'transactions'])->middleware('permission:accounting.transactions')->name('transactions');
         Route::get('banks', [AccountingController::class, 'banks'])->middleware('permission:accounting.banks')->name('banks');
+        Route::get('bank-balances', [\App\Http\Controllers\Accounting\BankBalanceController::class, 'index'])->middleware('permission:accounting.bank-book')->name('bank-balances');
+        Route::post('bank-transfers', [\App\Http\Controllers\Accounting\BankBalanceController::class, 'transfer'])->middleware('permission:accounting.manage')->name('bank-transfers.store');
+        Route::post('banks/{bankAccount}/opening-balance', [\App\Http\Controllers\Accounting\BankBalanceController::class, 'opening'])->middleware('permission:accounting.manage')->name('banks.opening');
+        Route::post('cash/opening-balance', [\App\Http\Controllers\Accounting\BankBalanceController::class, 'opening'])->middleware('permission:accounting.manage')->name('cash.opening');
+        Route::post('bank-entries/{accountTransaction}/assign', [\App\Http\Controllers\Accounting\BankBalanceController::class, 'assign'])->middleware('permission:accounting.manage')->name('bank-entries.assign');
         Route::get('petty-cash', [AccountingController::class, 'pettyCash'])->middleware('permission:accounting.petty-cash')->name('petty-cash');
         Route::get('ledger', [AccountingController::class, 'ledger'])->middleware('permission:accounting.ledger')->name('ledger');
         Route::get('t-accounts', [AccountingController::class, 'tAccounts'])
@@ -476,6 +492,7 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
         Route::get('daily-ledger', [ReportController::class, 'dailyLedger'])->middleware('permission:reports.sales')->name('daily-ledger');
         Route::get('daily-ledger/pdf', [ReportController::class, 'dailyLedgerPdf'])->middleware('permission:reports.sales')->name('daily-ledger.pdf');
         Route::get('daily-ledger/csv', [ReportController::class, 'dailyLedgerCsv'])->middleware('permission:reports.sales')->name('daily-ledger.csv');
+        Route::get('daily-ledger/excel', [ReportController::class, 'dailyLedgerExcel'])->middleware('permission:reports.sales')->name('daily-ledger.excel');
         Route::get('purchase', [ReportController::class, 'purchase'])->middleware('permission:reports.purchase')->name('purchase');
         Route::get('purchase/pdf', [ReportController::class, 'purchasePdf'])->middleware('permission:reports.purchase')->name('purchase.pdf');
         Route::get('purchase/csv', [ReportController::class, 'purchaseCsv'])->middleware('permission:reports.purchase')->name('purchase.csv');
@@ -632,180 +649,73 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
         ->middlewareFor(['destroy'], 'permission:purchases.edit');
 });
 
-Route::get('/migrate', function () {
-    $connectionName = config('database.default');
-    $databaseName = config("database.connections.{$connectionName}.database", 'unknown');
-    $repairOutput = '';
-
-    try {
-        if (\Illuminate\Support\Facades\DB::getDriverName() === 'mysql') {
-            $idColumns = \Illuminate\Support\Facades\DB::select(
-                "SELECT TABLE_NAME, COLUMN_TYPE, EXTRA, COLUMN_KEY
-                 FROM information_schema.COLUMNS
-                 WHERE TABLE_SCHEMA = ?
-                   AND COLUMN_NAME = 'id'
-                   AND DATA_TYPE IN ('int', 'bigint', 'mediumint', 'smallint', 'tinyint')",
-                [$databaseName]
-            );
-
-            $repaired = [];
-            foreach ($idColumns as $column) {
-                $table = str_replace('`', '``', (string) $column->TABLE_NAME);
-                $type = (string) $column->COLUMN_TYPE;
-
-                $primaryKey = \Illuminate\Support\Facades\DB::selectOne(
-                    "SELECT COLUMN_NAME
-                     FROM information_schema.KEY_COLUMN_USAGE
-                     WHERE TABLE_SCHEMA = ?
-                       AND TABLE_NAME = ?
-                       AND CONSTRAINT_NAME = 'PRIMARY'
-                     LIMIT 1",
-                    [$databaseName, $column->TABLE_NAME]
-                );
-
-                $tableRepairs = [];
-                if ((string) $column->COLUMN_KEY !== 'PRI' && ! $primaryKey) {
-                    \Illuminate\Support\Facades\DB::statement("ALTER TABLE `{$table}` ADD PRIMARY KEY (`id`)");
-                    $tableRepairs[] = 'primary key';
-                }
-
-                if (! str_contains(strtolower((string) $column->EXTRA), 'auto_increment')) {
-                    \Illuminate\Support\Facades\DB::statement("ALTER TABLE `{$table}` MODIFY `id` {$type} NOT NULL AUTO_INCREMENT");
-                    $tableRepairs[] = 'auto increment';
-                }
-
-                if (! empty($tableRepairs)) {
-                    $repaired[] = $column->TABLE_NAME.' ('.implode(', ', $tableRepairs).')';
-                }
-            }
-
-            $repairOutput = empty($repaired)
-                ? 'No primary id columns needed AUTO_INCREMENT repair.'
-                : 'Repaired AUTO_INCREMENT on: '.implode(', ', $repaired);
-
-            // 1. Convert any MyISAM tables to InnoDB
-            $myisamTables = \Illuminate\Support\Facades\DB::select(
-                "SELECT TABLE_NAME 
-                 FROM information_schema.TABLES 
-                 WHERE TABLE_SCHEMA = ? 
-                   AND ENGINE = 'MyISAM'",
-                [$databaseName]
-            );
-
-            if (! empty($myisamTables)) {
-                $converted = [];
-                foreach ($myisamTables as $table) {
-                    $tableName = str_replace('`', '``', (string) $table->TABLE_NAME);
-                    \Illuminate\Support\Facades\DB::statement("ALTER TABLE `{$tableName}` ENGINE=InnoDB");
-                    $converted[] = $tableName;
-                }
-                $repairOutput .= "\nConverted MyISAM to InnoDB on: ".implode(', ', $converted);
-            }
-
-            // 2. Fix missing tables that are marked as migrated
-            $migrations = \Illuminate\Support\Facades\DB::table('migrations')->pluck('migration');
-            $tablesToCheck = [
-                '2026_05_16_000001_create_product_prices_table' => 'product_prices',
-                '2026_05_24_120000_create_privacy_mode_tables' => 'privacy_mode_settings',
-            ];
-
-            foreach ($tablesToCheck as $migration => $table) {
-                if ($migrations->contains($migration) && ! \Illuminate\Support\Facades\Schema::hasTable($table)) {
-                    \Illuminate\Support\Facades\DB::table('migrations')->where('migration', $migration)->delete();
-                    $repairOutput .= "\nRemoved missing table migration: {$migration}";
-                }
-            }
-
-            // 3. Fix partial migration failures (where columns exist but migration is not recorded)
-            if (! $migrations->contains('2026_05_16_000002_add_product_price_id_to_stock_documents')) {
-                $tablesToCleanup = [
-                    'purchase_items' => ['product_price_id', 'selling_price'],
-                    'sale_items' => ['product_price_id'],
-                    'sale_return_items' => ['product_price_id'],
-                ];
-
-                foreach ($tablesToCleanup as $table => $columns) {
-                    if (\Illuminate\Support\Facades\Schema::hasTable($table)) {
-                        foreach ($columns as $column) {
-                            if (\Illuminate\Support\Facades\Schema::hasColumn($table, $column)) {
-                                try {
-                                    // Try to drop foreign key first if it exists
-                                    \Illuminate\Support\Facades\Schema::table($table, function ($t) use ($column) {
-                                        $t->dropForeign([$column]);
-                                    });
-                                } catch (\Exception $e) {
-                                    // Ignore foreign key drop errors
-                                }
-                                \Illuminate\Support\Facades\Schema::table($table, function ($t) use ($column) {
-                                    $t->dropColumn($column);
-                                });
-                                $repairOutput .= "\nDropped partial column {$table}.{$column} for retry.";
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        $exitCode = Artisan::call('migrate', ['--force' => true]);
-        $migrateOutput = trim(Artisan::output());
-
-        $statusExitCode = Artisan::call('migrate:status', ['--no-ansi' => true]);
-        $statusOutput = trim(Artisan::output());
-
-        if ($exitCode !== 0) {
-            throw new \RuntimeException($migrateOutput !== '' ? $migrateOutput : 'Migration command returned a non-zero exit code.');
-        }
-
+$runMigrationHandler = function (\Illuminate\Http\Request $request) {
+    $expectedKey = env('MIGRATION_KEY');
+    if (! empty($expectedKey) && $request->query('key') !== $expectedKey) {
         return response()->make(
-            '<html><body style="font-family: Arial, sans-serif; padding: 24px;">'
-            .'<h1 style="color: #15803d;">Migration Successful</h1>'
-            .'<p><strong>Connection:</strong> '.e($connectionName).'</p>'
-            .'<p><strong>Database:</strong> '.e($databaseName).'</p>'
-            .'<p><strong>Exit code:</strong> '.e((string) $exitCode).'</p>'
-            .'<h2>Preflight Repair</h2>'
-            .'<pre style="background: #f5f5f5; padding: 16px; white-space: pre-wrap;">'.e($repairOutput !== '' ? $repairOutput : 'No preflight repair was needed for this database driver.').'</pre>'
-            .'<h2>Migration Output</h2>'
-            .'<pre style="background: #f5f5f5; padding: 16px; white-space: pre-wrap;">'.e($migrateOutput !== '' ? $migrateOutput : 'No output returned.').'</pre>'
-            .'<h2>Migration Status</h2>'
-            .'<p><strong>Status command exit code:</strong> '.e((string) $statusExitCode).'</p>'
-            .'<pre style="background: #f5f5f5; padding: 16px; white-space: pre-wrap;">'.e($statusOutput !== '' ? $statusOutput : 'No status output returned.').'</pre>'
+            '<html><body style="font-family: Arial, sans-serif; padding: 24px; text-align: center;">'
+            .'<h1 style="color: #b91c1c;">Unauthorized Access</h1>'
+            .'<p>A migration security key is configured on this server.</p>'
+            .'<p>Please provide the valid key in your URL: <code>?key=YOUR_SECRET_KEY</code></p>'
             .'</body></html>',
-            200,
-            ['Content-Type' => 'text/html; charset=UTF-8']
-        );
-    } catch (\Throwable $e) {
-        Log::error('Migration link failed.', [
-            'message' => $e->getMessage(),
-            'exception' => $e,
-        ]);
-
-        $logPath = storage_path('logs/laravel.log');
-        $recentLog = 'Log file not found.';
-
-        if (is_file($logPath)) {
-            $logLines = preg_split('/\R/', trim((string) file_get_contents($logPath))) ?: [];
-            $recentLog = implode(PHP_EOL, array_slice($logLines, -80));
-        }
-
-        return response()->make(
-            '<html><body style="font-family: Arial, sans-serif; padding: 24px;">'
-            .'<h1 style="color: #b91c1c;">Migration Failed</h1>'
-            .'<p><strong>Connection:</strong> '.e($connectionName).'</p>'
-            .'<p><strong>Database:</strong> '.e($databaseName).'</p>'
-            .'<p><strong>Error:</strong> '.e($e->getMessage()).'</p>'
-            .'<h2>Preflight Repair</h2>'
-            .'<pre style="background: #f5f5f5; padding: 16px; white-space: pre-wrap;">'.e($repairOutput !== '' ? $repairOutput : 'Preflight repair did not complete.').'</pre>'
-            .'<h2>Recent Error Log</h2>'
-            .'<pre style="background: #f5f5f5; padding: 16px; white-space: pre-wrap;">'.e($recentLog).'</pre>'
-            .'</body></html>',
-            500,
+            403,
             ['Content-Type' => 'text/html; charset=UTF-8']
         );
     }
-});
 
-Route::get('/run-seed', function () {
+    $connectionName = config('database.default');
+    $databaseName = config("database.connections.{$connectionName}.database", 'unknown');
+    try {
+        $service = app(\App\Services\MigrationHealthService::class);
+        if ($request->boolean('check')) {
+            $health = $service->check();
+            $result = ['output' => 'Read-only verification. No database changes were made.', 'repairs' => [], 'health' => $health];
+        } else {
+            $result = $service->migrate();
+            $health = $result['health'];
+        }
+        $success = empty($health['issues']);
+        $heading = $request->boolean('check') ? ($success ? 'Database Verified' : 'Database Check Failed') : 'Migration Successful';
+        $verification = $health['issues'] ?: ["Verified {$health['migration_count']} migrations and {$health['table_count']} application tables, including required columns, indexes and foreign keys."];
+        if ($health['other_migrations']) {
+            $verification[] = 'Additional migration history from another release: '.implode(', ', $health['other_migrations']);
+        }
+
+        return response()->view('maintenance.migration-result', [
+            'success' => $success, 'heading' => $heading, 'connection' => $connectionName,
+            'database' => $databaseName, 'error' => null, 'output' => $result['output'],
+            'repairs' => $result['repairs'], 'verification' => $verification,
+        ], $success ? 200 : 500);
+    } catch (\Throwable $exception) {
+        Log::error('Migration link failed.', ['exception' => $exception]);
+        $progress = isset($service) ? $service->progress() : ['repairs' => [], 'output' => ''];
+
+        return response()->view('maintenance.migration-result', [
+            'success' => false, 'heading' => 'Migration Failed', 'connection' => $connectionName,
+            'database' => $databaseName, 'error' => $exception->getMessage(), 'output' => $progress['output'],
+            'repairs' => $progress['repairs'], 'verification' => ['Verification did not complete. Correct the issue above and retry.'],
+        ], 500);
+    }
+};
+
+Route::get('/migration', $runMigrationHandler);
+Route::get('/migrate', $runMigrationHandler);
+Route::get('/run-migration', $runMigrationHandler);
+
+$runSeedHandler = function (\Illuminate\Http\Request $request) {
+    $expectedKey = env('MIGRATION_KEY');
+    if (! empty($expectedKey) && $request->query('key') !== $expectedKey) {
+        return response()->make(
+            '<html><body style="font-family: Arial, sans-serif; padding: 24px; text-align: center;">'
+            .'<h1 style="color: #b91c1c;">Unauthorized Access</h1>'
+            .'<p>A security key is configured on this server.</p>'
+            .'<p>Please provide the valid key in your URL: <code>?key=YOUR_SECRET_KEY</code></p>'
+            .'</body></html>',
+            403,
+            ['Content-Type' => 'text/html; charset=UTF-8']
+        );
+    }
+
     $connectionName = config('database.default');
     $databaseName = config("database.connections.{$connectionName}.database", 'unknown');
 
@@ -858,4 +768,7 @@ Route::get('/run-seed', function () {
             ['Content-Type' => 'text/html; charset=UTF-8']
         );
     }
-});
+};
+
+Route::get('/run-seed', $runSeedHandler);
+Route::get('/seed', $runSeedHandler);

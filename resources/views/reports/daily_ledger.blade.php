@@ -1,171 +1,90 @@
 @extends('layouts.app')
-
 @section('title', 'Daily Ledger')
 @section('page-title', 'Daily Ledger')
-
 @section('content')
 @php
-    $maskMoney = function ($value) {
-        if (\App\Services\PrivacyModeService::isActiveForUser(auth()->user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
-            return \App\Services\PrivacyModeService::maskAmount((float) $value);
-        }
-        return number_format((float) $value, 2, '.', ',');
-    };
+    $maskMoney = fn ($value) => \App\Services\PrivacyModeService::isActiveForUser(auth()->user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()
+        ? \App\Services\PrivacyModeService::maskAmount((float)$value) : number_format((float)$value, 2);
+    $sectionVisuals = [
+        'main' => ['tone' => 'blue', 'icon' => 'fa-wallet'],
+        'cheques' => ['tone' => 'violet', 'icon' => 'fa-money-check-alt'],
+        'petty' => ['tone' => 'amber', 'icon' => 'fa-cash-register'],
+        'sales' => ['tone' => 'emerald', 'icon' => 'fa-receipt'],
+    ];
+    $overviewCards = [
+        ['label' => 'Main Account (Cash)', 'value' => $ledgerSections['main']['closing'], 'tone' => 'blue', 'icon' => 'fa-wallet'],
+        ['label' => 'Customer Cheques Balance', 'value' => $ledgerSections['cheques']['closing'], 'tone' => 'violet', 'icon' => 'fa-money-check-alt'],
+        ['label' => 'Petty Cash Balance', 'value' => $ledgerSections['petty']['closing'], 'tone' => 'amber', 'icon' => 'fa-cash-register'],
+        ['label' => 'Total Sales Value', 'value' => $salesTotals['total'], 'tone' => 'indigo', 'icon' => 'fa-chart-line'],
+        ['label' => 'Sales-Related Receipts / Cheque Holds', 'value' => $salesReceipts, 'tone' => 'teal', 'icon' => 'fa-hand-holding-usd'],
+        ['label' => 'Period Expenses (Cash / Petty Cash)', 'value' => $periodExpenses, 'tone' => 'rose', 'icon' => 'fa-arrow-up-from-bracket'],
+    ];
+    $salesVisuals = [
+        'cash' => ['tone' => 'emerald', 'icon' => 'fa-coins'],
+        'cheque' => ['tone' => 'violet', 'icon' => 'fa-money-check-alt'],
+        'credit' => ['tone' => 'amber', 'icon' => 'fa-clock'],
+        'other' => ['tone' => 'blue', 'icon' => 'fa-university'],
+        'total' => ['tone' => 'indigo', 'icon' => 'fa-chart-line'],
+        'count' => ['tone' => 'slate', 'icon' => 'fa-layer-group'],
+    ];
 @endphp
-<div class="space-y-6">
-    <form method="get" class="bg-white p-4 rounded shadow flex flex-wrap gap-4 items-end">
-        <div>
-            <label class="text-sm font-medium text-gray-600">From</label>
-            <input type="date" name="from" value="{{ request('from', $from) }}" class="mt-1 border rounded px-3 py-2 text-sm w-48" />
-        </div>
-        <div>
-            <label class="text-sm font-medium text-gray-600">To</label>
-            <input type="date" name="to" value="{{ request('to', $to) }}" class="mt-1 border rounded px-3 py-2 text-sm w-48" />
-        </div>
-        @include('partials.quick-date-filter', [
-            'fromName' => 'from',
-            'toName' => 'to',
-            'labelClass' => 'text-sm font-medium text-gray-600',
-            'selectClass' => 'mt-1 border rounded px-3 py-2 text-sm w-48',
-        ])
-        <div class="flex items-center gap-2">
-            <button class="bg-blue-600 text-white px-4 py-2 rounded text-sm">Filter</button>
-            <a href="{{ route('reports.daily-ledger') }}" class="text-sm text-gray-600 hover:text-gray-800">Reset</a>
-            <a href="{{ route('reports.daily-ledger.csv', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-emerald-600 text-white rounded text-sm"><i class="fas fa-file-excel mr-1"></i>Excel</a>
-            <a href="{{ route('reports.daily-ledger.pdf', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-blue-600 text-white rounded text-sm"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
-        </div>
+<link rel="stylesheet" href="{{ asset('css/daily-ledger.css') }}?v=20261017-colors">
+<div class="daily-ledger">
+    <form method="GET" class="dl-toolbar" id="daily-ledger-filters">
+        <div><label for="dl-from">From Date</label><input id="dl-from" type="date" name="from" value="{{ $from }}" required></div>
+        <div><label for="dl-to">To Date</label><input id="dl-to" type="date" name="to" value="{{ $to }}" required></div>
+        @include('partials.quick-date-filter', ['fromName' => 'from', 'toName' => 'to', 'labelClass' => 'text-sm font-medium text-gray-600', 'selectClass' => 'mt-1 border rounded px-3 py-2 text-sm'])
+        <div class="dl-toolbar-actions"><button class="dl-button dl-blue">Filter</button><a href="{{ route('reports.daily-ledger') }}" class="dl-button">Reset</a><button type="button" class="dl-button dl-green" data-ledger-export="excel"><i class="fas fa-file-excel" aria-hidden="true"></i>Excel</button><button type="button" class="dl-button dl-blue" data-ledger-export="pdf"><i class="fas fa-file-pdf" aria-hidden="true"></i>PDF</button></div>
     </form>
-
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div class="bg-white p-4 rounded shadow border-l-4 border-blue-500">
-            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Main Account (Cash)</p>
-            <p class="text-2xl font-bold text-gray-800 mt-1">{{ $maskMoney($mainAccountBalance) }}</p>
+    <p class="dl-period">Report period: <strong>{{ $from }}</strong> to <strong>{{ $to }}</strong> · {{ $currency }} · Balances shown at the end of this period.</p>
+    <div class="dl-overview">
+        @foreach($overviewCards as $card)
+        <div class="dl-stat dl-tone-{{ $card['tone'] }}">
+            <div class="dl-stat-head"><p>{{ $card['label'] }}</p><span class="dl-stat-icon"><i class="fas {{ $card['icon'] }}" aria-hidden="true"></i></span></div>
+            <strong class="{{ $card['value'] < 0 ? 'dl-out' : '' }}">{{ $maskMoney($card['value']) }}</strong>
         </div>
-        <div class="bg-white p-4 rounded shadow border-l-4 border-orange-500">
-            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Petty Cash Balance</p>
-            <p class="text-2xl font-bold text-gray-800 mt-1">{{ $maskMoney($pettyCashBalance) }}</p>
-        </div>
-        <div class="bg-white p-4 rounded shadow border-l-4 border-emerald-500">
-            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Sales Revenue</p>
-            <p class="text-2xl font-bold text-emerald-600 mt-1">{{ $maskMoney($salesRevenue) }}</p>
-        </div>
-        <div class="bg-white p-4 rounded shadow border-l-4 border-red-500">
-            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Period Expenses (Out)</p>
-            <p class="text-2xl font-bold text-red-600 mt-1">{{ $maskMoney($totalExpensePeriod) }}</p>
-        </div>
+        @endforeach
     </div>
-
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-        <div class="bg-white p-4 rounded shadow border-l-4 border-indigo-500">
-            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Sales</p>
-            <p class="text-xl font-bold text-gray-800 mt-1">{{ $maskMoney($totalSales) }}</p>
+    <section class="dl-section dl-tone-emerald" id="daily-sales-transactions" aria-labelledby="dl-sales-title">
+        <div class="dl-section-heading"><h3 id="dl-sales-title"><span class="dl-section-icon"><i class="fas fa-receipt" aria-hidden="true"></i></span>Sales Transactions</h3><span>{{ $salesTotals['count'] }} {{ \Illuminate\Support\Str::plural('transaction', $salesTotals['count']) }}</span></div>
+        <div class="dl-sales-totals">
+            @foreach(['cash' => 'Total Cash Sales', 'cheque' => 'Total Cheque Sales', 'credit' => 'Credit Sales', 'other' => 'Bank / Other Payments', 'total' => 'Total Sales Value', 'count' => 'Total Transactions'] as $key => $label)
+            <div class="dl-stat dl-tone-{{ $salesVisuals[$key]['tone'] }}">
+                <div class="dl-stat-head"><p>{{ $label }}</p><span class="dl-stat-icon"><i class="fas {{ $salesVisuals[$key]['icon'] }}" aria-hidden="true"></i></span></div>
+                <strong>{{ $key === 'count' ? $salesTotals[$key] : $maskMoney($salesTotals[$key]) }}</strong>
+            </div>
+            @endforeach
         </div>
-        <div class="bg-white p-4 rounded shadow border-l-4 border-green-500">
-            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Cash Received</p>
-            <p class="text-xl font-bold text-gray-800 mt-1">{{ $maskMoney($totalCashReceived) }}</p>
+        <p class="dl-sales-note">Invoices dated within this period, excluding quotations. Cash, cheque, bank/other and credit amounts split each invoice as at {{ $to }}. Cheques include held and cleared cheques once; credit is the remaining unpaid amount. Bank/other includes transfers, cards and advance credit used.</p>
+        @include('reports.partials.daily_sales_table', ['pdf' => false])
+    </section>
+    @foreach($ledgerSections as $key => $section)
+    <section class="dl-section dl-tone-{{ $sectionVisuals[$key]['tone'] }}" aria-labelledby="dl-{{ $key }}-title">
+        <div class="dl-section-heading"><h3 id="dl-{{ $key }}-title"><span class="dl-section-icon"><i class="fas {{ $sectionVisuals[$key]['icon'] }}" aria-hidden="true"></i></span>{{ $sectionLabels[$key] }}</h3><span>{{ $section['rows']->count() }} entries</span></div>
+        <div class="dl-section-summary">
+            @foreach(['opening' => 'Balance Brought Forward', 'in' => 'Money In', 'out' => 'Money Out', 'closing' => 'Balance Carried Forward'] as $field => $label)<div class="dl-summary-{{ $field }}"><p>{{ $label }}</p><strong class="{{ $section[$field] < 0 ? 'dl-out' : '' }}">{{ $maskMoney($section[$field]) }}</strong></div>@endforeach
         </div>
-        <div class="bg-white p-4 rounded shadow border-l-4 border-purple-500">
-            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Cheque Received</p>
-            <p class="text-xl font-bold text-gray-800 mt-1">{{ $maskMoney($totalChequeReceived) }}</p>
-        </div>
-        <div class="bg-white p-4 rounded shadow border-l-4 border-rose-500">
-            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Due Amount</p>
-            <p class="text-xl font-bold text-gray-800 mt-1">{{ $maskMoney($totalDueAmount) }}</p>
-        </div>
-    </div>
-
-    @php
-        $timezone = config('app.timezone', 'Asia/Colombo');
-        
-        $renderTable = function($transactions, $title, $iconClass, $openingBalance, $closingBalance) use ($maskMoney, $from, $to) {
-            $html = '<div class="bg-white rounded shadow p-4 mt-6">';
-            $html .= '<h4 class="font-semibold mb-4 text-gray-800 text-lg border-b pb-2"><i class="' . $iconClass . ' mr-2"></i>' . $title . '</h4>';
-            $html .= '<div class="overflow-x-auto"><table class="min-w-full text-sm">';
-            $html .= '<thead class="bg-gray-50 border-b"><tr class="text-left text-gray-600">';
-            $html .= '<th class="px-4 py-3 font-medium">Date</th>';
-            $html .= '<th class="px-4 py-3 font-medium">Type</th>';
-            $html .= '<th class="px-4 py-3 font-medium">Account</th>';
-            $html .= '<th class="px-4 py-3 font-medium">Related Account</th>';
-            $html .= '<th class="px-4 py-3 font-medium">Reference</th>';
-            $html .= '<th class="px-4 py-3 font-medium">Description & Details</th>';
-            $html .= '<th class="px-4 py-3 font-medium text-right text-emerald-700">Money In (Dr)</th>';
-            $html .= '<th class="px-4 py-3 font-medium text-right text-red-700">Money Out (Cr)</th>';
-            $html .= '<th class="px-4 py-3 font-medium text-right text-blue-700">Balance</th>';
-            $html .= '</tr></thead><tbody class="divide-y">';
-            
-            // Opening Balance Row
-            $html .= '<tr class="bg-blue-50/50">';
-            $html .= '<td class="px-4 py-3 text-gray-700 whitespace-nowrap">' . ($from ?? '') . '</td>';
-            $html .= '<td class="px-4 py-3 whitespace-nowrap"><span class="px-2 py-1 rounded text-xs bg-blue-100 text-blue-700 font-medium">Balance</span></td>';
-            $html .= '<td class="px-4 py-3 text-gray-500">—</td>';
-            $html .= '<td class="px-4 py-3 text-gray-500">—</td>';
-            $html .= '<td class="px-4 py-3 text-gray-500">—</td>';
-            $html .= '<td class="px-4 py-3 text-gray-800 font-medium italic">Opening Balance</td>';
-            $html .= '<td class="px-4 py-3 text-center text-gray-400">—</td>';
-            $html .= '<td class="px-4 py-3 text-center text-gray-400">—</td>';
-            $html .= '<td class="px-4 py-3 text-right text-blue-700 font-bold whitespace-nowrap">' . $maskMoney($openingBalance) . '</td>';
-            $html .= '</tr>';
-
-            if ($transactions->isEmpty()) {
-                $html .= '<tr><td colspan="9" class="px-4 py-8 text-center text-gray-500 bg-gray-50"><i class="fas fa-folder-open text-3xl mb-3 text-gray-300 block"></i>No transactions found.</td></tr>';
-            } else {
-                foreach ($transactions as $t) {
-                    $date = $t->transaction_date ? $t->transaction_date->format('Y-m-d') : '';
-                    $type = ucfirst(str_replace('_', ' ', $t->source_type));
-                    $accName = $t->account?->name ?? '—';
-                    $relAccName = $t->relatedAccount?->name ?? '—';
-                    $refNo = $t->reference_no ?? '—';
-                    $moneyIn = $t->direction === 'in' ? $maskMoney($t->amount) : '—';
-                    $moneyOut = $t->direction === 'out' ? $maskMoney($t->amount) : '—';
-                    $balance = $maskMoney($t->running_balance);
-                    
-                    $desc = htmlspecialchars($t->description ?? '—');
-                    
-                    if ($t->source_type === 'payment' && $t->cheque_details && $t->cheque_details->count() > 0) {
-                        $desc .= '<div class="mt-2 space-y-1">';
-                        foreach ($t->cheque_details as $cheque) {
-                            $desc .= '<div class="text-xs bg-purple-50 text-purple-700 border border-purple-100 p-1 rounded">';
-                            $desc .= '<i class="fas fa-money-check mr-1"></i> <strong>' . htmlspecialchars($cheque->bank_name) . '</strong> - ' . htmlspecialchars($cheque->cheque_number) . ' - ' . $maskMoney($cheque->amount);
-                            $desc .= '</div>';
-                        }
-                        $desc .= '</div>';
-                    }
-                    
-                    $html .= '<tr class="hover:bg-gray-50 transition-colors">';
-                    $html .= '<td class="px-4 py-3 text-gray-700 whitespace-nowrap">' . $date . '</td>';
-                    $html .= '<td class="px-4 py-3 whitespace-nowrap"><span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-700 border">' . $type . '</span></td>';
-                    $html .= '<td class="px-4 py-3 text-gray-700 font-medium">' . $accName . '</td>';
-                    $html .= '<td class="px-4 py-3 text-gray-600">' . $relAccName . '</td>';
-                    $html .= '<td class="px-4 py-3 text-gray-600">' . $refNo . '</td>';
-                    $html .= '<td class="px-4 py-3 text-gray-600">' . $desc . '</td>';
-                    $html .= '<td class="px-4 py-3 text-right text-emerald-600 font-medium whitespace-nowrap">' . $moneyIn . '</td>';
-                    $html .= '<td class="px-4 py-3 text-right text-red-600 font-medium whitespace-nowrap">' . $moneyOut . '</td>';
-                    $html .= '<td class="px-4 py-3 text-right text-blue-600 font-bold whitespace-nowrap">' . $balance . '</td>';
-                    $html .= '</tr>';
-                }
-            }
-            
-            // Closing Balance Row
-            $html .= '<tr class="bg-gray-100/50 border-t-2 border-gray-200">';
-            $html .= '<td class="px-4 py-3 text-gray-700 whitespace-nowrap">' . ($to ?? '') . '</td>';
-            $html .= '<td class="px-4 py-3 whitespace-nowrap"><span class="px-2 py-1 rounded text-xs bg-gray-200 text-gray-800 font-medium">Balance</span></td>';
-            $html .= '<td class="px-4 py-3 text-gray-500">—</td>';
-            $html .= '<td class="px-4 py-3 text-gray-500">—</td>';
-            $html .= '<td class="px-4 py-3 text-gray-500">—</td>';
-            $html .= '<td class="px-4 py-3 text-gray-800 font-medium italic">Closing Balance</td>';
-            $html .= '<td class="px-4 py-3 text-center text-gray-400">—</td>';
-            $html .= '<td class="px-4 py-3 text-center text-gray-400">—</td>';
-            $html .= '<td class="px-4 py-3 text-right text-blue-700 font-bold whitespace-nowrap text-lg">' . $maskMoney($closingBalance) . '</td>';
-            $html .= '</tr>';
-
-            $html .= '</tbody></table></div></div>';
-            return $html;
-        };
-    @endphp
-
-    {!! $renderTable($mainTransactions, 'Main Account (Cash) Transactions', 'fas fa-wallet text-blue-600', $mainOpeningBalance, $mainClosingBalance) !!}
-    {!! $renderTable($chequeTransactions, 'Customer Receivable (Cheques)', 'fas fa-money-check text-purple-600', $chequeOpeningBalance, $chequeClosingBalance) !!}
-    {!! $renderTable($pettyTransactions, 'Petty Cash Transactions', 'fas fa-cash-register text-orange-600', $pettyOpeningBalance, $pettyClosingBalance) !!}
-
+        @include('reports.partials.daily_ledger_table', ['pdf' => false])
+    </section>
+    @endforeach
 </div>
+<dialog id="daily-ledger-export-dialog" class="dl-dialog" aria-labelledby="dl-export-title">
+    <form id="daily-ledger-export-form" method="GET" data-pdf-url="{{ route('reports.daily-ledger.pdf') }}" data-excel-url="{{ route('reports.daily-ledger.excel') }}">
+        <header><div><h3 id="dl-export-title">Export Daily Ledger</h3><p>Choose the sections to include in your download.</p></div><button type="button" data-ledger-close aria-label="Close"><i class="fas fa-times" aria-hidden="true"></i></button></header>
+        <div class="dl-dialog-body">
+            <p>From <strong>{{ $from }}</strong> to <strong>{{ $to }}</strong></p>
+            <input type="hidden" name="from" value="{{ $from }}"><input type="hidden" name="to" value="{{ $to }}"><input type="hidden" name="section_selection" value="1">
+            <div class="dl-selection-actions"><button type="button" data-ledger-select-all>Select all</button><button type="button" data-ledger-clear-all>Clear selection</button></div>
+            <fieldset><legend class="sr-only">Sections to export</legend>
+                @foreach($sectionLabels as $key => $label)<label class="dl-section-choice dl-tone-{{ $sectionVisuals[$key]['tone'] }}"><input type="checkbox" name="sections[]" value="{{ $key }}" checked><span class="dl-choice-icon"><i class="fas {{ $sectionVisuals[$key]['icon'] }}" aria-hidden="true"></i></span><span>{{ $label }}</span></label>@endforeach
+            </fieldset>
+            <p id="dl-export-help">All sections are selected by default. Uncheck any sections you do not need.</p>
+            <p id="dl-export-error" class="dl-export-error" role="alert" hidden>Select at least one section.</p>
+        </div>
+        <footer><button type="button" class="dl-button" data-ledger-close>Cancel</button><button type="submit" id="dl-export-submit" class="dl-button dl-blue">Download PDF</button></footer>
+    </form>
+</dialog>
+@push('scripts')
+<script src="{{ asset('js/daily-ledger.js') }}?v=20261017"></script>
+@endpush
 @endsection

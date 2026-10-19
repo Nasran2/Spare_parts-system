@@ -1,10 +1,10 @@
 <?php
 
 use App\Models\Role;
+use App\Support\Migrations\Schema;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
@@ -27,35 +27,31 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        DB::table('chart_accounts')->updateOrInsert(
-            ['code' => '3100'],
-            [
-                'name' => 'Owner Capital',
-                'type' => 'equity',
-                'subtype' => 'owner_capital',
-                'opening_balance' => 0,
-                'current_balance' => DB::table('chart_accounts')->where('code', '3100')->value('current_balance') ?? 0,
-                'is_system' => true,
-                'is_active' => true,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]
-        );
+        DB::table('chart_accounts')->insertOrIgnore([
+            'code' => '3100',
+            'name' => 'Owner Capital',
+            'type' => 'equity',
+            'subtype' => 'owner_capital',
+            'opening_balance' => 0,
+            'current_balance' => DB::table('chart_accounts')->where('code', '3100')->value('current_balance') ?? 0,
+            'is_system' => true,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
-        DB::table('chart_accounts')->updateOrInsert(
-            ['code' => '3200'],
-            [
-                'name' => 'Owner Drawings',
-                'type' => 'equity',
-                'subtype' => 'owner_drawings',
-                'opening_balance' => 0,
-                'current_balance' => DB::table('chart_accounts')->where('code', '3200')->value('current_balance') ?? 0,
-                'is_system' => true,
-                'is_active' => true,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]
-        );
+        DB::table('chart_accounts')->insertOrIgnore([
+            'code' => '3200',
+            'name' => 'Owner Drawings',
+            'type' => 'equity',
+            'subtype' => 'owner_drawings',
+            'opening_balance' => 0,
+            'current_balance' => DB::table('chart_accounts')->where('code', '3200')->value('current_balance') ?? 0,
+            'is_system' => true,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
         $permissions = [
             'accounting.owner-equity.view',

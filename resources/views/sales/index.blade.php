@@ -62,8 +62,8 @@
             </div>
         </div>
         <div class="flex flex-wrap gap-2 pt-2">
-            <a href="{{ route('sales.export.csv', request()->query()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-green-600 text-white rounded text-sm"><i class="fas fa-file-csv mr-1"></i>CSV</a>
-            <a href="{{ route('sales.export.pdf', request()->query()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-red-600 text-white rounded text-sm"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
+            <a data-legacy-export href="{{ route('sales.export.csv', request()->query()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-green-600 text-white rounded text-sm"><i class="fas fa-file-csv mr-1"></i>CSV</a>
+            <a data-legacy-export href="{{ route('sales.export.pdf', request()->query()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-red-600 text-white rounded text-sm"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
         </div>
     </form>
 
@@ -75,7 +75,7 @@
     <!-- Sales Table -->
     <div class="bg-white rounded-xl shadow-md overflow-hidden">
         <div class="overflow-x-auto">
-            <table class="w-full">
+            <table data-export-table class="w-full">
                 <thead class="bg-gray-50 border-b border-gray-200">
                     <tr>
                         <th class="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Invoice No</th>

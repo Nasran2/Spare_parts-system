@@ -51,19 +51,31 @@ class Customer extends Model
 
     public function getSalesDueAmountAttribute()
     {
+        if (array_key_exists('raw_balance', $this->attributes)) {
+            return max(0, (float) $this->attributes['raw_balance']);
+        }
+
         $salesDue = $this->sales()->sum('due_amount') ?? 0;
         $genericPayments = $this->payments()->whereNull('sale_id')->whereNull('pre_order_id')->sum('amount') ?? 0;
-        
+
         $rawDue = $salesDue + ($this->opening_balance ?? 0) - $genericPayments;
+
         return max(0, $rawDue);
     }
 
     public function getAdvanceBalanceAttribute()
     {
+        if (array_key_exists('raw_balance', $this->attributes)) {
+            $rawDue = (float) $this->attributes['raw_balance'];
+
+            return $rawDue < 0 ? abs($rawDue) : 0;
+        }
+
         $salesDue = $this->sales()->sum('due_amount') ?? 0;
         $genericPayments = $this->payments()->whereNull('sale_id')->whereNull('pre_order_id')->sum('amount') ?? 0;
-        
+
         $rawDue = $salesDue + ($this->opening_balance ?? 0) - $genericPayments;
+
         return $rawDue < 0 ? abs($rawDue) : 0;
     }
 

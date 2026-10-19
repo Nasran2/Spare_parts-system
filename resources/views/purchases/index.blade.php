@@ -39,13 +39,13 @@
 
     <div class="mt-4">
         <label class="text-xs font-semibold text-gray-600">Quick search</label>
-        <input id="purchaseSearchInput" type="search" placeholder="Search purchases" class="mt-2 w-full px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring focus:ring-blue-100">
+        <input id="purchaseSearchInput" value="{{ request('search') }}" type="search" placeholder="Search purchases" class="mt-2 w-full px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring focus:ring-blue-100">
     </div>
 
     <!-- Purchases Table -->
     <div class="bg-white rounded-xl shadow-md overflow-hidden">
         <div class="overflow-x-auto">
-            <table class="w-full">
+            <table data-export-table class="w-full">
                 <thead class="bg-gray-50 border-b border-gray-200">
                     <tr>
                         <th class="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Purchase No</th>

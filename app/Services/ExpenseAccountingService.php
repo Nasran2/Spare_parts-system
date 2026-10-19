@@ -20,7 +20,7 @@ class ExpenseAccountingService
             }
 
             $assetAccount = match ($expense->payment_method) {
-                'bank_transfer' => $this->bankAccount(),
+                'bank_transfer' => $expense->bank_account_id ? \App\Models\Accounting\BankAccount::findOrFail($expense->bank_account_id)->chartAccount : $this->bankAccount(),
                 'petty_cash' => $this->pettyCashAccount(),
                 default => $this->cashAccount(),
             };
@@ -31,6 +31,7 @@ class ExpenseAccountingService
 
             AccountTransaction::create([
                 'account_id' => $assetAccount->id,
+                'bank_account_id' => $expense->bank_account_id,
                 'related_account_id' => $expenseAccount->id,
                 'user_id' => $userId ?? $expense->user_id,
                 'transaction_date' => $expense->expense_date?->toDateString() ?? now()->toDateString(),
@@ -83,7 +84,7 @@ class ExpenseAccountingService
                         : (float) $transaction->amount;
                     $account->current_balance = round((float) $account->current_balance + $signed, 2);
                     $account->save();
-                    
+
                     if ($expense->payment_method === 'petty_cash' && $transaction->direction === 'out') {
                         $fund = \App\Models\Accounting\PettyCashFund::where('chart_account_id', $account->id)->first();
                         if ($fund) {
@@ -101,6 +102,7 @@ class ExpenseAccountingService
         if ($expense->payment_method === 'petty_cash') {
             return 'cash';
         }
+
         return (string) ($expense->payment_method === 'bank_transfer' ? 'bank_transfer' : 'cash');
     }
 
@@ -120,6 +122,7 @@ class ExpenseAccountingService
         if ($firstFund && $firstFund->chartAccount) {
             return $firstFund->chartAccount;
         }
+
         return $this->account('1110', 'Petty Cash', 'asset', 'petty_cash');
     }
 

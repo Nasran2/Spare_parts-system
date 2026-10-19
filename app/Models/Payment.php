@@ -10,6 +10,7 @@ class Payment extends Model
     use HasFactory;
 
     protected $fillable = [
+        'bank_account_id',
         'purchase_id',
         'supplier_id',
         'sale_id',
@@ -23,6 +24,11 @@ class Payment extends Model
         'notes',
         'store_id',
     ];
+
+    public function bankAccount()
+    {
+        return $this->belongsTo(\App\Models\Accounting\BankAccount::class);
+    }
 
     protected $casts = [
         'amount' => 'decimal:2',
@@ -66,6 +72,13 @@ class Payment extends Model
 
     protected static function booted()
     {
+        static::saving(function (self $payment) {
+            if (! $payment->exists || $payment->isDirty(['payment_method', 'bank_account_id'])) {
+                $payment->bank_account_id = \App\Support\PaymentBankAccount::resolve(
+                    $payment->payment_method ?? 'cash', $payment->bank_account_id
+                )?->id;
+            }
+        });
         static::addGlobalScope('hiddenStores', function (\Illuminate\Database\Eloquent\Builder $builder) {
             if (auth()->hasUser()) {
                 $hiddenStoreIds = \App\Services\DashboardVisibilityService::hiddenStoreIdsForUser(auth()->user());

@@ -6,8 +6,8 @@ use App\Models\Accounting\AccountTransaction;
 use App\Models\Accounting\ChartAccount;
 use App\Models\ChequePayment;
 use App\Models\Payment;
-use App\Models\Sale;
 use App\Models\PreOrder;
+use App\Models\Sale;
 
 class SalePaymentAccountingService
 {
@@ -27,10 +27,11 @@ class SalePaymentAccountingService
         }
 
         $method = (string) ($payment->payment_method ?: 'cash');
-        $assetAccount = $this->assetAccountForPaymentMethod($method);
+        $assetAccount = $this->assetAccountForPaymentMethod($method, $payment->bank_account_id);
 
         AccountTransaction::create([
             'account_id' => $assetAccount->id,
+            'bank_account_id' => $payment->bank_account_id,
             'related_account_id' => $this->salesRevenueAccount()->id,
             'user_id' => $userId,
             'transaction_date' => $payment->payment_date?->toDateString() ?? now()->toDateString(),
@@ -58,10 +59,11 @@ class SalePaymentAccountingService
         }
 
         $method = (string) ($payment->payment_method ?: 'cash');
-        $assetAccount = $this->assetAccountForPaymentMethod($method);
+        $assetAccount = $this->assetAccountForPaymentMethod($method, $payment->bank_account_id);
 
         AccountTransaction::create([
             'account_id' => $assetAccount->id,
+            'bank_account_id' => $payment->bank_account_id,
             'related_account_id' => $this->salesRevenueAccount()->id,
             'user_id' => $userId,
             'transaction_date' => $payment->payment_date?->toDateString() ?? now()->toDateString(),
@@ -155,7 +157,7 @@ class SalePaymentAccountingService
         if ($supplierId) {
             // Endorsed to supplier: Debit Supplier Payable, Credit Customer Receivable
             $payableAccount = $this->account('2000', 'Supplier Payable', 'liability', 'supplier_payable');
-            
+
             AccountTransaction::create([
                 'account_id' => $payableAccount->id,
                 'related_account_id' => $receivableAccount->id,
@@ -173,18 +175,19 @@ class SalePaymentAccountingService
 
             $payableAccount->decrement('current_balance', $amount);
             $receivableAccount->decrement('current_balance', $amount);
-            
+
             return;
         }
 
         // Passed to bank (default or specific)
         $bankAccount = $bankAccountId ? \App\Models\Accounting\BankAccount::find($bankAccountId)?->chartAccount : null;
-        if (!$bankAccount) {
+        if (! $bankAccount) {
             $bankAccount = $this->bankAccount();
         }
 
         AccountTransaction::create([
             'account_id' => $bankAccount->id,
+            'bank_account_id' => $bankAccountId,
             'related_account_id' => $receivableAccount->id,
             'user_id' => $userId,
             'transaction_date' => now()->toDateString(),
@@ -218,6 +221,7 @@ class SalePaymentAccountingService
 
         AccountTransaction::create([
             'account_id' => $source->account_id,
+            'bank_account_id' => $source->bank_account_id,
             'related_account_id' => $source->related_account_id,
             'user_id' => $userId,
             'transaction_date' => now()->toDateString(),
@@ -248,6 +252,7 @@ class SalePaymentAccountingService
 
         AccountTransaction::create([
             'account_id' => $source->account_id,
+            'bank_account_id' => $source->bank_account_id,
             'related_account_id' => $source->related_account_id,
             'user_id' => $userId,
             'transaction_date' => now()->toDateString(),
@@ -271,6 +276,7 @@ class SalePaymentAccountingService
         if ($pass && ! $this->transactionExists('cheque_payment_reversal', (int) $cheque->id)) {
             AccountTransaction::create([
                 'account_id' => $pass->account_id,
+                'bank_account_id' => $pass->bank_account_id,
                 'related_account_id' => $pass->related_account_id,
                 'user_id' => $userId,
                 'transaction_date' => now()->toDateString(),
@@ -367,10 +373,10 @@ class SalePaymentAccountingService
         ChartAccount::whereKey($hold->account_id)->decrement('current_balance', $hold->amount);
     }
 
-    private function assetAccountForPaymentMethod(string $method): ChartAccount
+    private function assetAccountForPaymentMethod(string $method, ?int $bankId = null): ChartAccount
     {
         return match ($method) {
-            'bank_deposit', 'bank_transfer', 'card', 'mobile_payment' => $this->bankAccount(),
+            'bank_deposit', 'bank_transfer', 'card', 'mobile_payment', 'cheque' => $bankId ? \App\Models\Accounting\BankAccount::findOrFail($bankId)->chartAccount : $this->bankAccount(),
             default => $this->cashAccount(),
         };
     }

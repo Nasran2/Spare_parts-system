@@ -10,6 +10,7 @@ class ChequePayment extends Model
     use HasFactory;
 
     protected $fillable = [
+        'bank_account_id',
         'type',
         'sale_id',
         'purchase_id',
@@ -29,6 +30,11 @@ class ChequePayment extends Model
         'auto_passed',
         'notes',
     ];
+
+    public function bankAccount()
+    {
+        return $this->belongsTo(\App\Models\Accounting\BankAccount::class);
+    }
 
     protected $casts = [
         'cheque_date' => 'date',

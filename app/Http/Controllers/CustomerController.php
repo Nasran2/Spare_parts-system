@@ -53,10 +53,16 @@ class CustomerController extends Controller
     public function index(Request $request)
     {
         $hiddenCustomerIds = DashboardVisibilityService::hiddenCustomerIdsForUser($request->user());
-        $query = Customer::orderBy('name');
+        $rawBalanceSubquery = '(COALESCE((SELECT SUM(due_amount) FROM sales WHERE sales.customer_id = customers.id), 0) + COALESCE(customers.opening_balance, 0) - COALESCE((SELECT SUM(amount) FROM payments WHERE payments.customer_id = customers.id AND payments.sale_id IS NULL AND payments.pre_order_id IS NULL), 0))';
+
+        $query = Customer::query()
+            ->select('customers.*')
+            ->selectRaw("{$rawBalanceSubquery} as raw_balance");
+
         if (! empty($hiddenCustomerIds)) {
-            $query->whereNotIn('id', $hiddenCustomerIds);
+            $query->whereNotIn('customers.id', $hiddenCustomerIds);
         }
+
         foreach ($this->customerPurchaseRangesForPublic() as $range) {
             if (! (bool) ($range['hide'] ?? true)) {
                 continue;
@@ -64,13 +70,100 @@ class CustomerController extends Controller
 
             $min = (float) ($range['min'] ?? 0);
             $max = (float) ($range['max'] ?? $min);
-            $query->whereNotBetween('due_amount', [min($min, $max), max($min, $max)]);
+            $query->whereRaw("{$rawBalanceSubquery} NOT BETWEEN ? AND ?", [min($min, $max), max($min, $max)]);
         }
 
-        $customers = $query->get();
+        // Metrics for summary cards (before applied user search/filters)
+        $baseMetricsQuery = Customer::query();
+        if (! empty($hiddenCustomerIds)) {
+            $baseMetricsQuery->whereNotIn('customers.id', $hiddenCustomerIds);
+        }
+
+        $metrics = [
+            'total' => (clone $baseMetricsQuery)->count(),
+            'active' => (clone $baseMetricsQuery)->where('customers.is_active', true)->count(),
+            'with_due' => (clone $baseMetricsQuery)->whereRaw("{$rawBalanceSubquery} > 0.001")->count(),
+            'with_advance' => (clone $baseMetricsQuery)->whereRaw("{$rawBalanceSubquery} < -0.001")->count(),
+        ];
+
+        // Search Filter (name, phone, email, TIN, address, city, ID)
+        if ($request->filled('search')) {
+            $search = trim((string) $request->input('search'));
+            $query->where(function ($q) use ($search) {
+                $q->where('customers.name', 'like', "%{$search}%")
+                    ->orWhere('customers.phone', 'like', "%{$search}%")
+                    ->orWhere('customers.email', 'like', "%{$search}%")
+                    ->orWhere('customers.tin', 'like', "%{$search}%")
+                    ->orWhere('customers.address', 'like', "%{$search}%")
+                    ->orWhere('customers.city', 'like', "%{$search}%");
+
+                if (is_numeric($search)) {
+                    $q->orWhere('customers.id', (int) $search);
+                }
+            });
+        }
+
+        // Status Filter
+        if ($request->filled('status')) {
+            $status = $request->input('status');
+            if ($status === 'active') {
+                $query->where('customers.is_active', true);
+            } elseif ($status === 'inactive') {
+                $query->where('customers.is_active', false);
+            }
+        }
+
+        // Balance Filter
+        if ($request->filled('balance_type')) {
+            $balanceType = $request->input('balance_type');
+            if ($balanceType === 'due') {
+                $query->whereRaw("{$rawBalanceSubquery} > 0.001");
+            } elseif ($balanceType === 'advance') {
+                $query->whereRaw("{$rawBalanceSubquery} < -0.001");
+            } elseif ($balanceType === 'zero') {
+                $query->whereRaw("ABS({$rawBalanceSubquery}) <= 0.001");
+            }
+        }
+
+        // Sorting
+        $sortBy = $request->input('sort_by', 'name_asc');
+        switch ($sortBy) {
+            case 'name_desc':
+                $query->orderBy('customers.name', 'desc');
+                break;
+            case 'due_desc':
+                $query->orderByDesc('raw_balance')->orderBy('customers.name', 'asc');
+                break;
+            case 'due_asc':
+                $query->orderBy('raw_balance', 'asc')->orderBy('customers.name', 'asc');
+                break;
+            case 'advance_desc':
+                $query->orderBy('raw_balance', 'asc')->orderBy('customers.name', 'asc');
+                break;
+            case 'newest':
+                $query->orderByDesc('customers.id');
+                break;
+            case 'oldest':
+                $query->orderBy('customers.id', 'asc');
+                break;
+            case 'name_asc':
+            default:
+                $query->orderBy('customers.name', 'asc');
+                break;
+        }
+
+        // Pagination / Per Page
+        $perPage = $request->attributes->get('business_export') ? 'all' : $request->input('per_page', '25');
+        if ($perPage === 'all') {
+            $customers = $query->get();
+        } else {
+            $perPageInt = max(5, min(200, (int) $perPage));
+            $customers = $query->paginate($perPageInt)->withQueryString();
+        }
+
         $controls = DashboardVisibilityService::configForUser($request->user());
 
-        return view('customers.index', compact('customers', 'controls'));
+        return view('customers.index', compact('customers', 'controls', 'metrics'));
     }
 
     /**
@@ -162,8 +255,8 @@ class CustomerController extends Controller
         $periodGenericPayments = (float) $customer->payments()
             ->whereNull('sale_id')
             ->whereNull('pre_order_id')
-            ->when($start, fn($q) => $q->whereDate('payment_date', '>=', $start))
-            ->when($end, fn($q) => $q->whereDate('payment_date', '<=', $end))
+            ->when($start, fn ($q) => $q->whereDate('payment_date', '>=', $start))
+            ->when($end, fn ($q) => $q->whereDate('payment_date', '<=', $end))
             ->sum('amount');
 
         $periodTotals = [
@@ -181,7 +274,7 @@ class CustomerController extends Controller
             ->reject(fn ($s) => SecretPos::isHidden((float) $s->total_amount)
                 || $this->customerPurchasePriceHidden((float) $s->total_amount)
                 || DashboardVisibilityService::isSaleHiddenForUser((int) $s->id, Auth::user()));
-                
+
         $overallPreOrders = $customer->preOrders;
 
         $genericPayments = (float) $customer->payments()->whereNull('sale_id')->whereNull('pre_order_id')->sum('amount');
@@ -189,10 +282,10 @@ class CustomerController extends Controller
             'invoice' => (float) $overallSales->sum('total_amount'),
             'paid' => (float) $overallSales->sum('paid_amount') + $genericPayments,
         ];
-        
+
         $overallTotals['balance'] = $overallTotals['invoice'] - $overallTotals['paid'] + (float) $customer->opening_balance;
         $overallTotals['sales_due'] = $customer->sales_due_amount;
-        
+
         $overallTotals = [
             'invoice' => $customerDisplayValue($overallTotals['invoice']),
             'paid' => $customerDisplayValue($overallTotals['paid']),
@@ -243,7 +336,7 @@ class CustomerController extends Controller
                 ];
             }
         }
-        
+
         // Pre-orders have been intentionally omitted from the main customer ledger
         $genericPaymentsList = $customer->payments()->whereNull('sale_id')->whereNull('pre_order_id')->get();
         foreach ($genericPaymentsList as $gp) {
@@ -265,7 +358,7 @@ class CustomerController extends Controller
         }
 
         // Sort by date ascending
-        usort($transactions, function($a, $b) {
+        usort($transactions, function ($a, $b) {
             return strtotime($a['date']) <=> strtotime($b['date']);
         });
 
@@ -533,7 +626,7 @@ class CustomerController extends Controller
                     'credit' => 0.0,
                     'notes' => $sale->notes,
                 ];
-                $totalInvoice += (float)$sale->total_amount;
+                $totalInvoice += (float) $sale->total_amount;
 
                 if ((float) $sale->paid_amount > 0) {
                     $transactions[] = [
@@ -545,7 +638,7 @@ class CustomerController extends Controller
                         'credit' => $customerDisplayValue($sale->paid_amount),
                         'notes' => 'Payment for '.$invoiceLabel,
                     ];
-                    $totalPaid += (float)$sale->paid_amount;
+                    $totalPaid += (float) $sale->paid_amount;
                 }
             }
         }
@@ -559,10 +652,10 @@ class CustomerController extends Controller
                     'payment_status' => $preOrder->payment_status,
                     'debit' => $customerDisplayValue($preOrder->grand_total),
                     'credit' => 0.0,
-                    'notes' => 'Status: ' . ucfirst($preOrder->status),
+                    'notes' => 'Status: '.ucfirst($preOrder->status),
                 ];
                 if ($preOrder->status === 'pending') {
-                    $totalInvoice += (float)$preOrder->grand_total;
+                    $totalInvoice += (float) $preOrder->grand_total;
                 }
 
                 if ((float) $preOrder->paid_amount > 0) {
@@ -576,14 +669,17 @@ class CustomerController extends Controller
                         'notes' => 'Pre-Order Payment for '.$preOrder->pre_order_number,
                     ];
                     if ($preOrder->status === 'pending') {
-                        $totalPaid += (float)$preOrder->paid_amount;
+                        $totalPaid += (float) $preOrder->paid_amount;
                     }
                 }
             }
         }
 
         if ($type === 'all') {
-            $genericPaymentsList = $customer->payments()->whereNull('sale_id')->get();
+            $genericPaymentsList = $customer->payments()->whereNull('sale_id')->whereNull('pre_order_id')
+                ->when($start, fn ($q) => $q->whereDate('payment_date', '>=', $start))
+                ->when($end, fn ($q) => $q->whereDate('payment_date', '<=', $end))
+                ->get();
             foreach ($genericPaymentsList as $gp) {
                 $pDate = optional($gp->payment_date)->toDateString() ?: $gp->created_at->toDateString();
                 $transactions[] = [
@@ -595,24 +691,26 @@ class CustomerController extends Controller
                     'credit' => $customerDisplayValue($gp->amount),
                     'notes' => $gp->notes ?? 'Payment towards Opening Balance',
                 ];
-                $totalPaid += (float)$gp->amount;
+                $totalPaid += (float) $gp->amount;
             }
         }
 
         if ($exportType === 'payments') {
-            $transactions = array_filter($transactions, fn($t) => $t['type'] === 'Payment');
+            $transactions = array_filter($transactions, fn ($t) => $t['type'] === 'Payment');
         }
 
-        usort($transactions, function($a, $b) {
+        usort($transactions, function ($a, $b) {
             return strtotime($a['date']) <=> strtotime($b['date']);
         });
 
-        // Add sales_due and pre_order_due to overallTotals
+        // Opening debt is separate from invoice debt and participates in the ledger balance.
+        $openingBalance = $type === 'all' ? (float) $customer->opening_balance : 0.0;
         $overallTotals = [
             'invoice' => $customerDisplayValue($totalInvoice),
             'paid' => $customerDisplayValue($totalPaid),
-            'balance' => $customerDisplayValue(max(0, $totalInvoice - $totalPaid)),
-            'sales_due' => $customerDisplayValue($customer->sales_due_amount),
+            'balance' => $customerDisplayValue(max(0, $openingBalance + $totalInvoice - $totalPaid)),
+            'opening_balance' => $customerDisplayValue($openingBalance),
+            'sales_due' => $customerDisplayValue(in_array($type, ['sales', 'all']) ? $sales->sum('due_amount') : 0),
         ];
 
         $title = 'Customer Ledger';
@@ -621,16 +719,20 @@ class CustomerController extends Controller
         } elseif ($exportType === 'pre_orders') {
             $title = 'Customer Pre-Orders Detailed Report';
             $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('customers.pdf-preorders-detailed', compact('preOrders', 'customer', 'title', 'overallTotals', 'start', 'end'));
-            return $pdf->download("Customer-{$exportType}-" . now()->format('Y-m-d') . ".pdf");
+
+            return $pdf->download("Customer-{$exportType}-".now()->format('Y-m-d').'.pdf');
         } elseif ($exportType === 'payments') {
             $title = 'Customer Payments Report';
             $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('customers.pdf-payments', compact('transactions', 'customer', 'title', 'overallTotals', 'start', 'end'));
-            return $pdf->download("Customer-{$exportType}-" . now()->format('Y-m-d') . ".pdf");
+
+            return $pdf->download("Customer-{$exportType}-".now()->format('Y-m-d').'.pdf');
         }
 
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('customers.pdf-ledger', compact('transactions', 'customer', 'title', 'overallTotals', 'start', 'end'));
-        return $pdf->download("Customer-{$exportType}-" . now()->format('Y-m-d') . ".pdf");
+
+        return $pdf->download("Customer-{$exportType}-".now()->format('Y-m-d').'.pdf');
     }
+
     /**
      * Public view of customer bill (no login required).
      */
@@ -765,25 +867,55 @@ class CustomerController extends Controller
     {
         $request->validate([
             'amount' => 'required|numeric|min:0.01',
-            'payment_method' => 'required|string',
+            'payment_method' => 'required|in:cash,card,bank_deposit,bank_transfer,mobile_payment,cheque',
             'payment_date' => 'required|date',
             'notes' => 'nullable|string',
+            'bank_account_id' => 'nullable|integer|exists:bank_accounts,id',
+            'cheque_number' => 'required_if:payment_method,cheque|nullable|string|max:100',
+            'cheque_date' => 'required_if:payment_method,cheque|nullable|date',
+            'bank_name' => 'required_if:payment_method,cheque|nullable|string|max:191',
+            'account_name' => 'nullable|string|max:191',
         ]);
 
         $customer = Customer::findOrFail($id);
+        if (DashboardVisibilityService::isCustomerHiddenForUser((int) $customer->id, $request->user())) {
+            abort(404);
+        }
 
-        $payment = \App\Models\Payment::create([
-            'customer_id' => $customer->id,
-            'sale_id' => null,
-            'pre_order_id' => null,
-            'amount' => $request->amount,
-            'payment_method' => $request->payment_method,
-            'payment_date' => $request->payment_date,
-            'notes' => $request->notes ?: 'Advance Payment',
-            'user_id' => auth()->id(),
-        ]);
+        $bank = \App\Support\PaymentBankAccount::resolve($request->payment_method, $request->input('bank_account_id'));
 
-        app(\App\Services\BulkPaymentAccountingService::class)->recordCustomerPayment($payment, auth()->id());
+        if ($request->payment_method === 'cheque') {
+            \App\Models\ChequePayment::create([
+                'customer_id' => $customer->id,
+                'user_id' => auth()->id(),
+                'bank_account_id' => $bank?->id,
+                'cheque_date' => $request->cheque_date,
+                'cheque_number' => $request->cheque_number,
+                'bank_name' => $request->bank_name,
+                'account_name' => $request->account_name,
+                'amount' => $request->amount,
+                'status' => 'pending',
+                'notes' => $request->notes ?: 'Advance Payment',
+            ]);
+
+            return back()->with('success', 'Advance cheque saved. The advance becomes available when the cheque is passed.');
+        }
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($customer, $request) {
+            $payment = \App\Models\Payment::create([
+                'customer_id' => $customer->id,
+                'sale_id' => null,
+                'pre_order_id' => null,
+                'amount' => $request->amount,
+                'payment_method' => $request->payment_method,
+                'bank_account_id' => $request->input('bank_account_id'),
+                'payment_date' => $request->payment_date,
+                'notes' => $request->notes ?: 'Advance Payment',
+                'user_id' => auth()->id(),
+            ]);
+
+            app(\App\Services\BulkPaymentAccountingService::class)->recordCustomerPayment($payment, auth()->id());
+        });
 
         return redirect()->back()->with('success', 'Advance payment added successfully.');
     }

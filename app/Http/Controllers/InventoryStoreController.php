@@ -65,16 +65,16 @@ class InventoryStoreController extends Controller
             $search = $request->input('search');
             $query->where(function ($q) use ($search) {
                 $q->where('reference_no', 'like', "%{$search}%")
-                  ->orWhere('transfer_no', 'like', "%{$search}%")
-                  ->orWhereHas('items.product', function ($pq) use ($search) {
-                      $pq->where('name', 'like', "%{$search}%")
-                          ->orWhere('sku', 'like', "%{$search}%")
-                          ->orWhere('barcode', 'like', "%{$search}%");
-                  });
+                    ->orWhere('transfer_no', 'like', "%{$search}%")
+                    ->orWhereHas('items.product', function ($pq) use ($search) {
+                        $pq->where('name', 'like', "%{$search}%")
+                            ->orWhere('sku', 'like', "%{$search}%")
+                            ->orWhere('barcode', 'like', "%{$search}%");
+                    });
             });
         }
 
-        $transfers = $query->paginate(20)->withQueryString();
+        $transfers = $query->paginate(\App\Support\BusinessExport::perPage($query, 20))->withQueryString();
         $stores = Store::orderBy('name')->get();
 
         return view('inventory-stores.transfer-history', compact('transfers', 'stores'));
@@ -155,6 +155,7 @@ class InventoryStoreController extends Controller
             if (! empty($validated['is_default'])) {
                 Store::query()->update(['is_default' => false]);
             }
+
             return Store::create($validated + ['is_default' => false]);
         });
 
@@ -162,7 +163,7 @@ class InventoryStoreController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Store created successfully',
-                'store' => $store
+                'store' => $store,
             ]);
         }
 
@@ -175,6 +176,7 @@ class InventoryStoreController extends Controller
             \App\Models\Store::query()->update(['is_default' => false]);
             $store->update(['is_default' => true]);
         });
+
         return back()->with('success', 'Default store updated.');
     }
 
@@ -335,7 +337,9 @@ class InventoryStoreController extends Controller
         $remainingToDeduct = $quantity;
 
         foreach ($stocks as $stock) {
-            if ($remainingToDeduct <= 0) break;
+            if ($remainingToDeduct <= 0) {
+                break;
+            }
 
             $deductAmount = min($stock->quantity, $remainingToDeduct);
             $stock->decrement('quantity', $deductAmount);
@@ -374,7 +378,7 @@ class InventoryStoreController extends Controller
                     ->where('product_id', $transfer->product_id)
                     ->lockForUpdate()
                     ->first();
-                    
+
                 if ($toStock) {
                     $toStock->decrement('quantity', $transfer->quantity);
                 }
@@ -448,11 +452,11 @@ class InventoryStoreController extends Controller
                     ->where('product_id', $transfer->product_id)
                     ->lockForUpdate()
                     ->first();
-                    
+
                 if ($toStock) {
                     $toStock->decrement('quantity', $transfer->quantity);
                 }
-                
+
                 $this->addStoreStock($transfer->from_store_id, $transfer->product_id, $transfer->quantity);
             }
 

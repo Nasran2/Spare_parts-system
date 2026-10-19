@@ -85,16 +85,17 @@ class AccountingController extends Controller
         $accounts = $this->accountsQuery($request)->orderBy('code')->get();
         $allAccounts = ChartAccount::orderBy('code')->get(['id', 'code', 'name', 'type']);
         $transactions = $this->transactionsQuery($request)
-            ->take($section === 'ledger' ? 100 : 15)
+            ->when(! $request->attributes->get('business_export'), fn ($q) => $q->take($section === 'ledger' ? 100 : 15))
             ->get();
         $banks = BankAccount::with('chartAccount')
             ->where('is_active', true)
             ->latest()
             ->get();
+        $banks->each(fn ($bank) => $bank->live_balance = app(\App\Services\AccountBalanceService::class)->balance($bank, today()->toDateString()));
         $pettyFunds = PettyCashFund::with('chartAccount')->where('is_active', true)->get();
         $categories = ExpenseCategory::where('is_active', true)->orderBy('name')->get();
-        $reconciliations = $this->reconciliationsQuery($request)->take(50)->get();
-        $pettyHistory = $this->pettyHistoryQuery($request)->take(100)->get();
+        $reconciliations = $this->reconciliationsQuery($request)->when(! $request->attributes->get('business_export'), fn ($q) => $q->take(50))->get();
+        $pettyHistory = $this->pettyHistoryQuery($request)->when(! $request->attributes->get('business_export'), fn ($q) => $q->take(100))->get();
         $tAccounts = $this->tAccountsData($request);
         $trialBalanceRows = $this->trialBalanceRows($request);
         $trialBalanceTotals = [
@@ -105,7 +106,7 @@ class AccountingController extends Controller
         $balanceSheet = $this->balanceSheetData();
         $mainBookTransactions = $this->mainBookTransactions($request)->get();
         $pettyBookTransactions = $this->pettyBookTransactions($request)->get();
-        
+
         $mainOut = (float) $mainBookTransactions->where('direction', 'out')->sum('amount');
         $mainIn = (float) $mainBookTransactions->where('direction', 'in')->sum('amount');
         $pettyOut = (float) $pettyBookTransactions->where('direction', 'out')->sum('amount');
@@ -227,7 +228,7 @@ class AccountingController extends Controller
             })
             ->latest('transaction_date')
             ->latest()
-            ->take(250);
+            ->when(! $request->attributes->get('business_export'), fn ($q) => $q->take(250));
     }
 
     private function pettyBookTransactions(Request $request)
@@ -243,13 +244,17 @@ class AccountingController extends Controller
             })
             ->latest('transaction_date')
             ->latest()
-            ->take(250);
+            ->when(! $request->attributes->get('business_export'), fn ($q) => $q->take(250));
     }
 
     private function bankBookTransactions(Request $request)
     {
-        return AccountTransaction::with(['account', 'relatedAccount'])
+        return AccountTransaction::with(['account', 'relatedAccount', 'bankAccount'])
             ->whereHas('account', fn ($q) => $q->where('code', '1200')->orWhere('subtype', 'bank'))
+            ->when($request->filled('bank_account_id'), function ($query) use ($request) {
+                $bank = BankAccount::findOrFail($request->input('bank_account_id'));
+                $query->whereIn('id', app(\App\Services\AccountBalanceService::class)->movements($bank)->select('id'));
+            })
             ->when($request->filled('from'), fn ($query) => $query->whereDate('transaction_date', '>=', $request->input('from')))
             ->when($request->filled('to'), fn ($query) => $query->whereDate('transaction_date', '<=', $request->input('to')))
             ->when($request->filled('direction'), fn ($query) => $query->where('direction', $request->input('direction')))
@@ -260,7 +265,7 @@ class AccountingController extends Controller
             })
             ->latest('transaction_date')
             ->latest()
-            ->take(250);
+            ->when(! $request->attributes->get('business_export'), fn ($q) => $q->take(250));
     }
 
     private function bookTotals($transactions): array
@@ -418,45 +423,54 @@ class AccountingController extends Controller
     {
         abort_unless(in_array($section, ['accounts', 'transactions', 'banks', 'petty-cash', 'ledger', 'cash-book'], true), 404);
         abort_unless(in_array($format, ['pdf', 'excel'], true), 404);
+        abort_unless($request->user()?->hasPermission('accounting.'.$section), 403);
+
+        if ($format === 'excel' && $section !== 'petty-cash') {
+            $module = ['accounts' => 'chart-accounts', 'transactions' => 'account-transactions', 'banks' => 'bank-reconciliation', 'ledger' => 'account-ledger', 'cash-book' => 'cash-book'][$section];
+
+            return app()->call([app(\App\Http\Controllers\BusinessExportController::class), '__invoke'], ['request' => $request, 'module' => $module, 'format' => 'excel']);
+        }
+        if ($section === 'petty-cash' && $format === 'excel') {
+            $data = app(\App\Services\PettyCashStatementService::class)->build($request);
+            $html = str_replace('<table class="statement">', '<table data-export-table class="statement">', view('accounting.export_petty_cash', $data)->render());
+            $tables = app(\App\Services\BusinessTableService::class)->extract($html, $data['title']);
+            $metadata = ['title' => $data['title'], 'period' => 'Period: '.$data['from'].' to '.$data['to'], 'generated' => now()->format('Y-m-d H:i'), 'filters' => 'Fund: '.$data['fundLabel'].($data['category'] ? ' · Category: '.$data['category'] : '').($data['search'] ? ' · Search: '.$data['search'] : '')];
+
+            return \Maatwebsite\Excel\Facades\Excel::download(new \App\Exports\BusinessWorkbook($tables, $metadata), 'petty-cash-history.xlsx');
+        }
+
+        if ($section === 'petty-cash' && $format === 'pdf') {
+            $data = app(\App\Services\PettyCashStatementService::class)->build($request);
+
+            return Pdf::loadView('accounting.export_petty_cash', $data)->setPaper('a4', 'landscape')
+                ->download('petty-cash-history.pdf');
+        }
 
         if ($section === 'cash-book') {
             $data = $this->exportCashBook($request);
             if ($format === 'pdf') {
                 $pdf = Pdf::loadView('accounting.export_cashbook', $data)->setPaper('a4', 'portrait');
+
                 return $pdf->download(str_replace(' ', '-', strtolower($data['title'])).'.pdf');
             }
-            // Fallback for Excel: just export main transactions
-            $title = $data['title'];
-            $headers = $data['main_table'][1];
-            $rows = $data['main_table'][2];
         } else {
             [$title, $headers, $rows] = $this->exportRows($request, $section);
             if ($format === 'pdf') {
                 $from = $request->input('from');
                 $to = $request->input('to');
                 $pdf = Pdf::loadView('accounting.export', compact('title', 'headers', 'rows', 'from', 'to'))->setPaper('a4', 'landscape');
+
                 return $pdf->download(str_replace(' ', '-', strtolower($title)).'.pdf');
             }
         }
 
-        $csv = fopen('php://temp', 'r+');
-        fputcsv($csv, $headers);
-        foreach ($rows as $row) {
-            fputcsv($csv, $row);
-        }
-        rewind($csv);
-
-        return response(stream_get_contents($csv), 200, [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => 'attachment; filename="'.str_replace(' ', '-', strtolower($title)).'.csv"',
-        ]);
     }
-    
+
     private function exportCashBook(Request $request): array
     {
         $mainBookTransactions = $this->mainBookTransactions($request)->get();
         $pettyBookTransactions = $this->pettyBookTransactions($request)->get();
-        
+
         $mainOut = (float) $mainBookTransactions->where('direction', 'out')->sum('amount');
         $mainIn = (float) $mainBookTransactions->where('direction', 'in')->sum('amount');
         $pettyOut = (float) $pettyBookTransactions->where('direction', 'out')->sum('amount');
@@ -470,7 +484,7 @@ class AccountingController extends Controller
             'total_out' => $mainOut + $pettyOut,
             'net_movement' => ($mainIn + $pettyIn) - ($mainOut + $pettyOut),
         ];
-        
+
         $mainRows = $mainBookTransactions->map(fn ($t) => [
             $t->transaction_date?->format('Y-m-d'),
             $t->reference_no,
@@ -478,7 +492,7 @@ class AccountingController extends Controller
             ucfirst($t->direction),
             number_format((float) $t->amount, 2, '.', ''),
         ])->all();
-        
+
         $pettyRows = $pettyBookTransactions->map(fn ($t) => [
             $t->transaction_date?->format('Y-m-d'),
             $t->reference_no,
@@ -614,7 +628,7 @@ class AccountingController extends Controller
         $rows = $this->pettyHistoryQuery($request)->get()->map(fn ($transaction) => [
             $transaction->transaction_date?->format('Y-m-d'),
             $transaction->account?->name,
-            ucfirst($transaction->type) . ($transaction->direction === 'in' ? ' (In)' : ' (Out)'),
+            ucfirst($transaction->type).($transaction->direction === 'in' ? ' (In)' : ' (Out)'),
             $transaction->reference_no,
             $transaction->description,
             number_format((float) $transaction->amount, 2, '.', ''),
@@ -665,6 +679,11 @@ class AccountingController extends Controller
         DB::transaction(function () use ($validated, $request) {
             if (! in_array($validated['payment_method'], $this->bankPaymentMethods(), true)) {
                 $validated['bank_account_id'] = null;
+            } else {
+                $bank = \App\Support\PaymentBankAccount::resolve($validated['payment_method'], $validated['bank_account_id'] ?? null);
+                if ($bank) {
+                    $validated['account_id'] = $bank->chart_account_id;
+                }
             }
 
             $transaction = AccountTransaction::create($validated + [
@@ -708,6 +727,11 @@ class AccountingController extends Controller
                     'is_active' => true,
                 ]
             );
+            // Preserve unlabelled history while this chart account still has one unambiguous bank.
+            $existingBanks = BankAccount::where('chart_account_id', $account->id)->get();
+            if ($existingBanks->count() === 1) {
+                AccountTransaction::where('account_id', $account->id)->whereNull('bank_account_id')->update(['bank_account_id' => $existingBanks->first()->id]);
+            }
             $account->increment('current_balance', $openingBalance);
 
             BankAccount::create($validated + [
@@ -756,7 +780,7 @@ class AccountingController extends Controller
 
             if (! empty($validated['transaction_ids'])) {
                 AccountTransaction::whereIn('id', $validated['transaction_ids'])
-                    ->where('account_id', $bankAccount->chart_account_id)
+                    ->whereIn('id', app(\App\Services\AccountBalanceService::class)->movements($bankAccount)->select('id'))
                     ->update(['is_reconciled' => true, 'reconciled_at' => now()]);
             }
         });
@@ -783,22 +807,7 @@ class AccountingController extends Controller
 
     private function bankSystemBalanceAt(BankAccount $bankAccount, Carbon $statementDate): float
     {
-        $movementQuery = AccountTransaction::query()
-            ->whereDate('transaction_date', '<=', $statementDate->toDateString())
-            ->where('bank_account_id', $bankAccount->id);
-
-        if (! $movementQuery->exists()) {
-            $movementQuery = AccountTransaction::query()
-                ->whereDate('transaction_date', '<=', $statementDate->toDateString())
-                ->where('account_id', $bankAccount->chart_account_id)
-                ->whereNull('bank_account_id');
-        }
-
-        $movementBalance = $movementQuery
-            ->selectRaw("SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END) as balance")
-            ->value('balance');
-
-        return round((float) $bankAccount->opening_balance + (float) $movementBalance, 2);
+        return app(\App\Services\AccountBalanceService::class)->balance($bankAccount, $statementDate->toDateString());
     }
 
     private function bankPaymentMethods(): array
@@ -815,11 +824,11 @@ class AccountingController extends Controller
 
         DB::transaction(function () use ($validated) {
             $lastPettyCode = ChartAccount::where('code', 'like', '111%')->orderBy('code', 'desc')->value('code');
-            $newCode = $lastPettyCode ? (string)((int)$lastPettyCode + 1) : '1110';
-            
+            $newCode = $lastPettyCode ? (string) ((int) $lastPettyCode + 1) : '1110';
+
             $account = ChartAccount::create([
                 'code' => $newCode,
-                'name' => 'Petty Cash - ' . $validated['name'],
+                'name' => 'Petty Cash - '.$validated['name'],
                 'type' => 'asset',
                 'subtype' => 'cash',
                 'opening_balance' => $validated['opening_balance'],
@@ -834,19 +843,19 @@ class AccountingController extends Controller
                 'opening_balance' => $validated['opening_balance'],
                 'current_balance' => $validated['opening_balance'],
             ]);
-            
+
             if ($validated['opening_balance'] > 0) {
-               AccountTransaction::create([
-                   'account_id' => $account->id,
-                   'transaction_date' => now()->toDateString(),
-                   'type' => 'deposit',
-                   'direction' => 'in',
-                   'amount' => $validated['opening_balance'],
-                   'payment_method' => 'cash',
-                   'description' => 'Opening Balance',
-                   'source_type' => 'petty_cash_transfer',
-                   'source_id' => $fund->id,
-               ]);
+                AccountTransaction::create([
+                    'account_id' => $account->id,
+                    'transaction_date' => now()->toDateString(),
+                    'type' => 'deposit',
+                    'direction' => 'in',
+                    'amount' => $validated['opening_balance'],
+                    'payment_method' => 'cash',
+                    'description' => 'Opening Balance',
+                    'source_type' => 'petty_cash_transfer',
+                    'source_id' => $fund->id,
+                ]);
             }
         });
 

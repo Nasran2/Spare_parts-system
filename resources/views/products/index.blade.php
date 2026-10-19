@@ -48,10 +48,10 @@
 
     <!-- Filters -->
     <div class="bg-white rounded-xl shadow-md p-6">
-        <form method="GET" action="{{ route('products.index') }}" class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <form method="GET" action="{{ route('products.index') }}" class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4">
             
             <!-- Search -->
-            <div class="lg:col-span-2">
+            <div class="xl:col-span-2">
                 <input 
                     type="text" 
                     name="search" 
@@ -244,7 +244,7 @@
                             $displayStock = clone $product;
                             $activeStoreId = request('store_id') ?: ($stores->firstWhere('is_default', true)->id ?? null);
                             if ($activeStoreId && $product->relationLoaded('storeStocks') && $product->storeStocks->where('store_id', $activeStoreId)->isNotEmpty()) {
-                                $displayStock->stock_quantity = $product->storeStocks->where('store_id', $activeStoreId)->first()->quantity;
+                                $displayStock->stock_quantity = $product->storeStocks->where('store_id', $activeStoreId)->sum('quantity');
                             } elseif ($activeStoreId) {
                                 $displayStock->stock_quantity = 0;
                             }
@@ -327,6 +327,7 @@
     </div>
 
 </div>
+@include('exports.product-table')
 @endsection
 
 {{-- Unit price toggle removed; prices shown inline --}}

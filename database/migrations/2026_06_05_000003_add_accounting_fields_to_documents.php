@@ -1,17 +1,24 @@
 <?php
 
+use App\Support\Migrations\Schema;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
     public function up(): void
     {
+        // Imported databases can have an inaccurate migration history. Ensure
+        // parent tables exist before MySQL attempts the document foreign keys.
+        if (! Schema::hasTable('stores') || ! Schema::hasTable('stock_shipments')) {
+            (require __DIR__.'/2026_06_05_000002_create_store_shipment_stock_tables.php')->up();
+        }
+
         Schema::table('sales', function (Blueprint $table) {
             if (! Schema::hasColumn('sales', 'store_id')) {
-                $table->foreignId('store_id')->nullable()->after('user_id')->constrained('stores')->nullOnDelete();
+                $table->unsignedBigInteger('store_id')->nullable()->after('user_id');
             }
+            $table->foreign('store_id')->references('id')->on('stores')->nullOnDelete();
             if (! Schema::hasColumn('sales', 'cheque_number')) {
                 $table->string('cheque_number')->nullable()->after('payment_method');
             }
@@ -22,8 +29,9 @@ return new class extends Migration
 
         Schema::table('purchases', function (Blueprint $table) {
             if (! Schema::hasColumn('purchases', 'stock_shipment_id')) {
-                $table->foreignId('stock_shipment_id')->nullable()->after('supplier_id')->constrained('stock_shipments')->nullOnDelete();
+                $table->unsignedBigInteger('stock_shipment_id')->nullable()->after('supplier_id');
             }
+            $table->foreign('stock_shipment_id')->references('id')->on('stock_shipments')->nullOnDelete();
             if (! Schema::hasColumn('purchases', 'cheque_number')) {
                 $table->string('cheque_number')->nullable()->after('payment_method');
             }

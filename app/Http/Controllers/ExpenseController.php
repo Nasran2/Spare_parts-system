@@ -19,7 +19,7 @@ class ExpenseController extends Controller
      */
     public function index()
     {
-        $expenses = Expense::with('category')->latest()->paginate(20);
+        $expenses = Expense::with('category')->latest()->paginate(request()->attributes->get('business_export') ? max(1, Expense::count()) : 20);
         $categories = ExpenseCategory::where('is_active', true)->get();
 
         return view('expenses.index', compact('expenses', 'categories'));
@@ -48,6 +48,7 @@ class ExpenseController extends Controller
             'expense_date' => 'required|date',
             'amount' => 'required|numeric|min:0',
             'payment_method' => 'required|in:cash,bank_transfer,petty_cash',
+            'bank_account_id' => 'nullable|integer|exists:bank_accounts,id',
             'description' => 'nullable|string',
             'receipt' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
         ]);
@@ -126,6 +127,7 @@ class ExpenseController extends Controller
             'expense_date' => 'required|date',
             'amount' => 'required|numeric|min:0',
             'payment_method' => 'required|in:cash,bank_transfer,petty_cash',
+            'bank_account_id' => 'nullable|integer|exists:bank_accounts,id',
             'description' => 'nullable|string',
             'receipt' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
         ]);

@@ -63,7 +63,7 @@ class SaleController extends Controller
         $query = $this->filteredQuery($request);
         $isActive = PrivacyModeService::isActiveForUser($request->user()) && PrivacyModeService::shouldMaskForCurrentPage();
 
-        $sales = $query->paginate(20)->appends($request->query());
+        $sales = $query->paginate(\App\Support\BusinessExport::perPage($query, 20))->appends($request->query());
 
         // Make sure totals are up-to-date for invoices that have returns.
         // (Older data or some flows might have recorded returns without recalculating the Sale row.)
@@ -674,7 +674,7 @@ class SaleController extends Controller
                     ->orWhereNotIn('customer_id', $hiddenCustomerIds);
             });
         }
-        if ($request->string('sale_type') !== 'quotation') {
+        if ((string) $request->string('sale_type') !== 'quotation') {
             if (! $request->filled('date_from') && ! $request->filled('date_to') && ! $request->boolean('all_dates')) {
                 $query->whereDate('sale_date', now()->toDateString());
             }
@@ -692,7 +692,7 @@ class SaleController extends Controller
         if ($request->filled('payment_status')) {
             $query->where('payment_status', $request->string('payment_status'));
         }
-        if ($request->has('sale_type') && $request->string('sale_type') !== '') {
+        if ($request->has('sale_type') && (string) $request->string('sale_type') !== '') {
             $query->where('sale_type', (string) $request->string('sale_type'));
         }
         // Exclude hidden-range bills from any listing/export
@@ -740,7 +740,7 @@ class SaleController extends Controller
     {
         $request->merge(['sale_type' => 'quotation']);
         $query = $this->filteredQuery($request);
-        $quotations = $query->paginate(20)->appends($request->query());
+        $quotations = $query->paginate(\App\Support\BusinessExport::perPage($query, 20))->appends($request->query());
         $hiddenCustomerIds = DashboardVisibilityService::hiddenCustomerIdsForUser($request->user());
         $customers = Customer::query()
             ->when(! empty($hiddenCustomerIds), fn ($q) => $q->whereNotIn('id', $hiddenCustomerIds))
@@ -773,22 +773,22 @@ class SaleController extends Controller
         // Format cart
         $cart = [
             'items' => [],
-            'discount' => ['type' => 'fixed', 'value' => (float)$sale->discount],
-            'tax_rate' => (float)($sale->tax_snapshot['rate'] ?? 0),
+            'discount' => ['type' => 'fixed', 'value' => (float) $sale->discount],
+            'tax_rate' => (float) ($sale->tax_snapshot['rate'] ?? 0),
         ];
 
         foreach ($sale->items as $item) {
-            $key = $item->product_id . '_' . ($item->product_price_id ?: 'null');
+            $key = $item->product_id.'_'.($item->product_price_id ?: 'null');
             $cart['items'][$key] = [
                 'id' => $item->product_id,
                 'price_id' => $item->product_price_id,
                 'name' => $item->product ? $item->product->name : 'Unknown Product',
-                'price' => (float)$item->unit_price,
-                'qty' => (float)$item->quantity,
+                'price' => (float) $item->unit_price,
+                'qty' => (float) $item->quantity,
                 'unit_id' => $item->unit_id,
                 'unit_multiplier' => 1,
                 'discount_type' => $item->discount_type ?: 'fixed',
-                'discount_value' => (float)$item->discount_amount,
+                'discount_value' => (float) $item->discount_amount,
                 'tax_rate' => 0,
                 'description' => $item->description,
             ];
@@ -912,6 +912,7 @@ class SaleController extends Controller
             'user_id' => Auth::id(),
             'amount' => $validated['amount'],
             'payment_method' => $validated['payment_method'],
+            'bank_account_id' => $request->input('bank_account_id'),
             'reference_no' => $validated['reference_no'] ?? null,
             'payment_date' => $validated['payment_date'],
             'notes' => $validated['notes'],

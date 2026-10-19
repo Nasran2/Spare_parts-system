@@ -2,25 +2,26 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
+use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\PurchaseReturn;
 use App\Models\PurchaseReturnItem;
-use App\Models\Product;
-use App\Models\ActivityLog;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Auth;
-use App\Support\SecretPos;
 use App\Services\TaxReturnService;
+use App\Support\SecretPos;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class PurchaseReturnController extends Controller
 {
     public function index()
     {
-        $returns = PurchaseReturn::with(['purchase.supplier', 'user'])
+        $query = PurchaseReturn::with(['purchase.supplier', 'user'])
             ->whereHas('purchase', fn ($q) => SecretPos::excludeHiddenPurchaseRanges($q, 'total_amount'))
-            ->latest()
-            ->paginate(10);
+            ->latest();
+        $returns = $query->paginate(\App\Support\BusinessExport::perPage($query, 10));
+
         return view('purchase_returns.index', compact('returns'));
     }
 
@@ -36,9 +37,9 @@ class PurchaseReturnController extends Controller
 
             if ($request->filled('purchase_id')) {
                 $term = $request->purchase_id;
-                $query->where(function($q) use ($term) {
+                $query->where(function ($q) use ($term) {
                     $q->where('id', $term)
-                      ->orWhere('purchase_no', 'LIKE', "%{$term}%");
+                        ->orWhere('purchase_no', 'LIKE', "%{$term}%");
                 });
             }
 
@@ -95,7 +96,7 @@ class PurchaseReturnController extends Controller
             foreach ($request->items as $itemData) {
                 if ($itemData['quantity'] > 0) {
                     $purchaseItem = $purchase->items->find($itemData['id']);
-                    
+
                     if ($itemData['quantity'] > $purchaseItem->quantity) {
                         throw new \Exception("Return quantity cannot exceed purchased quantity for {$purchaseItem->product->name}");
                     }
@@ -116,14 +117,14 @@ class PurchaseReturnController extends Controller
                     // Wait, Purchase Return means we give back to supplier. So Stock DECREASES.
                     $product = Product::find($purchaseItem->product_id);
                     if ($product->stock_quantity < $itemData['quantity']) {
-                         throw new \Exception("Insufficient stock to return {$itemData['quantity']} of {$product->name}");
+                        throw new \Exception("Insufficient stock to return {$itemData['quantity']} of {$product->name}");
                     }
                     $product->decrement('stock_quantity', $itemData['quantity']);
                 }
             }
 
             if ($totalRefund == 0) {
-                throw new \Exception("No items selected for return.");
+                throw new \Exception('No items selected for return.');
             }
 
             $purchaseReturn->update(['total_refund' => $totalRefund]);
@@ -158,7 +159,8 @@ class PurchaseReturnController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with('error', 'Error processing return: ' . $e->getMessage());
+
+            return back()->with('error', 'Error processing return: '.$e->getMessage());
         }
     }
 }

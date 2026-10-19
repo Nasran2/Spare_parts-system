@@ -40,7 +40,7 @@
                     <select name="payment_method" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 @error('payment_method') border-red-500 @enderror">
                         <option value="petty_cash" {{ old('payment_method', 'petty_cash') === 'petty_cash' ? 'selected' : '' }}>Petty Cash</option>
                         <option value="cash" {{ old('payment_method') === 'cash' ? 'selected' : '' }}>Main Account (Cash)</option>
-                        <option value="bank_transfer" {{ old('payment_method') === 'bank_transfer' ? 'selected' : '' }}>Main Account (Bank)</option>
+                        <option value="bank_transfer" {{ old('payment_method') === 'bank_transfer' ? 'selected' : '' }}>Bank Transfer</option>
                     </select>
                     <div class="mt-2 text-xs text-gray-600">
                         Petty Cash: <span class="font-bold text-green-600">Rs. {{ number_format($pettyCashBalance ?? 0, 2) }}</span> | 

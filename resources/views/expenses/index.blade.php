@@ -20,7 +20,7 @@
     <!-- Expenses Table -->
     <div class="bg-white rounded-xl shadow-md overflow-hidden">
         <div class="overflow-x-auto">
-            <table class="w-full">
+            <table data-export-table class="w-full">
                 <thead class="bg-gray-50 border-b border-gray-200">
                     <tr>
                         <th class="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
@@ -80,6 +80,7 @@
         </div>
     </div>
 
+<div class="mt-4">{{ $expenses->links() }}</div>
 </div>
 
 <!-- Scripts can be added later for dynamic features -->

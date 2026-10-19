@@ -69,8 +69,8 @@
         </div>
     </form>
 
-    <div class="bg-white rounded shadow overflow-hidden">
-        <table class="min-w-full text-sm">
+    <div class="bg-white rounded shadow overflow-x-auto">
+        <table data-export-table class="min-w-full text-sm">
             <thead class="bg-gray-50">
                 <tr class="text-left">
                     <th class="px-3 py-2">Product</th>

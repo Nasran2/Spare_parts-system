@@ -29,9 +29,9 @@
 @endphp
 <div class="space-y-6">
     <div class="bg-white rounded-xl shadow-md p-6">
-        <div class="flex items-center justify-between mb-4">
+        <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 mb-4">
             <h3 class="text-xl font-bold text-gray-800"><i class="fas fa-receipt text-green-600 mr-2"></i>VAT Report</h3>
-            <form method="GET" action="{{ route('reports.vat') }}" class="flex items-center gap-2">
+            <form method="GET" action="{{ route('reports.vat') }}" class="flex flex-col sm:flex-row sm:items-end flex-wrap gap-2 w-full xl:w-auto">
         <div>
             <label class="text-sm font-medium text-gray-600">Store</label>
             <select name="store_id" class="mt-1 border rounded px-3 py-2 text-sm w-48 bg-white">
@@ -44,8 +44,8 @@
             </select>
         </div>
 
-                <input type="date" name="from" value="{{ request('from') }}" class="px-3 py-2 border rounded-lg">
-                <input type="date" name="to" value="{{ request('to') }}" class="px-3 py-2 border rounded-lg">
+                <input type="date" aria-label="From date" name="from" value="{{ request('from') }}" class="px-3 py-2 border rounded-lg">
+                <input type="date" aria-label="To date" name="to" value="{{ request('to') }}" class="px-3 py-2 border rounded-lg">
                 @include('partials.quick-date-filter', [
                     'fromName' => 'from',
                     'toName' => 'to',
@@ -54,12 +54,12 @@
                 ])
                 <button class="px-3 py-2 bg-gray-100 rounded-lg">Filter</button>
                 <a href="{{ route('reports.vat') }}" class="px-3 py-2 text-sm text-gray-600">Reset</a>
-                <a href="{{ route('reports.vat.csv', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-emerald-600 text-white rounded-lg"><i class="fas fa-file-excel mr-1"></i>Excel</a>
-                <a href="{{ route('reports.vat.pdf', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-blue-600 text-white rounded-lg"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
+                <a data-legacy-export href="{{ route('reports.vat.csv', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-emerald-600 text-white rounded-lg"><i class="fas fa-file-excel mr-1"></i>Excel</a>
+                <a data-legacy-export href="{{ route('reports.vat.pdf', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-blue-600 text-white rounded-lg"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
             </form>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div data-export-summary class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
             <div class="p-4 bg-green-50 rounded-lg">
                 <div class="text-sm text-gray-600">VAT Enabled</div>
                 <div class="text-lg font-bold text-gray-800">{{ $summary['enabled'] ? 'Yes' : 'No' }}</div>
@@ -78,7 +78,7 @@
                 <div class="text-xs text-gray-500">If selling prices exclude VAT</div>
             </div>
         </div>
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div data-export-summary class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
             <div class="p-4 bg-purple-50 rounded-lg">
                 <div class="text-sm text-gray-600">VAT (Inclusive)</div>
                 <div class="text-lg font-bold text-gray-800">{{ $maskMoney($summary['vat_inclusive']) }}</div>
@@ -88,7 +88,7 @@
 
         <h4 class="font-bold text-gray-700 mb-2">Daily Breakdown</h4>
         <div class="overflow-x-auto">
-            <table class="min-w-full border rounded-lg">
+            <table data-export-table class="min-w-full border rounded-lg">
                 <thead class="bg-gray-50">
                     <tr>
                         <th class="px-4 py-2 text-left text-sm text-gray-600">Date</th>

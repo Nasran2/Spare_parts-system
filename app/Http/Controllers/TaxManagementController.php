@@ -30,7 +30,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Maatwebsite\Excel\Facades\Excel;
@@ -213,6 +212,7 @@ class TaxManagementController extends Controller
     {
         $request->validate(['period' => 'required|date_format:Y-m']);
         $balance = $this->periodBalance($request->period);
+
         return response()->json($balance);
     }
 
@@ -224,6 +224,7 @@ class TaxManagementController extends Controller
             'reference' => ['required', 'string', 'max:100', 'unique:tax_payments,reference'],
             'payment_method' => ['required', Rule::in(['cash', 'bank_deposit', 'bank_transfer', 'card', 'mobile_payment', 'cheque'])],
             'account_id' => ['required', 'exists:chart_accounts,id'],
+            'bank_account_id' => ['nullable', 'integer', 'exists:bank_accounts,id'],
             'paid_amount' => ['required', 'decimal:0,4', 'min:0.0001'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'attachment' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:5120'],
@@ -242,7 +243,8 @@ class TaxManagementController extends Controller
                 'payment_date' => $data['payment_date'],
                 'reference' => trim($data['reference']),
                 'payment_method' => $data['payment_method'],
-                'account_id' => $data['account_id'],
+                'bank_account_id' => \App\Support\PaymentBankAccount::resolve($data['payment_method'], $data['bank_account_id'] ?? null)?->id,
+                'account_id' => \App\Support\PaymentBankAccount::resolve($data['payment_method'], $data['bank_account_id'] ?? null)?->chart_account_id ?? $data['account_id'],
                 'paid_amount' => DecimalMath::format($paid),
                 'remaining_amount' => DecimalMath::format(
                     DecimalMath::parse($balance['payable_amount']) - $paid
@@ -299,6 +301,7 @@ class TaxManagementController extends Controller
             'reference' => ['required', 'string', 'max:100', Rule::unique('tax_payments', 'reference')->ignore($taxPayment)],
             'payment_method' => ['required', Rule::in(['cash', 'bank_deposit', 'bank_transfer', 'card', 'mobile_payment', 'cheque'])],
             'account_id' => ['required', 'exists:chart_accounts,id'],
+            'bank_account_id' => ['nullable', 'integer', 'exists:bank_accounts,id'],
             'paid_amount' => ['required', 'decimal:0,4', 'min:0.0001'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'attachment' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:5120'],
@@ -308,6 +311,11 @@ class TaxManagementController extends Controller
             $old = $taxPayment->toArray();
             $balance = $this->periodBalance($data['tax_period']);
             $paid = DecimalMath::parse($data['paid_amount']);
+            $bank = \App\Support\PaymentBankAccount::resolve($data['payment_method'], $data['bank_account_id'] ?? null);
+            $data['bank_account_id'] = $bank?->id;
+            if ($bank) {
+                $data['account_id'] = $bank->chart_account_id;
+            }
             $taxPayment->update([
                 ...$balance,
                 ...collect($data)->except('attachment')->all(),
@@ -335,6 +343,7 @@ class TaxManagementController extends Controller
             $account = $taxPayment->account_id ? ChartAccount::find($taxPayment->account_id) : null;
             AccountTransaction::create([
                 'account_id' => $account?->id ?? $this->outputVatAccount()->id,
+                'bank_account_id' => $taxPayment->bank_account_id,
                 'related_account_id' => $this->outputVatAccount()->id,
                 'user_id' => $request->user()?->id,
                 'transaction_date' => now()->toDateString(),
@@ -874,6 +883,7 @@ class TaxManagementController extends Controller
         $account = ChartAccount::findOrFail($payment->account_id);
         AccountTransaction::create([
             'account_id' => $account->id,
+            'bank_account_id' => $payment->bank_account_id,
             'related_account_id' => $this->outputVatAccount()->id,
             'user_id' => $payment->created_by,
             'transaction_date' => $payment->payment_date,

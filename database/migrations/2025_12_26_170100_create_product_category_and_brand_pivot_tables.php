@@ -1,8 +1,8 @@
 <?php
 
+use App\Support\Migrations\Schema;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
@@ -32,7 +32,7 @@ return new class extends Migration
             if ($product->category_id) {
                 // Check if category exists to avoid foreign key error
                 $exists = DB::table('categories')->where('id', $product->category_id)->exists();
-                if ($exists) {
+                if ($exists && ! DB::table('category_product')->where('product_id', $product->id)->where('category_id', $product->category_id)->exists()) {
                     DB::table('category_product')->insert([
                         'product_id' => $product->id,
                         'category_id' => $product->category_id,
@@ -44,7 +44,7 @@ return new class extends Migration
             if ($product->brand_id) {
                 // Check if brand exists
                 $exists = DB::table('brands')->where('id', $product->brand_id)->exists();
-                if ($exists) {
+                if ($exists && ! DB::table('brand_product')->where('product_id', $product->id)->where('brand_id', $product->brand_id)->exists()) {
                     DB::table('brand_product')->insert([
                         'product_id' => $product->id,
                         'brand_id' => $product->brand_id,

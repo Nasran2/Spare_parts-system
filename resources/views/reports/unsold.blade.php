@@ -29,7 +29,7 @@
 <div class="space-y-6">
     @if($type === 'never')
     <div class="bg-white p-4 rounded shadow">
-        <form method="GET" action="{{ route('reports.never-sold') }}" class="flex items-end gap-3">
+        <form method="GET" action="{{ route('reports.never-sold') }}" class="flex flex-wrap items-end gap-3">
         <div>
             <label class="text-sm font-medium text-gray-600">Store</label>
             <select name="store_id" class="mt-1 border rounded px-3 py-2 text-sm w-48 bg-white">
@@ -61,7 +61,7 @@
 
     @if($type === 'recently')
     <div class="bg-white p-4 rounded shadow">
-        <form method="GET" action="{{ route('reports.unsold-recently') }}" class="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+        <form method="GET" action="{{ route('reports.unsold-recently') }}" class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3 items-end">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Time Period</label>
                 <select name="period" id="periodSelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg" onchange="toggleCustomDates()">
@@ -115,8 +115,8 @@
     @endif
 
     @if(empty($controls['hide_tables']))
-    <div class="bg-white rounded shadow overflow-hidden">
-        <table class="min-w-full text-sm">
+    <div class="bg-white rounded shadow overflow-x-auto">
+        <table data-export-table class="min-w-full text-sm">
             <thead class="bg-gray-50">
                 <tr class="text-left">
                     <th class="px-3 py-2">Product</th>
@@ -135,7 +135,7 @@
                         <td class="px-3 py-2">{{ $product->sku }}</td>
                         <td class="px-3 py-2">{{ $product->categories->pluck('name')->join(', ') ?: ($product->category->name ?? '-') }}</td>
                         <td class="px-3 py-2">{{ $product->brands->pluck('name')->join(', ') ?: ($product->brand->name ?? '-') }}</td>
-                        <td class="px-3 py-2">{{ $product->stock_quantity ?? 0 }}</td>
+                        <td class="px-3 py-2">{{ !empty($controls['hide_qty_wise_data']) || !empty($controls['hide_actual_stock_quantity']) ? '—' : number_format(round(($product->stock_quantity ?? 0) * min((float)($controls['qty_visible_percentage'] ?? 100), (float)($controls['stock_visible_percentage'] ?? 100)) / 100), 0) }}</td>
                         <td class="px-3 py-2">{{ $maskMoney($product->cost_price, !empty($controls['hide_actual_purchase_price'])) }}</td>
                         <td class="px-3 py-2">{{ $maskMoney($product->selling_price, !empty($controls['hide_actual_stock_price'])) }}</td>
                     </tr>

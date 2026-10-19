@@ -73,8 +73,8 @@
         <div class="flex items-center gap-2">
             <button class="bg-blue-600 text-white px-4 py-2 rounded text-sm">Filter</button>
             <a href="{{ route('reports.sales') }}" class="text-sm text-gray-600 hover:text-gray-800">Reset</a>
-            <a href="{{ route('reports.sales.csv', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-emerald-600 text-white rounded text-sm"><i class="fas fa-file-excel mr-1"></i>Excel</a>
-            <a href="{{ route('reports.sales.pdf', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-blue-600 text-white rounded text-sm"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
+            <a data-legacy-export href="{{ route('reports.sales.csv', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-emerald-600 text-white rounded text-sm"><i class="fas fa-file-excel mr-1"></i>Excel</a>
+            <a data-legacy-export href="{{ route('reports.sales.pdf', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-blue-600 text-white rounded text-sm"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
         </div>
     </form>
 
@@ -126,7 +126,7 @@
     </script>
 
     @if(empty($controls['hide_widgets']))
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+    <div data-export-summary class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <div class="bg-white p-4 rounded shadow">
             <p class="text-xs text-gray-500">Total Sales</p>
             <p class="text-xl font-semibold">{{ $maskMoney($summary['total_sales'], !empty($controls['hide_total_sales'])) }}</p>
@@ -155,8 +155,8 @@
     @endif
 
     @if(empty($controls['hide_tables']))
-    <div class="bg-white rounded shadow overflow-hidden">
-        <table class="min-w-full text-sm">
+    <div class="bg-white rounded shadow overflow-x-auto">
+        <table data-export-table class="min-w-full text-sm">
             <thead class="bg-gray-50">
                 <tr class="text-left">
                     <th class="px-3 py-2">Date</th>
@@ -191,7 +191,7 @@
     <div class="bg-white rounded shadow p-4">
         <h4 class="font-semibold mb-2 text-sm">Daily Summary</h4>
         <div class="overflow-x-auto">
-            <table class="min-w-full text-xs">
+            <table data-export-table data-export-title="Daily Sales Summary" class="min-w-full text-xs">
                 <thead class="bg-gray-50">
                     <tr class="text-left">
                         <th class="px-2 py-1">Date</th>

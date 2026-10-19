@@ -1,14 +1,15 @@
 <?php
 
+use App\Support\Migrations\Schema;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration {
+return new class extends Migration
+{
     public function up(): void
     {
         Schema::table('sale_returns', function (Blueprint $table) {
-            if (!Schema::hasColumn('sale_returns', 'exchange_sale_id')) {
+            if (! Schema::hasColumn('sale_returns', 'exchange_sale_id')) {
                 $table->foreignId('exchange_sale_id')
                     ->nullable()
                     ->after('sale_id')

@@ -1,8 +1,8 @@
 <?php
 
+use App\Support\Migrations\Schema;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
@@ -18,15 +18,15 @@ return new class extends Migration
                     $table->dropColumn($col);
                 }
             }
-            
+
             // Add new fields
-            if (!Schema::hasColumn('purchases', 'shipping_cost')) {
+            if (! Schema::hasColumn('purchases', 'shipping_cost')) {
                 $table->decimal('shipping_cost', 15, 2)->default(0)->after('tax_amount');
             }
-            if (!Schema::hasColumn('purchases', 'shipping_type')) {
+            if (! Schema::hasColumn('purchases', 'shipping_type')) {
                 $table->string('shipping_type')->default('divided')->after('shipping_cost');
             }
-            if (!Schema::hasColumn('purchases', 'payment_method')) {
+            if (! Schema::hasColumn('purchases', 'payment_method')) {
                 $table->string('payment_method')->nullable()->after('shipping_type');
             }
         });
@@ -44,7 +44,7 @@ return new class extends Migration
                     $table->dropColumn($col);
                 }
             }
-            
+
             // Restore old fields
             $table->string('business_location')->nullable();
             $table->integer('pay_term_number')->nullable();

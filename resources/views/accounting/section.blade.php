@@ -22,6 +22,9 @@
 
 @section('content')
 <div class="space-y-6">
+    @if(auth()->user()?->hasPermission('accounting.bank-book'))
+    <div class="flex justify-end"><a href="{{ route('accounting.bank-balances') }}" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white"><i class="fas fa-building-columns mr-2"></i>Bank Balances, History & Transfers</a></div>
+    @endif
     @if(session('success'))
         <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">{{ session('success') }}</div>
     @endif
@@ -223,7 +226,7 @@
 
     @if($section === 'accounts')
         <div class="bg-white rounded-lg shadow p-4">
-            <form method="GET" class="grid grid-cols-1 md:grid-cols-5 gap-3">
+            <form method="GET" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
                 <input name="search" value="{{ request('search') }}" placeholder="Search code/account" class="border rounded-lg px-3 py-2">
                 <select name="type" class="border rounded-lg px-3 py-2">
                     <option value="">All types</option>
@@ -234,15 +237,15 @@
                 <input name="subtype" value="{{ request('subtype') }}" placeholder="Subtype" class="border rounded-lg px-3 py-2">
                 <button class="bg-gray-800 text-white rounded-lg px-4 py-2">Filter</button>
                 <div class="flex gap-2">
-                    <a href="{{ route('accounting.export', ['section' => 'accounts', 'format' => 'excel'] + request()->query()) }}" class="flex-1 text-center bg-emerald-600 text-white rounded-lg px-3 py-2"><i class="fas fa-file-excel mr-1"></i>Excel</a>
-                    <a href="{{ route('accounting.export', ['section' => 'accounts', 'format' => 'pdf'] + request()->query()) }}" class="flex-1 text-center bg-blue-600 text-white rounded-lg px-3 py-2"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
+                    <a data-legacy-export href="{{ route('accounting.export', ['section' => 'accounts', 'format' => 'excel'] + request()->query()) }}" class="flex-1 text-center bg-emerald-600 text-white rounded-lg px-3 py-2"><i class="fas fa-file-excel mr-1"></i>Excel</a>
+                    <a data-legacy-export href="{{ route('accounting.export', ['section' => 'accounts', 'format' => 'pdf'] + request()->query()) }}" class="flex-1 text-center bg-blue-600 text-white rounded-lg px-3 py-2"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
                 </div>
             </form>
         </div>
         <div class="bg-white rounded-lg shadow overflow-hidden">
             <div class="p-5 border-b"><h3 class="font-semibold text-gray-800">QuickBooks Chart of Accounts</h3></div>
             <div class="overflow-x-auto">
-                <table class="w-full text-sm">
+                <table data-export-table class="w-full text-sm">
                     <thead class="bg-gray-50 text-xs uppercase text-gray-500"><tr><th class="px-4 py-3 text-left">Code</th><th class="px-4 py-3 text-left">Account</th><th class="px-4 py-3 text-left">Type</th><th class="px-4 py-3 text-right">Opening</th><th class="px-4 py-3 text-right">Balance</th></tr></thead>
                     <tbody class="divide-y">
                         @foreach($accounts as $account)
@@ -256,13 +259,13 @@
 
     @if($section === 'transactions')
         <div class="bg-white rounded-lg shadow p-4">
-            <form method="GET" class="grid grid-cols-1 md:grid-cols-6 gap-3">
+            <form method="GET" class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3">
                 <input type="date" name="from" value="{{ request('from') }}" class="border rounded-lg px-3 py-2">
                 <input type="date" name="to" value="{{ request('to') }}" class="border rounded-lg px-3 py-2">
                 <select name="account_id" class="border rounded-lg px-3 py-2"><option value="">All accounts</option>@foreach($accounts as $account)<option value="{{ $account->id }}" {{ (string) request('account_id') === (string) $account->id ? 'selected' : '' }}>{{ $account->name }}</option>@endforeach</select>
                 <select name="payment_method" class="border rounded-lg px-3 py-2"><option value="">All methods</option>@foreach(['cash','credit','cheque','bank_deposit','bank_transfer','card','mobile_payment'] as $method)<option value="{{ $method }}" {{ request('payment_method') === $method ? 'selected' : '' }}>{{ str_replace('_', ' ', ucfirst($method)) }}</option>@endforeach</select>
                 <input name="search" value="{{ request('search') }}" placeholder="Reference/cheque" class="border rounded-lg px-3 py-2">
-                <div class="flex gap-2"><button class="flex-1 bg-gray-800 text-white rounded-lg px-3 py-2">Filter</button><a href="{{ route('accounting.export', ['section' => 'transactions', 'format' => 'excel'] + request()->query()) }}" class="flex-1 text-center bg-emerald-600 text-white rounded-lg px-3 py-2">Excel</a><a href="{{ route('accounting.export', ['section' => 'transactions', 'format' => 'pdf'] + request()->query()) }}" class="flex-1 text-center bg-blue-600 text-white rounded-lg px-3 py-2">PDF</a></div>
+                <div class="flex gap-2"><button class="flex-1 bg-gray-800 text-white rounded-lg px-3 py-2">Filter</button><a data-legacy-export href="{{ route('accounting.export', ['section' => 'transactions', 'format' => 'excel'] + request()->query()) }}" class="flex-1 text-center bg-emerald-600 text-white rounded-lg px-3 py-2">Excel</a><a data-legacy-export href="{{ route('accounting.export', ['section' => 'transactions', 'format' => 'pdf'] + request()->query()) }}" class="flex-1 text-center bg-blue-600 text-white rounded-lg px-3 py-2">PDF</a></div>
             </form>
         </div>
         <div class="bg-white rounded-xl shadow-md p-6 border-t-4 border-green-500 mb-6 mt-6">
@@ -376,7 +379,7 @@
                     <p class="text-sm text-gray-500">Register a new bank account in the system</p>
                 </div>
             </div>
-            <form method="POST" action="{{ route('accounting.banks.store') }}">
+            <form id="add-bank-account" method="POST" action="{{ route('accounting.banks.store') }}">
                 @csrf
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                     <div>
@@ -412,13 +415,13 @@
 
     @if($section === 'banks')
         <div class="bg-white rounded-lg shadow p-4">
-            <form method="GET" class="grid grid-cols-1 md:grid-cols-6 gap-3">
+            <form method="GET" class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3">
                 <input type="date" name="from" value="{{ request('from') }}" class="border rounded-lg px-3 py-2">
                 <input type="date" name="to" value="{{ request('to') }}" class="border rounded-lg px-3 py-2">
                 <select name="bank_account_id" class="border rounded-lg px-3 py-2"><option value="">All banks</option>@foreach($banks as $bank)<option value="{{ $bank->id }}" {{ (string) request('bank_account_id') === (string) $bank->id ? 'selected' : '' }}>{{ $bank->bank_name }} - {{ $bank->account_name }}</option>@endforeach</select>
                 <select name="status" class="border rounded-lg px-3 py-2"><option value="">All status</option><option value="tallied" {{ request('status') === 'tallied' ? 'selected' : '' }}>Tallied</option><option value="difference" {{ request('status') === 'difference' ? 'selected' : '' }}>Difference</option><option value="draft" {{ request('status') === 'draft' ? 'selected' : '' }}>Draft</option></select>
                 <button class="bg-gray-800 text-white rounded-lg px-3 py-2">Filter</button>
-                <div class="flex gap-2"><a href="{{ route('accounting.export', ['section' => 'banks', 'format' => 'excel'] + request()->query()) }}" class="flex-1 text-center bg-emerald-600 text-white rounded-lg px-3 py-2">Excel</a><a href="{{ route('accounting.export', ['section' => 'banks', 'format' => 'pdf'] + request()->query()) }}" class="flex-1 text-center bg-blue-600 text-white rounded-lg px-3 py-2">PDF</a></div>
+                <div class="flex gap-2"><a data-legacy-export href="{{ route('accounting.export', ['section' => 'banks', 'format' => 'excel'] + request()->query()) }}" class="flex-1 text-center bg-emerald-600 text-white rounded-lg px-3 py-2">Excel</a><a data-legacy-export href="{{ route('accounting.export', ['section' => 'banks', 'format' => 'pdf'] + request()->query()) }}" class="flex-1 text-center bg-blue-600 text-white rounded-lg px-3 py-2">PDF</a></div>
             </form>
         </div>
         <div class="bg-white rounded-xl shadow-md p-6 border-t-4 border-blue-500 mb-6 mt-6">
@@ -481,7 +484,7 @@
                             <select name="bank_account_id" class="bank-account-select w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200 transition" required>
                                 <option value="">Select bank</option>
                                 @foreach($banks as $bank)
-                                    <option value="{{ $bank->id }}" data-current-balance="{{ number_format((float) $bank->chartAccount->current_balance, 2, '.', '') }}" {{ $loop->first ? 'selected' : '' }}>{{ $bank->bank_name }}</option>
+                                    <option value="{{ $bank->id }}" data-current-balance="{{ number_format((float) $bank->live_balance, 2, '.', '') }}" {{ $loop->first ? 'selected' : '' }}>{{ $bank->bank_name }}</option>
                                 @endforeach
                             </select>
                         </div>
@@ -504,7 +507,7 @@
                                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                     <span class="text-gray-400 font-semibold sm:text-sm">Rs</span>
                                 </div>
-                                <input type="text" class="bank-system-balance w-full pl-9 border-gray-200 bg-gray-100 rounded-lg shadow-inner text-gray-600 font-medium" value="{{ $banks->first() ? number_format((float) $banks->first()->chartAccount->current_balance, 2, '.', '') : '0.00' }}" readonly>
+                                <input type="text" class="bank-system-balance w-full pl-9 border-gray-200 bg-gray-100 rounded-lg shadow-inner text-gray-600 font-medium" value="{{ $banks->first() ? number_format((float) $banks->first()->live_balance, 2, '.', '') : '0.00' }}" readonly>
                             </div>
                         </div>
                         <div class="xl:col-span-1">
@@ -532,18 +535,18 @@
                 </form>
             </div>
         </div>
-        <div class="bg-white rounded-lg shadow overflow-hidden"><div class="p-5 border-b"><h3 class="font-semibold text-gray-800">Reconciliation History</h3></div><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50 text-xs uppercase text-gray-500"><tr><th class="px-4 py-3 text-left">Date</th><th class="px-4 py-3 text-left">Bank</th><th class="px-4 py-3 text-right">Statement</th><th class="px-4 py-3 text-right">System</th><th class="px-4 py-3 text-right">Difference</th><th class="px-4 py-3 text-left">Status</th></tr></thead><tbody class="divide-y">@forelse($reconciliations as $rec)<tr><td class="px-4 py-3">{{ $rec->statement_date->format('M d, Y') }}</td><td class="px-4 py-3">{{ $rec->bankAccount->bank_name }}</td><td class="px-4 py-3 text-right">{{ number_format($rec->statement_balance, 2) }}</td><td class="px-4 py-3 text-right">{{ number_format($rec->system_balance, 2) }}</td><td class="px-4 py-3 text-right">{{ number_format($rec->difference, 2) }}</td><td class="px-4 py-3">{{ ucfirst($rec->status) }}</td></tr>@empty<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">No records found.</td></tr>@endforelse</tbody></table></div></div>
+        <div class="bg-white rounded-lg shadow overflow-hidden"><div class="p-5 border-b"><h3 class="font-semibold text-gray-800">Reconciliation History</h3></div><div class="overflow-x-auto"><table data-export-table class="w-full text-sm"><thead class="bg-gray-50 text-xs uppercase text-gray-500"><tr><th class="px-4 py-3 text-left">Date</th><th class="px-4 py-3 text-left">Bank</th><th class="px-4 py-3 text-right">Statement</th><th class="px-4 py-3 text-right">System</th><th class="px-4 py-3 text-right">Difference</th><th class="px-4 py-3 text-left">Status</th></tr></thead><tbody class="divide-y">@forelse($reconciliations as $rec)<tr><td class="px-4 py-3">{{ $rec->statement_date->format('M d, Y') }}</td><td class="px-4 py-3">{{ $rec->bankAccount->bank_name }}</td><td class="px-4 py-3 text-right">{{ number_format($rec->statement_balance, 2) }}</td><td class="px-4 py-3 text-right">{{ number_format($rec->system_balance, 2) }}</td><td class="px-4 py-3 text-right">{{ number_format($rec->difference, 2) }}</td><td class="px-4 py-3">{{ ucfirst($rec->status) }}</td></tr>@empty<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">No records found.</td></tr>@endforelse</tbody></table></div></div>
     @endif
 
     @if($section === 'petty-cash')
         <div class="bg-white rounded-lg shadow p-4 mb-6">
-            <form method="GET" class="grid grid-cols-1 md:grid-cols-6 gap-3">
+            <form method="GET" class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3">
                 <input type="date" name="from" value="{{ request('from') }}" class="border rounded-lg px-3 py-2">
                 <input type="date" name="to" value="{{ request('to') }}" class="border rounded-lg px-3 py-2">
                 <select name="petty_cash_fund_id" class="border rounded-lg px-3 py-2"><option value="">All funds</option>@foreach($pettyFunds as $fund)<option value="{{ $fund->id }}" {{ (string) request('petty_cash_fund_id') === (string) $fund->id ? 'selected' : '' }}>{{ $fund->name }}</option>@endforeach</select>
                 <select name="expense_category_id" class="border rounded-lg px-3 py-2"><option value="">All categories</option>@foreach($categories as $category)<option value="{{ $category->id }}" {{ (string) request('expense_category_id') === (string) $category->id ? 'selected' : '' }}>{{ $category->name }}</option>@endforeach</select>
                 <input name="search" value="{{ request('search') }}" placeholder="Voucher/description" class="border rounded-lg px-3 py-2">
-                <div class="flex gap-2"><button class="flex-1 bg-gray-800 text-white rounded-lg px-3 py-2">Filter</button><a href="{{ route('accounting.export', ['section' => 'petty-cash', 'format' => 'excel'] + request()->query()) }}" class="flex-1 text-center bg-emerald-600 text-white rounded-lg px-3 py-2">Excel</a><a href="{{ route('accounting.export', ['section' => 'petty-cash', 'format' => 'pdf'] + request()->query()) }}" class="flex-1 text-center bg-blue-600 text-white rounded-lg px-3 py-2">PDF</a></div>
+                <div class="flex gap-2"><button class="flex-1 bg-gray-800 text-white rounded-lg px-3 py-2">Filter</button><a href="{{ route('accounting.export', ['section' => 'petty-cash', 'format' => 'excel'] + request()->query()) }}" download data-skip-page-loader class="flex-1 text-center bg-emerald-600 text-white rounded-lg px-3 py-2">Excel</a><a href="{{ route('accounting.export', ['section' => 'petty-cash', 'format' => 'pdf'] + request()->query()) }}" download data-skip-page-loader class="flex-1 text-center bg-blue-600 text-white rounded-lg px-3 py-2">PDF</a></div>
             </form>
         </div>
 
@@ -645,7 +648,7 @@
                 <h3 class="font-semibold text-gray-800">Petty Cash History</h3>
             </div>
             <div class="overflow-x-auto">
-                <table class="w-full text-sm">
+                <table data-export-table class="w-full text-sm">
                     <thead class="bg-gray-50 text-xs uppercase text-gray-500">
                         <tr>
                             <th class="px-4 py-3 text-left">Date</th>
@@ -690,18 +693,18 @@
 
     @if($section === 'ledger')
         <div class="bg-white rounded-lg shadow p-4">
-            <form method="GET" class="grid grid-cols-1 md:grid-cols-6 gap-3">
+            <form method="GET" class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3">
                 <input type="date" name="from" value="{{ request('from') }}" class="border rounded-lg px-3 py-2">
                 <input type="date" name="to" value="{{ request('to') }}" class="border rounded-lg px-3 py-2">
                 <select name="account_id" class="border rounded-lg px-3 py-2"><option value="">All accounts</option>@foreach($accounts as $account)<option value="{{ $account->id }}" {{ (string) request('account_id') === (string) $account->id ? 'selected' : '' }}>{{ $account->name }}</option>@endforeach</select>
                 <select name="direction" class="border rounded-lg px-3 py-2"><option value="">In/Out</option><option value="in" {{ request('direction') === 'in' ? 'selected' : '' }}>Money In</option><option value="out" {{ request('direction') === 'out' ? 'selected' : '' }}>Money Out</option></select>
                 <input name="search" value="{{ request('search') }}" placeholder="Reference/cheque" class="border rounded-lg px-3 py-2">
-                <div class="flex gap-2"><button class="flex-1 bg-gray-800 text-white rounded-lg px-3 py-2">Filter</button><a href="{{ route('accounting.export', ['section' => 'ledger', 'format' => 'excel'] + request()->query()) }}" class="flex-1 text-center bg-emerald-600 text-white rounded-lg px-3 py-2">Excel</a><a href="{{ route('accounting.export', ['section' => 'ledger', 'format' => 'pdf'] + request()->query()) }}" class="flex-1 text-center bg-blue-600 text-white rounded-lg px-3 py-2">PDF</a></div>
+                <div class="flex gap-2"><button class="flex-1 bg-gray-800 text-white rounded-lg px-3 py-2">Filter</button><a data-legacy-export href="{{ route('accounting.export', ['section' => 'ledger', 'format' => 'excel'] + request()->query()) }}" class="flex-1 text-center bg-emerald-600 text-white rounded-lg px-3 py-2">Excel</a><a data-legacy-export href="{{ route('accounting.export', ['section' => 'ledger', 'format' => 'pdf'] + request()->query()) }}" class="flex-1 text-center bg-blue-600 text-white rounded-lg px-3 py-2">PDF</a></div>
             </form>
         </div>
         <div class="bg-white rounded-lg shadow overflow-hidden">
             <div class="p-5 border-b"><h3 class="font-semibold text-gray-800">Ledger</h3></div>
-            <div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50 text-xs uppercase text-gray-500"><tr><th class="px-4 py-3 text-left">Date</th><th class="px-4 py-3 text-left">Account</th><th class="px-4 py-3 text-left">Method</th><th class="px-4 py-3 text-left">Reference</th><th class="px-4 py-3 text-right">Amount</th></tr></thead><tbody class="divide-y">@foreach($transactions as $transaction)<tr><td class="px-4 py-3">{{ $transaction->transaction_date->format('M d, Y') }}</td><td class="px-4 py-3">{{ $transaction->account->name }}</td><td class="px-4 py-3">{{ str_replace('_', ' ', ucfirst($transaction->payment_method)) }} {{ $transaction->cheque_number ? '(' . $transaction->cheque_number . ')' : '' }}</td><td class="px-4 py-3">{{ $transaction->reference_no }}</td><td class="px-4 py-3 text-right {{ $transaction->direction === 'in' ? 'text-green-700' : 'text-red-700' }}">{{ $transaction->direction === 'in' ? '+' : '-' }}{{ number_format($transaction->amount, 2) }}</td></tr>@endforeach</tbody></table></div>
+            <div class="overflow-x-auto"><table data-export-table class="w-full text-sm"><thead class="bg-gray-50 text-xs uppercase text-gray-500"><tr><th class="px-4 py-3 text-left">Date</th><th class="px-4 py-3 text-left">Account</th><th class="px-4 py-3 text-left">Method</th><th class="px-4 py-3 text-left">Reference</th><th class="px-4 py-3 text-right">Amount</th></tr></thead><tbody class="divide-y">@foreach($transactions as $transaction)<tr><td class="px-4 py-3">{{ $transaction->transaction_date->format('M d, Y') }}</td><td class="px-4 py-3">{{ $transaction->account->name }}</td><td class="px-4 py-3">{{ str_replace('_', ' ', ucfirst($transaction->payment_method)) }} {{ $transaction->cheque_number ? '(' . $transaction->cheque_number . ')' : '' }}</td><td class="px-4 py-3">{{ $transaction->reference_no }}</td><td class="px-4 py-3 text-right {{ $transaction->direction === 'in' ? 'text-green-700' : 'text-red-700' }}">{{ $transaction->direction === 'in' ? '+' : '-' }}{{ number_format($transaction->amount, 2) }}</td></tr>@endforeach</tbody></table></div>
         </div>
     @endif
 
@@ -794,7 +797,7 @@
                 </span>
             </div>
             <div class="overflow-x-auto">
-                <table class="w-full text-sm">
+                <table data-export-table class="w-full text-sm">
                     <thead class="bg-gray-50 text-xs uppercase text-gray-500">
                         <tr>
                             <th class="px-5 py-3 text-left">Code</th>
@@ -894,7 +897,7 @@
             $resetRoute = $isCashBook ? route('accounting.cash-book') : route('accounting.bank-book');
         @endphp
         <div class="bg-white rounded-lg shadow p-4">
-            <form method="GET" class="grid grid-cols-1 {{ $isCashBook ? 'md:grid-cols-5' : 'md:grid-cols-6' }} gap-3">
+            <form method="GET" class="grid grid-cols-1 {{ $isCashBook ? 'md:grid-cols-2 xl:grid-cols-5' : 'md:grid-cols-3 xl:grid-cols-6' }} gap-3">
                 <input type="date" name="from" value="{{ request('from') }}" class="border rounded-lg px-3 py-2">
                 <input type="date" name="to" value="{{ request('to') }}" class="border rounded-lg px-3 py-2">
                 <select name="direction" class="border rounded-lg px-3 py-2">
@@ -903,6 +906,7 @@
                     <option value="out" {{ request('direction') === 'out' ? 'selected' : '' }}>Out only</option>
                 </select>
                 @if(!$isCashBook)
+                    <select name="bank_account_id" aria-label="Bank account" class="border rounded-lg px-3 py-2"><option value="">All bank accounts</option>@foreach($banks as $bank)<option value="{{ $bank->id }}" @selected((string)request('bank_account_id') === (string)$bank->id)>{{ $bank->bank_name }} · {{ $bank->account_number }}</option>@endforeach</select>
                     <select name="payment_method" class="border rounded-lg px-3 py-2">
                         <option value="">All bank methods</option>
                         @foreach(['bank_deposit' => 'Bank Deposit', 'bank_transfer' => 'Bank Transfer', 'card' => 'Card', 'mobile_payment' => 'Online / Mobile'] as $value => $label)
@@ -955,7 +959,7 @@
                         </h3>
                     </div>
                     <div class="overflow-x-auto">
-                        <table class="w-full text-sm">
+                        <table data-export-table class="w-full text-sm">
                             <thead class="bg-gray-50 text-xs uppercase text-gray-500">
                                 <tr>
                                     <th class="px-5 py-3 text-left">Date</th>
@@ -971,7 +975,7 @@
                                 @forelse($mainBookTransactions as $transaction)
                                     <tr>
                                         <td class="px-5 py-3 whitespace-nowrap">{{ $transaction->transaction_date?->format('M d, Y') }}</td>
-                                        <td class="px-5 py-3">{{ $transaction->account?->name ?? 'Account' }}</td>
+                                        <td class="px-5 py-3">{{ $transaction->bankAccount ? $transaction->bankAccount->bank_name.' / '.$transaction->bankAccount->account_number : ($transaction->account?->name ?? 'Account') }}</td>
                                         <td class="px-5 py-3">{{ str_replace('_', ' ', ucfirst($transaction->payment_method)) }}</td>
                                         <td class="px-5 py-3">{{ $transaction->reference_no ?: $transaction->cheque_number ?: '-' }}</td>
                                         <td class="px-5 py-3 text-gray-600">{{ $transaction->description ?: '-' }}</td>
@@ -994,7 +998,7 @@
                         </h3>
                     </div>
                     <div class="overflow-x-auto">
-                        <table class="w-full text-sm">
+                        <table data-export-table class="w-full text-sm">
                             <thead class="bg-gray-50 text-xs uppercase text-gray-500">
                                 <tr>
                                     <th class="px-5 py-3 text-left">Date</th>
@@ -1010,7 +1014,7 @@
                                 @forelse($pettyBookTransactions as $transaction)
                                     <tr>
                                         <td class="px-5 py-3 whitespace-nowrap">{{ $transaction->transaction_date?->format('M d, Y') }}</td>
-                                        <td class="px-5 py-3">{{ $transaction->account?->name ?? 'Account' }}</td>
+                                        <td class="px-5 py-3">{{ $transaction->bankAccount ? $transaction->bankAccount->bank_name.' / '.$transaction->bankAccount->account_number : ($transaction->account?->name ?? 'Account') }}</td>
                                         <td class="px-5 py-3">{{ str_replace('_', ' ', ucfirst($transaction->payment_method)) }}</td>
                                         <td class="px-5 py-3">{{ $transaction->reference_no ?: $transaction->cheque_number ?: '-' }}</td>
                                         <td class="px-5 py-3 text-gray-600">{{ $transaction->description ?: '-' }}</td>
@@ -1049,7 +1053,7 @@
                     </h3>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
+                    <table data-export-table class="w-full text-sm">
                         <thead class="bg-gray-50 text-xs uppercase text-gray-500">
                             <tr>
                                 <th class="px-5 py-3 text-left">Date</th>
@@ -1065,7 +1069,7 @@
                             @forelse($bookRows as $transaction)
                                 <tr>
                                     <td class="px-5 py-3 whitespace-nowrap">{{ $transaction->transaction_date?->format('M d, Y') }}</td>
-                                    <td class="px-5 py-3">{{ $transaction->account?->name ?? 'Account' }}</td>
+                                    <td class="px-5 py-3">{{ $transaction->bankAccount ? $transaction->bankAccount->bank_name.' / '.$transaction->bankAccount->account_number : ($transaction->account?->name ?? 'Account') }}</td>
                                     <td class="px-5 py-3">{{ str_replace('_', ' ', ucfirst($transaction->payment_method)) }}</td>
                                     <td class="px-5 py-3">{{ $transaction->reference_no ?: $transaction->cheque_number ?: '-' }}</td>
                                     <td class="px-5 py-3 text-gray-600">{{ $transaction->description ?: '-' }}</td>
@@ -1104,7 +1108,7 @@
         </div>
 
         <div class="bg-white rounded-lg shadow p-4">
-            <form method="GET" class="grid grid-cols-1 md:grid-cols-6 gap-3">
+            <form method="GET" class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3">
                 <input type="date" name="from" value="{{ request('from') }}" class="border rounded-lg px-3 py-2">
                 <input type="date" name="to" value="{{ request('to') }}" class="border rounded-lg px-3 py-2">
                 <select name="type" class="border rounded-lg px-3 py-2">
@@ -1153,7 +1157,7 @@
                 <h3 class="font-semibold text-gray-800"><i class="fas fa-user-tie text-purple-600 mr-2"></i>Owner Investment & Withdrawal Records</h3>
             </div>
             <div class="overflow-x-auto">
-                <table class="w-full text-sm">
+                <table data-export-table class="w-full text-sm">
                     <thead class="bg-gray-50 text-xs uppercase text-gray-500">
                         <tr>
                             <th class="px-4 py-3 text-left">Date</th>
@@ -1514,4 +1518,5 @@
 </script>
 @endpush
 @endif
+@include('exports.supplement')
 @endsection

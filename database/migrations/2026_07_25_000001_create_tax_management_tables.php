@@ -1,9 +1,9 @@
 <?php
 
+use App\Support\Migrations\Schema;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
@@ -183,7 +183,7 @@ return new class extends Migration
             $table->string('tin', 30)->nullable()->unique()->after('name');
         });
 
-        DB::table('tax_types')->insert([
+        DB::table('tax_types')->insertOrIgnore([
             'name' => 'Value Added Tax',
             'code' => 'VAT',
             'rate' => '18.0000',
@@ -193,7 +193,7 @@ return new class extends Migration
             'updated_at' => now(),
         ]);
 
-        DB::table('tax_settings')->insert([
+        DB::table('tax_settings')->insertOrIgnore([
             'version' => 1,
             'vat_enabled' => false,
             'vat_registered' => false,

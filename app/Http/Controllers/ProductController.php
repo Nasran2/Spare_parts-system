@@ -8,11 +8,11 @@ use App\Models\ActivityLog;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\ProductPrice;
 use App\Models\ProductTaxSetting;
+use App\Models\Setting;
 use App\Models\TaxSetting;
 use App\Models\TaxType;
-use App\Models\ProductPrice;
-use App\Models\Setting;
 use App\Models\Unit;
 use App\Services\DashboardVisibilityService;
 use App\Support\PublicStorageSync;
@@ -138,7 +138,7 @@ class ProductController extends Controller
             }
         }
 
-        $products = $query->latest()->paginate(20)->withQueryString();
+        $products = $query->latest()->paginate(\App\Support\BusinessExport::perPage($query, 20))->withQueryString();
         $categories = Category::where('is_active', true)
             ->whereNull('parent_id')
             ->orderBy('name')
@@ -150,7 +150,7 @@ class ProductController extends Controller
             ->get(['id', 'name', 'parent_id']);
         $brands = Brand::where('is_active', true)->get();
         $units = Unit::where('is_active', true)->orderBy('base_unit_multiplier')->get(['id', 'name', 'short_name', 'base_unit_multiplier']);
-        
+
         $stores = \App\Models\Store::where('is_active', true)->orderBy('name')->get(['id', 'name']);
 
         return view('products.index', compact('products', 'categories', 'subcategories', 'brands', 'units', 'mainCategoryId', 'subCategoryId', 'stores', 'selectedStoreId', 'isPreOrder'));
@@ -616,15 +616,15 @@ class ProductController extends Controller
         foreach ($purchaseItems as $item) {
             $purchase = $item->purchase;
             if ($purchase) {
-                $timeline->push((object)[
+                $timeline->push((object) [
                     'type' => 'Purchase',
                     'date' => $purchase->purchase_date ? \Carbon\Carbon::parse($purchase->purchase_date) : $purchase->created_at,
                     'reference' => $purchase->purchase_no,
                     'reference_route' => route('purchases.show', $purchase),
                     'entity' => $purchase->supplier->name ?? 'Unknown Supplier',
                     'store' => $purchase->store->name ?? 'Main Store',
-                    'qty_change' => (float)$item->quantity,
-                    'details' => 'Cost: ' . config('app.currency', 'Rs ') . number_format($item->unit_cost, 2),
+                    'qty_change' => (float) $item->quantity,
+                    'details' => 'Cost: '.config('app.currency', 'Rs ').number_format($item->unit_cost, 2),
                     'icon' => 'fa-shopping-cart text-green-600 bg-green-100',
                 ]);
             }
@@ -637,15 +637,15 @@ class ProductController extends Controller
         foreach ($saleItems as $item) {
             $sale = $item->sale;
             if ($sale) {
-                $timeline->push((object)[
+                $timeline->push((object) [
                     'type' => 'Sale',
                     'date' => $sale->sale_date ? \Carbon\Carbon::parse($sale->sale_date) : $sale->created_at,
                     'reference' => $sale->sale_no,
                     'reference_route' => route('sales.show', $sale),
                     'entity' => $sale->customer->name ?? 'Walk-in Customer',
                     'store' => $sale->store->name ?? 'Main Store',
-                    'qty_change' => -(float)$item->quantity,
-                    'details' => 'Price: ' . config('app.currency', 'Rs ') . number_format($item->unit_price, 2),
+                    'qty_change' => -(float) $item->quantity,
+                    'details' => 'Price: '.config('app.currency', 'Rs ').number_format($item->unit_price, 2),
                     'icon' => 'fa-receipt text-blue-600 bg-blue-100',
                 ]);
             }
@@ -656,15 +656,15 @@ class ProductController extends Controller
             ->with(['fromStore', 'toStore'])
             ->get();
         foreach ($transfers as $transfer) {
-            $timeline->push((object)[
+            $timeline->push((object) [
                 'type' => 'Transfer',
                 'date' => $transfer->transfer_date ? \Carbon\Carbon::parse($transfer->transfer_date) : $transfer->created_at,
                 'reference' => $transfer->reference_no ?? 'N/A',
                 'reference_route' => null,
-                'entity' => 'From: ' . ($transfer->fromStore->name ?? 'Unknown') . ' → To: ' . ($transfer->toStore->name ?? 'Unknown'),
+                'entity' => 'From: '.($transfer->fromStore->name ?? 'Unknown').' → To: '.($transfer->toStore->name ?? 'Unknown'),
                 'store' => $transfer->fromStore->name ?? 'Unknown',
                 'qty_change' => 0,
-                'details' => 'Qty: ' . (float)$transfer->quantity . ' (' . ($transfer->notes ?? 'No notes') . ')',
+                'details' => 'Qty: '.(float) $transfer->quantity.' ('.($transfer->notes ?? 'No notes').')',
                 'icon' => 'fa-exchange-alt text-purple-600 bg-purple-100',
             ]);
         }
@@ -683,16 +683,16 @@ class ProductController extends Controller
                 $type = 'Write-off';
                 $icon = 'fa-trash-alt text-red-600 bg-red-100';
                 if (preg_match('/Wrote off (\d+)/i', $log->description, $matches)) {
-                    $qtyChange = -(float)$matches[1];
+                    $qtyChange = -(float) $matches[1];
                 }
             }
 
-            $timeline->push((object)[
+            $timeline->push((object) [
                 'type' => $type,
                 'date' => $log->created_at,
                 'reference' => ucfirst($log->action),
                 'reference_route' => null,
-                'entity' => 'By: ' . ($log->user->name ?? 'System'),
+                'entity' => 'By: '.($log->user->name ?? 'System'),
                 'store' => '—',
                 'qty_change' => $qtyChange,
                 'details' => $log->description,
@@ -1203,7 +1203,7 @@ class ProductController extends Controller
 
         $number = 1;
         while (true) {
-            $sku = $prefix . $timestamp . '-' . str_pad($number, 3, '0', STR_PAD_LEFT);
+            $sku = $prefix.$timestamp.'-'.str_pad($number, 3, '0', STR_PAD_LEFT);
             if (! \App\Models\Product::where('sku', $sku)->exists()) {
                 return $sku;
             }

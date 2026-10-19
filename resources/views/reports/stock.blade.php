@@ -75,13 +75,13 @@
     <div class="flex items-center justify-between">
         <div></div>
         <div class="flex items-center gap-2">
-            <a href="{{ route('reports.stock.csv', request()->query()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-emerald-600 text-white rounded text-sm"><i class="fas fa-file-excel mr-1"></i>Excel</a>
-            <a href="{{ route('reports.stock.pdf', request()->query()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-blue-600 text-white rounded text-sm"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
+            <a data-legacy-export href="{{ route('reports.stock.csv', request()->query()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-emerald-600 text-white rounded text-sm"><i class="fas fa-file-excel mr-1"></i>Excel</a>
+            <a data-legacy-export href="{{ route('reports.stock.pdf', request()->query()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-blue-600 text-white rounded text-sm"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
         </div>
     </div>
 
     <div class="bg-white p-4 rounded shadow">
-        <form id="stockReportFilters" method="GET" action="{{ route('reports.stock') }}" class="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+        <form id="stockReportFilters" method="GET" action="{{ route('reports.stock') }}" class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3 items-end">
             @foreach(['all_product_types', 'active_only', 'is_pre_order'] as $scopeFilter)
                 @if(request()->boolean($scopeFilter))
                     <input type="hidden" name="{{ $scopeFilter }}" value="1">
@@ -202,7 +202,7 @@
     </script>
 
     @if(empty($controls['hide_widgets']))
-    <div class="grid md:grid-cols-6 gap-4">
+    <div data-export-summary class="grid md:grid-cols-3 xl:grid-cols-6 gap-4">
         <div class="bg-white p-4 rounded shadow">
             <p class="text-xs text-gray-500">Total Products</p>
             <p class="text-xl font-semibold">{{ $summary['total_products'] }}</p>
@@ -231,8 +231,8 @@
     @endif
 
     @if(empty($controls['hide_tables']))
-    <div class="bg-white rounded shadow overflow-hidden">
-        <table class="min-w-full text-sm">
+    <div class="bg-white rounded shadow overflow-x-auto">
+        <table data-export-table class="min-w-full text-sm">
             <thead class="bg-gray-50">
                 <tr class="text-left">
                     <th class="px-3 py-2">Product</th>

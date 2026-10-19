@@ -13,25 +13,28 @@ class BulkPaymentAccountingService
     public function recordCustomerPayment(Payment $payment, ?int $userId = null): void
     {
         $amount = round((float) $payment->amount, 2);
-        if ($amount <= 0) return;
+        if ($amount <= 0) {
+            return;
+        }
 
         if ($this->transactionExists('payment', (int) $payment->id)) {
             return;
         }
 
         $method = (string) ($payment->payment_method ?: 'cash');
-        $assetAccount = $this->assetAccountForPaymentMethod($method);
-        
+        $assetAccount = $this->assetAccountForPaymentMethod($method, $payment->bank_account_id);
+
         $relatedAccount = $this->customerReceivableAccount(); // Opening balance or general AR
         $description = 'Customer payment received';
         if ($payment->sale_id) {
             $relatedAccount = $this->salesRevenueAccount();
             $sale = Sale::find($payment->sale_id);
-            $description = 'Payment received for sale ' . ($sale ? $sale->sale_no : '') . ' via ' . $this->paymentMethodLabel($method);
+            $description = 'Payment received for sale '.($sale ? $sale->sale_no : '').' via '.$this->paymentMethodLabel($method);
         }
 
         AccountTransaction::create([
             'account_id' => $assetAccount->id,
+            'bank_account_id' => $payment->bank_account_id,
             'related_account_id' => $relatedAccount->id,
             'user_id' => $userId,
             'transaction_date' => $payment->payment_date?->toDateString() ?? now()->toDateString(),
@@ -50,25 +53,28 @@ class BulkPaymentAccountingService
     public function recordSupplierPayment(Payment $payment, ?int $userId = null): void
     {
         $amount = round((float) $payment->amount, 2);
-        if ($amount <= 0) return;
+        if ($amount <= 0) {
+            return;
+        }
 
         if ($this->transactionExists('payment', (int) $payment->id)) {
             return;
         }
 
         $method = (string) ($payment->payment_method ?: 'cash');
-        $assetAccount = $this->assetAccountForPaymentMethod($method);
-        
+        $assetAccount = $this->assetAccountForPaymentMethod($method, $payment->bank_account_id);
+
         $relatedAccount = $this->supplierPayableAccount(); // Opening balance or general AP
         $description = 'Supplier payment made';
         if ($payment->purchase_id) {
             $relatedAccount = $this->inventoryOrExpenseAccount();
             $purchase = Purchase::find($payment->purchase_id);
-            $description = 'Payment made for purchase ' . ($purchase ? $purchase->purchase_no : '') . ' via ' . $this->paymentMethodLabel($method);
+            $description = 'Payment made for purchase '.($purchase ? $purchase->purchase_no : '').' via '.$this->paymentMethodLabel($method);
         }
 
         AccountTransaction::create([
             'account_id' => $assetAccount->id,
+            'bank_account_id' => $payment->bank_account_id,
             'related_account_id' => $relatedAccount->id,
             'user_id' => $userId,
             'transaction_date' => $payment->payment_date?->toDateString() ?? now()->toDateString(),
@@ -84,10 +90,10 @@ class BulkPaymentAccountingService
         $assetAccount->decrement('current_balance', $amount);
     }
 
-    private function assetAccountForPaymentMethod(string $method): ChartAccount
+    private function assetAccountForPaymentMethod(string $method, ?int $bankId = null): ChartAccount
     {
         return match ($method) {
-            'bank_deposit', 'bank_transfer', 'card', 'mobile_payment' => $this->bankAccount(),
+            'bank_deposit', 'bank_transfer', 'card', 'mobile_payment', 'cheque' => $bankId ? \App\Models\Accounting\BankAccount::findOrFail($bankId)->chartAccount : $this->bankAccount(),
             default => $this->cashAccount(),
         };
     }

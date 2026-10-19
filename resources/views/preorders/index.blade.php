@@ -33,7 +33,7 @@
 
     <div class="bg-white rounded-xl shadow-lg overflow-hidden">
         <div class="overflow-x-auto">
-            <table class="w-full min-w-[1550px] text-sm">
+            <table data-export-table class="w-full min-w-[1550px] text-sm">
                 <thead class="bg-gray-50 text-xs uppercase text-gray-600"><tr><th class="px-4 py-3 text-left">Pre-Order #</th><th class="px-4 py-3 text-left">Date</th><th class="px-4 py-3 text-left">Customer</th><th class="px-4 py-3 text-left">Phone</th><th class="px-4 py-3 text-left">Vehicle</th><th class="px-4 py-3 text-right">Total</th><th class="px-4 py-3 text-right">Paid</th><th class="px-4 py-3 text-right">Due</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Payment</th><th class="px-4 py-3 text-left">Delivery</th><th class="px-4 py-3 text-left">Created By</th><th class="px-4 py-3 text-right">Actions</th></tr></thead>
                 <tbody class="divide-y">
                     @forelse($preOrders as $order)

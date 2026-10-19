@@ -73,8 +73,8 @@
         <div class="flex items-center gap-2">
             <button class="bg-blue-600 text-white px-4 py-2 rounded text-sm">Filter</button>
             <a href="{{ request()->has('is_pre_order') ? route('reports.purchase', ['is_pre_order' => request('is_pre_order')]) : route('reports.purchase') }}" class="text-sm text-gray-600 hover:text-gray-800">Reset</a>
-            <a href="{{ route('reports.purchase.csv', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-emerald-600 text-white rounded text-sm"><i class="fas fa-file-excel mr-1"></i>Excel</a>
-            <a href="{{ route('reports.purchase.pdf', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-blue-600 text-white rounded text-sm"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
+            <a data-legacy-export href="{{ route('reports.purchase.csv', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-emerald-600 text-white rounded text-sm"><i class="fas fa-file-excel mr-1"></i>Excel</a>
+            <a data-legacy-export href="{{ route('reports.purchase.pdf', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-blue-600 text-white rounded text-sm"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
         </div>
     </form>
 
@@ -126,7 +126,7 @@
     </script>
 
     @if(empty($controls['hide_widgets']))
-    <div class="grid md:grid-cols-4 gap-4">
+    <div data-export-summary class="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
         <div class="bg-white p-4 rounded shadow">
             <p class="text-xs text-gray-500">Total Purchases</p>
             <p class="text-xl font-semibold">{{ $maskMoney($summary['total_purchases'], !empty($controls['hide_total_purchase'])) }}</p>
@@ -147,8 +147,8 @@
     @endif
 
     @if(empty($controls['hide_tables']))
-    <div class="bg-white rounded shadow overflow-hidden">
-        <table class="min-w-full text-sm">
+    <div class="bg-white rounded shadow overflow-x-auto">
+        <table data-export-table class="min-w-full text-sm">
             <thead class="bg-gray-50">
                 <tr class="text-left">
                     <th class="px-3 py-2">Date</th>

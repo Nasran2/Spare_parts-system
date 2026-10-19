@@ -58,12 +58,12 @@
         <div class="flex items-center justify-between mb-4">
             <h3 class="text-xl font-bold text-gray-800"><i class="fas fa-arrow-up text-amber-600 mr-2"></i>Payments to Suppliers</h3>
             <div class="flex items-center gap-2">
-                <a href="{{ route('reports.debit.csv', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-emerald-600 text-white rounded-lg"><i class="fas fa-file-excel mr-1"></i>Excel</a>
-                <a href="{{ route('reports.debit.pdf', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-blue-600 text-white rounded-lg"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
+                <a data-legacy-export href="{{ route('reports.debit.csv', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-emerald-600 text-white rounded-lg"><i class="fas fa-file-excel mr-1"></i>Excel</a>
+                <a data-legacy-export href="{{ route('reports.debit.pdf', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-blue-600 text-white rounded-lg"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
             </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div data-export-summary class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <div class="p-4 bg-amber-50 rounded-lg">
                 <div class="text-sm text-gray-600">Total Debits</div>
                 <div class="text-lg font-bold text-gray-800">{{ $maskMoney($summary['total_debit'], !empty($controls['hide_supplier_payments']) || !empty($controls['hide_invoice_details'])) }}</div>
@@ -83,7 +83,7 @@
         </div>
 
         <div class="overflow-x-auto">
-            <table class="min-w-full border rounded-lg">
+            <table data-export-table class="min-w-full border rounded-lg">
                 <thead class="bg-gray-50">
                     <tr>
                         <th class="px-4 py-2 text-left text-sm text-gray-600">Date</th>

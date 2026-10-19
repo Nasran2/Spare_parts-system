@@ -27,7 +27,7 @@ class PreOrderController extends Controller
     public function index(Request $request, ?string $status = null)
     {
         $query = $this->filteredQuery($request, $status)->with(['customer', 'creator', 'store', 'sale']);
-        $preOrders = $query->paginate(20)->withQueryString();
+        $preOrders = $query->paginate(\App\Support\BusinessExport::perPage($query, 20))->withQueryString();
         $customers = Customer::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'phone']);
 
         return view('preorders.index', [
@@ -49,9 +49,10 @@ class PreOrderController extends Controller
             'paid' => $orders->where('status', 'completed')->sum('paid_amount'),
             'due' => $orders->where('status', 'completed')->sum('due_amount'),
         ];
-        
+
         if ($request->get('export') === 'pdf') {
             $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('preorders.pdf_report', compact('orders', 'summary', 'request'))->setPaper('a4', 'landscape');
+
             return $pdf->download('preorder-report.pdf');
         }
 
@@ -60,20 +61,20 @@ class PreOrderController extends Controller
         return view('preorders.report', compact('orders', 'summary', 'customers'));
     }
 
-        public function customerReport(Request $request)
+    public function customerReport(Request $request)
     {
         $customersQuery = Customer::query()
             ->whereHas('preOrders')
             ->where('is_active', true)
             ->orderBy('name')
             ->with(['preOrders', 'preOrders.payments']);
-            
+
         if ($request->filled('customer_id')) {
             $customersQuery->where('id', $request->customer_id);
         }
-        
+
         $customers = $customersQuery->get();
-            
+
         foreach ($customers as $customer) {
             // Apply date filters if any
             $preOrders = $customer->preOrders;
@@ -83,27 +84,28 @@ class PreOrderController extends Controller
             if ($request->filled('date_to')) {
                 $preOrders = $preOrders->where('pre_order_date', '<=', $request->date_to);
             }
-            
+
             $customer->total_preorders = $preOrders->count();
             $customer->total_amount = $preOrders->where('status', '!=', 'cancelled')->sum('grand_total');
             $customer->paid_amount = $preOrders->sum('paid_amount');
             $customer->preorder_due_amount = max(0, $customer->total_amount - $customer->paid_amount);
         }
-        
+
         // Filter out customers who have 0 pre-orders in the date range if date range is applied
         if ($request->filled('date_from') || $request->filled('date_to')) {
-            $customers = $customers->filter(fn($c) => $c->total_preorders > 0);
+            $customers = $customers->filter(fn ($c) => $c->total_preorders > 0);
         }
-        
+
         $summary = [
             'total_customers' => $customers->count(),
             'total_amount' => $customers->sum('total_amount'),
             'total_paid' => $customers->sum('paid_amount'),
-            'total_due' => $customers->sum('due_amount'),
+            'total_due' => $customers->sum('preorder_due_amount'),
         ];
-        
+
         if ($request->get('export') === 'pdf') {
             $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('preorders.pdf_customer_report', compact('customers', 'summary', 'request'))->setPaper('a4', 'portrait');
+
             return $pdf->download('preorder-customer-report.pdf');
         }
 
@@ -111,7 +113,6 @@ class PreOrderController extends Controller
 
         return view('preorders.customer_report', compact('customers', 'summary', 'allCustomersWithPreorders'));
     }
-
 
     public function customerModal(Customer $customer)
     {
@@ -150,23 +151,24 @@ class PreOrderController extends Controller
     public function show(Request $request, PreOrder $preOrder)
     {
         $this->authorizeStore($request, $preOrder->store_id);
-        
+
         $needsReload = false;
         if ($preOrder->status === 'pending') {
             foreach ($preOrder->items as $item) {
-                if (!$item->product_id) {
+                if (! $item->product_id) {
                     $match = \App\Models\Product::where('name', $item->original_product_name)
                         ->where('is_active', true)->first();
                     if ($match) {
                         try {
                             $this->service->syncProduct($preOrder, $item, $match, null, (int) $request->user()->id, 'keep');
                             $needsReload = true;
-                        } catch (\Exception $e) {}
+                        } catch (\Exception $e) {
+                        }
                     }
                 }
             }
         }
-        
+
         if ($needsReload) {
             $preOrder->refresh();
         }
@@ -267,6 +269,7 @@ class PreOrderController extends Controller
             'payments.*.reference' => ['nullable', 'string', 'max:191'],
             'payments.*.cheque_number' => ['nullable', 'string', 'max:100'],
             'payments.*.cheque_date' => ['nullable', 'date'],
+            'payments.*.bank_account_id' => ['nullable', 'integer', 'exists:bank_accounts,id'],
             'payments.*.bank_name' => ['nullable', 'string', 'max:191'],
             'payments.*.account_name' => ['nullable', 'string', 'max:191'],
             'payments.*.notes' => ['nullable', 'string', 'max:1000'],
@@ -280,7 +283,7 @@ class PreOrderController extends Controller
     {
         $this->authorizeStore($request, $preOrder->store_id);
         abort_unless($item->pre_order_id === $preOrder->id, 404);
-        
+
         $this->service->unsyncProduct($preOrder, $item, (int) $request->user()->id);
 
         return response()->json(['success' => true]);
@@ -328,6 +331,7 @@ class PreOrderController extends Controller
         $this->authorizeStore($request, $preOrder->store_id);
         $rules = [
             'amount' => ['required', 'numeric', 'min:0.01'],
+            'bank_account_id' => ['nullable', 'integer', 'exists:bank_accounts,id'],
             'payment_method' => ['required', Rule::in(['cash', 'bank_deposit', 'bank_transfer', 'card', 'mobile_payment', 'cheque'])],
             'payment_date' => ['required', 'date'],
             'reference_no' => ['nullable', 'string', 'max:191'],
@@ -487,7 +491,7 @@ class PreOrderController extends Controller
             'terms' => Setting::get('quotation_terms', ''),
         ];
         abort_unless(app()->bound('dompdf.wrapper'), 500, 'PDF export library not installed.');
-        
+
         $pdfSettings = [
             'line_color' => \App\Models\Setting::get('preorder_pdf_line_color', '#3b82f6'),
             'text_color' => \App\Models\Setting::get('preorder_pdf_text_color', '#1f2937'),

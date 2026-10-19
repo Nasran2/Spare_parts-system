@@ -121,6 +121,7 @@ class POSController extends Controller
         \Illuminate\Support\Facades\Session::forget('pos.edit_sale_id');
         \Illuminate\Support\Facades\Session::forget('pos.customer_id');
         \Illuminate\Support\Facades\Session::forget('pos.cart');
+
         return redirect()->route('pos.index');
     }
 
@@ -487,7 +488,7 @@ class POSController extends Controller
         $previousHeldChequeAmount = 0;
         if ($editSaleId) {
             $saleToEdit = Sale::with('items')->find($editSaleId);
-            if (!$saleToEdit) {
+            if (! $saleToEdit) {
                 return response()->json(['message' => 'The sale to edit could not be found.'], 422);
             }
             $previousPaidAmount = $saleToEdit->paid_amount;
@@ -724,7 +725,7 @@ class POSController extends Controller
                             continue;
                         }
                         $amount = round($amount, 2);
-                        $normalizedPayments[] = ['method' => $method, 'amount' => $amount];
+                        $normalizedPayments[] = ['method' => $method, 'amount' => $amount, 'bank_account_id' => $p['bank_account_id'] ?? null];
                         if ($method === 'card') {
                             $cardPaidAmount += $amount;
                         }
@@ -733,6 +734,7 @@ class POSController extends Controller
                             $chequePaymentDetails[] = [
                                 'amount' => $amount,
                                 'cheque_date' => $p['cheque_date'] ?? null,
+                                'bank_account_id' => $p['bank_account_id'] ?? null,
                                 'cheque_number' => $p['cheque_number'] ?? null,
                                 'bank_name' => $p['cheque_bank'] ?? null,
                                 'account_name' => $p['cheque_name'] ?? null,
@@ -779,6 +781,7 @@ class POSController extends Controller
                     $chequePaymentDetails[] = [
                         'amount' => $singleChequeAmount,
                         'cheque_date' => $request->input('cheque_date'),
+                        'bank_account_id' => $request->input('bank_account_id'),
                         'cheque_number' => $request->input('cheque_number'),
                         'bank_name' => $request->input('cheque_bank'),
                         'account_name' => $request->input('cheque_name'),
@@ -813,10 +816,10 @@ class POSController extends Controller
                 $cashLikePaid = max(0, $paidCash - $chequeHeldAmount);
                 $totalPaid = $cashLikePaid + $returnCredit + $previousPaidAmount;
                 $salePaid = min($effectiveTotalAmount, $totalPaid);
-                
+
                 $totalHeldCheque = $chequeHeldAmount + $previousHeldChequeAmount;
                 $heldChequeForSale = min(max(0, $effectiveTotalAmount - $salePaid), $totalHeldCheque);
-                
+
                 $due = $effectiveTotalAmount - $salePaid - $heldChequeForSale;
                 if ($due < 0) {
                     $due = 0;
@@ -873,11 +876,11 @@ class POSController extends Controller
                         'tendered_amount' => $tenderedAmount,
                         'due_amount' => $due,
                         'payment_status' => ($due > 0 || $heldChequeForSale > 0) ? 'partial' : 'paid',
-                        'notes' => $saleToEdit->notes . "\n" . $notes,
+                        'notes' => $saleToEdit->notes."\n".$notes,
                     ]);
-                    
+
                     $sale = $saleToEdit;
-                    
+
                     \Illuminate\Support\Facades\Session::forget('pos.edit_sale_id');
                     \Illuminate\Support\Facades\Session::forget('pos.customer_id');
                 } else {
@@ -906,7 +909,6 @@ class POSController extends Controller
                     ]);
                 }
 
-
                 $salePaymentAccounting = app(SalePaymentAccountingService::class);
 
                 // Record split payments as Payment rows (optional but useful for reporting)
@@ -920,6 +922,7 @@ class POSController extends Controller
                             'customer_id' => $customerId,
                             'amount' => $p['amount'],
                             'payment_method' => $p['method'],
+                            'bank_account_id' => $p['bank_account_id'] ?? null,
                             'payment_date' => now()->toDateString(),
                             'notes' => $request->input('notes'),
                         ]);
@@ -934,6 +937,7 @@ class POSController extends Controller
                             'customer_id' => $customerId,
                             'amount' => $nonAdvanceSalePaid,
                             'payment_method' => $paymentMethod,
+                            'bank_account_id' => $request->input('bank_account_id'),
                             'payment_date' => now()->toDateString(),
                             'notes' => $request->input('notes'),
                         ]);
@@ -959,7 +963,7 @@ class POSController extends Controller
                         'amount' => -$advanceToUse,
                         'payment_method' => 'advance_deduction',
                         'payment_date' => now()->toDateString(),
-                        'notes' => 'Applied to Sale #' . $sale->id,
+                        'notes' => 'Applied to Sale #'.$sale->id,
                         'user_id' => $userId,
                     ]);
                 }
@@ -981,6 +985,7 @@ class POSController extends Controller
                             'customer_id' => $customerId,
                             'user_id' => $userId,
                             'cheque_date' => \Carbon\Carbon::parse($chequeDetail['cheque_date'])->toDateString(),
+                            'bank_account_id' => \App\Support\PaymentBankAccount::resolve('cheque', $chequeDetail['bank_account_id'] ?? null)?->id,
                             'cheque_number' => (string) $chequeDetail['cheque_number'],
                             'bank_name' => $chequeDetail['bank_name'],
                             'account_name' => $chequeDetail['account_name'],
@@ -1039,7 +1044,7 @@ class POSController extends Controller
                                 ->where('product_id', $product->id)
                                 ->where('product_price_id', $usePriceWiseStock ? ($item['product_price_id'] ?? null) : null)
                                 ->first();
-                                
+
                             if (! $storeStock && $usePriceWiseStock) {
                                 $storeStock = \App\Models\StoreStock::where('store_id', $storeId)
                                     ->where('product_id', $product->id)
@@ -1143,6 +1148,7 @@ class POSController extends Controller
             if (($item['qty'] ?? 0) < 0) {
                 $returnTotal += abs((float) $item['qty']) * (float) ($item['price'] ?? 0);
                 $cart['items'][$key]['line_total'] = -round(abs((float) $item['qty']) * (float) ($item['price'] ?? 0), 2);
+
                 continue;
             }
 
@@ -1503,6 +1509,23 @@ class POSController extends Controller
         return response()->json($this->cart());
     }
 
+    public function currentCart()
+    {
+        return response()->json($this->cart());
+    }
+
+    public function saveCartContext(Request $request)
+    {
+        $context = $request->validate([
+            'customer_id' => 'nullable|integer|exists:customers,id',
+            'store_id' => 'nullable|integer|exists:stores,id',
+        ]);
+        $cart = $this->cart();
+        $cart['context'] = $context;
+
+        return response()->json($this->putCart($cart));
+    }
+
     public function setDiscount(Request $request)
     {
         $data = $request->validate([
@@ -1709,24 +1732,24 @@ class POSController extends Controller
         }
 
         $customer = Customer::find($id);
-        
+
         $controls = DashboardVisibilityService::configForUser(auth()->user());
-        
+
         $due = 0.0;
         $advance = 0.0;
-        
+
         if ($customer) {
             $due = (float) $customer->sales_due_amount;
             $advance = (float) $customer->advance_balance;
-            
+
             $due = DashboardVisibilityService::customerValue((float) $due, $controls);
             $advance = DashboardVisibilityService::customerValue((float) $advance, $controls);
         }
 
         return response()->json([
-            'customer_id' => (int) $id, 
+            'customer_id' => (int) $id,
             'outstanding_due' => (float) $due,
-            'advance_balance' => (float) $advance
+            'advance_balance' => (float) $advance,
         ]);
     }
 

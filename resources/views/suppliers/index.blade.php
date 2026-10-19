@@ -115,4 +115,5 @@
     </div>
 
 </div>
+@include('exports.supplement')
 @endsection

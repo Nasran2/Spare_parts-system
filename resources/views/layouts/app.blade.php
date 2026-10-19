@@ -165,6 +165,7 @@
             background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%);
         }
     </style>
+    <link rel="stylesheet" href="{{ asset('css/business-exports.css') }}">
 </head>
 <body class="bg-gray-50 loaded">
     
@@ -575,6 +576,11 @@
                         <i class="fas fa-building-columns w-4"></i>
                         <span>Bank Book</span>
                     </a>
+                    @if($navUser?->hasPermission('accounting.bank-book'))
+                    <a href="{{ route('accounting.bank-balances') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('accounting.bank-balances') ? 'active' : '' }}">
+                        <i class="fas fa-right-left w-4"></i><span>Bank Balances & Transfers</span>
+                    </a>
+                    @endif
                     @endif
                     @if($navUser?->hasPermission('accounting.banks'))
                     <a href="{{ route('accounting.banks') }}" class="nav-item flex items-center space-x-3 px-4 py-2 rounded-lg text-sm text-gray-600 {{ request()->routeIs('accounting.banks') ? 'active' : '' }}">
@@ -1021,8 +1027,8 @@
         </header>
 
         <!-- Page Content -->
-        <main class="flex-1 p-4 md:p-6 lg:p-8">
-            @if (session('success') || session('error') || $errors->any())
+        <main class="flex-1 p-4 md:p-6 lg:p-8 {{ \App\Support\BusinessExport::page(request()->route()?->getName()) ? 'business-export-page' : '' }}">
+            @if (session('success') || session('error') || (isset($errors) && $errors->any()))
                 <div class="fixed top-4 right-4 z-[9999] space-y-3 w-[92vw] max-w-md">
                     @if (session('success'))
                         <div class="bg-green-50 border-l-4 border-green-500 p-4 rounded-lg shadow-lg">
@@ -1042,7 +1048,7 @@
                         </div>
                     @endif
                     
-                    @if ($errors->any())
+                    @if (isset($errors) && $errors->any())
                         <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg shadow-lg">
                             <div class="flex items-start">
                                 <i class="fas fa-exclamation-circle text-red-500 mr-3 text-xl mt-0.5"></i>
@@ -1057,6 +1063,7 @@
                 </div>
             @endif
 
+            @include('exports.toolbar')
             @yield('content')
         </main>
 
@@ -1088,38 +1095,17 @@
     @endif
 
     <script>
-        let skipPageLoader = false;
-
-        document.querySelectorAll('[data-skip-page-loader]').forEach(link => {
-            link.addEventListener('click', () => {
-                skipPageLoader = true;
-                setTimeout(() => {
-                    skipPageLoader = false;
-                    document.body.classList.add('loaded');
-                }, 2000);
-            });
-        });
-
-        // Page loaded - hide loader
-        window.addEventListener('load', function() {
-            document.body.classList.add('loaded');
-        });
-
-        // Fix for back-button (BFcache)
-        window.addEventListener('pageshow', function(event) {
-            if (event.persisted || (typeof window.performance != "undefined" && window.performance.navigation.type === 2)) {
-                document.body.classList.add('loaded');
-            }
-        });
-        
-        // Show loader on page navigation
-        window.addEventListener('beforeunload', function() {
-            if (skipPageLoader) {
-                return;
-            }
+        // Downloads can fire beforeunload without replacing the document.
+        // Only show the overlay once the page actually leaves, so attachment
+        // responses (including form and script downloads) never block this page.
+        window.addEventListener('pagehide', function() {
             document.body.classList.remove('loaded');
         });
-        
+
+        const hidePageLoader = () => document.body.classList.add('loaded');
+        window.addEventListener('load', hidePageLoader);
+        window.addEventListener('pageshow', hidePageLoader);
+
         // Toggle Sidebar on Mobile
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
@@ -1348,6 +1334,8 @@
     </script>
     @endif
 
+    @include('payments.partials.bank-accounts')
     @stack('scripts')
+    <script src="{{ asset('js/business-exports.js') }}" defer></script>
 </body>
 </html>

@@ -265,6 +265,63 @@ class PreOrderManagementTest extends TestCase
         $this->assertFileDoesNotExist(public_path($relative));
     }
 
+    public function test_pending_order_cancel_and_reopen_do_not_create_extra_inventory(): void
+    {
+        [$user, $customer, $store] = $this->context();
+        [$product, $price] = $this->product($store, 5);
+        $order = $this->order($user, $customer, $store, $product, $price);
+        $order = app(PreOrderService::class)->cancel($order, null, $user->id);
+        $this->assertSame(5, $product->fresh()->stock_quantity);
+        app(PreOrderService::class)->reopen($order, null, $user->id);
+        $this->assertSame(5, $product->fresh()->stock_quantity);
+        $this->assertEquals(5, $price->fresh()->stock_qty);
+    }
+
+    public function test_legacy_reserved_inventory_is_not_deducted_twice_at_completion(): void
+    {
+        [$user, $customer, $store] = $this->context();
+        [$product, $price] = $this->product($store, 5);
+        $order = $this->order($user, $customer, $store, $product, $price);
+        // Simulate a pending reservation created before the inventory fix.
+        $product->decrement('stock_quantity');
+        $price->decrement('stock_qty');
+        StoreStock::where('product_id', $product->id)->decrement('quantity');
+        $order->items()->update(['stock_deducted' => true]);
+        $order = app(PreOrderService::class)->complete($order, [], $user->id);
+        $this->assertSame(4, $product->fresh()->stock_quantity);
+        $this->assertEquals(4, $price->fresh()->stock_qty);
+        app(PreOrderService::class)->reopen($order, null, $user->id);
+        $this->assertSame(5, $product->fresh()->stock_quantity);
+        $this->assertEquals(5, StoreStock::where('product_id', $product->id)->sum('quantity'));
+    }
+
+    public function test_zero_stock_completion_fails_without_creating_a_sale_or_changing_order_status(): void
+    {
+        [$user, $customer, $store] = $this->context();
+        [$product, $price] = $this->product($store, 0);
+        $order = $this->order($user, $customer, $store, $product, $price);
+        try {
+            app(PreOrderService::class)->complete($order, [], $user->id);
+            $this->fail('Completion must reject unavailable inventory.');
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $this->assertArrayHasKey('items', $exception->errors());
+        }
+        $this->assertSame('pending', $order->fresh()->status);
+        $this->assertSame(0, $product->fresh()->stock_quantity);
+        $this->assertDatabaseCount('sales', 0);
+    }
+
+    public function test_reopening_custom_non_inventory_item_does_not_invent_stock(): void
+    {
+        [$user, $customer, $store] = $this->context();
+        $order = $this->order($user, $customer, $store, null, null, 100, 'Custom Part');
+        $order = app(PreOrderService::class)->complete($order, [], $user->id);
+        $productId = $order->fresh('items')->items->first()->product_id;
+        app(PreOrderService::class)->reopen($order, null, $user->id);
+        $this->assertSame(0, Product::findOrFail($productId)->stock_quantity);
+        $this->assertEquals(0, StoreStock::where('product_id', $productId)->sum('quantity'));
+    }
+
     private function context(): array
     {
         $role = Role::create(['name' => 'Admin', 'permissions' => [], 'is_active' => true]);

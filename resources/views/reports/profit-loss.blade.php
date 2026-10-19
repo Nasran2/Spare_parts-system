@@ -72,12 +72,12 @@
         <div class="flex items-center gap-2">
             <button class="bg-blue-600 text-white px-4 py-2 rounded text-sm">Filter</button>
             <a href="{{ route('reports.profit-loss') }}" class="text-sm text-gray-600 hover:text-gray-800">Reset</a>
-            <a href="{{ route('reports.profit-loss.csv', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-emerald-600 text-white rounded text-sm"><i class="fas fa-file-excel mr-1"></i>Excel</a>
-            <a href="{{ route('reports.profit-loss.pdf', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-blue-600 text-white rounded text-sm"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
+            <a data-legacy-export href="{{ route('reports.profit-loss.csv', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-emerald-600 text-white rounded text-sm"><i class="fas fa-file-excel mr-1"></i>Excel</a>
+            <a data-legacy-export href="{{ route('reports.profit-loss.pdf', request()->all()) }}" target="_blank" rel="noopener" class="px-3 py-2 bg-blue-600 text-white rounded text-sm"><i class="fas fa-file-pdf mr-1"></i>PDF</a>
         </div>
     </form>
 
-    <div class="grid md:grid-cols-5 gap-4">
+    <div class="grid md:grid-cols-2 xl:grid-cols-5 gap-4">
         <div class="bg-white p-4 rounded shadow">
             <p class="text-xs text-gray-500">Sales Revenue</p>
             <p class="text-lg font-semibold">{{ $maskMoney($summary['sales_revenue'], !empty($controls['hide_total_sales'])) }}</p>
@@ -118,4 +118,5 @@
         </div>
     </div>
 </div>
+@include('exports.supplement')
 @endsection

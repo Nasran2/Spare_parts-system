@@ -49,6 +49,7 @@ class PreOrderService
                 'pdf_tax_display',
             ]) : null;
 
+            $oldStoreId = $preOrder->store_id;
             $preOrder->fill(Arr::only($data, [
                 'customer_id',
                 'store_id',
@@ -63,7 +64,7 @@ class PreOrderService
                 'bill_discount_type',
                 'bill_discount_value',
                 'custom_tax_rate',
-                'pdf_tax_display'
+                'pdf_tax_display',
             ]));
             $preOrder->updated_by = $userId;
             $preOrder->save();
@@ -79,10 +80,12 @@ class PreOrderService
             $oldItemModels = $preOrder->items()->get();
             foreach ($oldItemModels as $oldItem) {
                 if ($oldItem->product_id) {
-                    $this->restorePreOrderStock($preOrder, $oldItem);
+                    $stockContext = clone $preOrder;
+                    $stockContext->store_id = $oldStoreId;
+                    $this->restorePreOrderStock($stockContext, $oldItem);
                 }
             }
-            $oldItems = $oldItemModels->map(fn($item) => $item->only([
+            $oldItems = $oldItemModels->map(fn ($item) => $item->only([
                 'id',
                 'product_id',
                 'original_product_name',
@@ -99,23 +102,22 @@ class PreOrderService
                         $itemData['sync_status'] = 'linked';
                     }
                 }
-                $newItem = $preOrder->items()->create($itemData);
-                if ($newItem->product_id) {
-                    $this->deductStock($preOrder, $newItem);
-                }
+                // A pending order may be placed before its goods arrive. Stock
+                // is consumed once, when the order becomes a completed sale.
+                $preOrder->items()->create($itemData);
             }
             $newItems = $preOrder->items()->get();
 
             if (! $creating) {
                 $oldNames = collect($oldItems)->pluck('original_product_name')->countBy();
                 $newNames = $newItems->pluck('original_product_name')->countBy();
-                $added = $newNames->flatMap(fn($count, $name) => array_fill(0, max(0, $count - ($oldNames[$name] ?? 0)), $name))->values()->all();
-                $removed = $oldNames->flatMap(fn($count, $name) => array_fill(0, max(0, $count - ($newNames[$name] ?? 0)), $name))->values()->all();
+                $added = $newNames->flatMap(fn ($count, $name) => array_fill(0, max(0, $count - ($oldNames[$name] ?? 0)), $name))->values()->all();
+                $removed = $oldNames->flatMap(fn ($count, $name) => array_fill(0, max(0, $count - ($newNames[$name] ?? 0)), $name))->values()->all();
                 if ($added) {
-                    $this->activity($preOrder, $userId, 'product_added', 'Product item(s) added: ' . implode(', ', $added) . '.', null, ['items' => $added]);
+                    $this->activity($preOrder, $userId, 'product_added', 'Product item(s) added: '.implode(', ', $added).'.', null, ['items' => $added]);
                 }
                 if ($removed) {
-                    $this->activity($preOrder, $userId, 'product_removed', 'Product item(s) removed: ' . implode(', ', $removed) . '.', ['items' => $removed], null);
+                    $this->activity($preOrder, $userId, 'product_removed', 'Product item(s) removed: '.implode(', ', $removed).'.', ['items' => $removed], null);
                 }
             }
 
@@ -147,7 +149,7 @@ class PreOrderService
                     'expected_delivery_date',
                     'grand_total',
                     'custom_tax_rate',
-                    'pdf_tax_display'
+                    'pdf_tax_display',
                 ]), ['items' => $newItems->toArray()])
             );
 
@@ -157,9 +159,16 @@ class PreOrderService
 
     public function unsyncProduct(PreOrder $preOrder, PreOrderItem $item, int $userId): void
     {
-        if (!$item->product_id) return;
+        if (! $item->product_id) {
+            return;
+        }
 
         \Illuminate\Support\Facades\DB::transaction(function () use ($preOrder, $item, $userId) {
+            $preOrder = PreOrder::lockForUpdate()->findOrFail($preOrder->id);
+            $item = PreOrderItem::lockForUpdate()->where('pre_order_id', $preOrder->id)->findOrFail($item->id);
+            if ($preOrder->status !== 'pending') {
+                throw ValidationException::withMessages(['status' => 'Only pending Pre-Order products can be unlinked.']);
+            }
             $old = $item->only(['product_id', 'product_price_id', 'quoted_price', 'final_price', 'sync_status']);
 
             // Restore stock if it was deducted
@@ -175,7 +184,7 @@ class PreOrderService
                 $preOrder,
                 $userId,
                 'product_unsynced',
-                'Unlinked inventory product from “' . $item->original_product_name . '”.',
+                'Unlinked inventory product from “'.$item->original_product_name.'”.',
                 $old,
                 $item->fresh()->only(['product_id', 'product_price_id', 'quoted_price', 'final_price', 'sync_status'])
             );
@@ -213,19 +222,19 @@ class PreOrderService
                 $newPrice = $customPrice;
             }
 
+            $this->restorePreOrderStock($preOrder, $item);
             $item->update([
                 'product_id' => $product->id,
                 'product_price_id' => $price?->id,
                 'final_price' => $newPrice,
                 'sync_status' => 'linked',
             ]);
-            $this->deductStock($preOrder, $item);
             $this->recalculate($preOrder);
             $this->activity(
                 $preOrder,
                 $userId,
                 'product_synced',
-                'Linked “' . $item->original_product_name . '” to product “' . $product->name . '”.',
+                'Linked “'.$item->original_product_name.'” to product “'.$product->name.'”.',
                 $old,
                 $item->fresh()->only(['product_id', 'product_price_id', 'quoted_price', 'final_price', 'sync_status'])
             );
@@ -260,7 +269,7 @@ class PreOrderService
                 $preOrder,
                 $userId,
                 'price_changed',
-                'Price changed for “' . $item->original_product_name . '”.',
+                'Price changed for “'.$item->original_product_name.'”.',
                 ['final_price' => $oldPrice],
                 ['final_price' => $newPrice, 'action' => $action]
             );
@@ -288,7 +297,7 @@ class PreOrderService
                     $this->restorePreOrderStock($preOrder, $item);
                 }
             }
-            $this->activity($preOrder, $userId, 'cancelled', 'Pre-Order cancelled.' . ($reason ? ' Reason: ' . $reason : ''), ['status' => 'pending'], ['status' => 'cancelled']);
+            $this->activity($preOrder, $userId, 'cancelled', 'Pre-Order cancelled.'.($reason ? ' Reason: '.$reason : ''), ['status' => 'pending'], ['status' => 'cancelled']);
 
             return $preOrder->fresh();
         });
@@ -306,12 +315,8 @@ class PreOrderService
                     'cancellation_reason' => null,
                     'updated_by' => $userId,
                 ]);
-                foreach ($preOrder->items as $item) {
-                    if ($item->product_id) {
-                        $this->deductStock($preOrder, $item);
-                    }
-                }
-                $this->activity($preOrder, $userId, 'reopened', 'Cancelled Pre-Order reopened.' . ($reason ? ' Reason: ' . $reason : ''), ['status' => 'cancelled'], ['status' => 'pending']);
+
+                $this->activity($preOrder, $userId, 'reopened', 'Cancelled Pre-Order reopened.'.($reason ? ' Reason: '.$reason : ''), ['status' => 'cancelled'], ['status' => 'pending']);
 
                 return $preOrder->fresh();
             }
@@ -336,8 +341,8 @@ class PreOrderService
             }
 
             app(TaxPostingService::class)->reverse('sale', $sale->id, 'Pre-Order completion reversed');
-            foreach ($sale->items as $saleItem) {
-                $this->restoreStock($sale, $saleItem);
+            foreach ($preOrder->items as $item) {
+                $this->restorePreOrderStock($preOrder, $item);
             }
 
             $saleNumber = $sale->sale_no;
@@ -353,16 +358,12 @@ class PreOrderService
                 'completed_by' => null,
                 'updated_by' => $userId,
             ]);
-            foreach ($preOrder->items as $item) {
-                if ($item->product_id) {
-                    $this->deductStock($preOrder, $item);
-                }
-            }
+
             $this->activity(
                 $preOrder,
                 $userId,
                 'completion_reversed',
-                'Completed Pre-Order reopened and sale ' . $saleNumber . ' safely reversed.' . ($reason ? ' Reason: ' . $reason : ''),
+                'Completed Pre-Order reopened and sale '.$saleNumber.' safely reversed.'.($reason ? ' Reason: '.$reason : ''),
                 ['status' => 'completed', 'sale_no' => $saleNumber, 'payments' => $paymentSnapshot, 'cheques' => $chequeSnapshot],
                 ['status' => 'pending', 'sale_id' => null]
             );
@@ -381,17 +382,22 @@ class PreOrderService
             if ($preOrder->items->isEmpty()) {
                 throw ValidationException::withMessages(['items' => 'Cannot complete a Pre-Order without any items.']);
             }
-            if ($preOrder->items->contains(fn($item) => ! $item->product_id)) {
+            foreach ($preOrder->items as $item) {
+                if ($item->product_id && ! $item->stock_deducted) {
+                    $this->deductStock($preOrder, $item);
+                }
+            }
+            if ($preOrder->items->contains(fn ($item) => ! $item->product_id)) {
                 $defaultUnit = \App\Models\Unit::first();
-                if (!$defaultUnit) {
+                if (! $defaultUnit) {
                     $defaultUnit = \App\Models\Unit::create(['name' => 'pcs', 'short_name' => 'pcs']);
                 }
 
                 foreach ($preOrder->items as $item) {
-                    if (!$item->product_id) {
+                    if (! $item->product_id) {
                         $product = \App\Models\Product::create([
                             'name' => $item->original_product_name,
-                            'sku' => 'CUS-' . strtoupper(uniqid()),
+                            'sku' => 'CUS-'.strtoupper(uniqid()),
                             'unit_id' => $defaultUnit->id,
                             'cost_price' => 0,
                             'selling_price' => $item->final_price,
@@ -403,7 +409,7 @@ class PreOrderService
 
                         $item->update([
                             'product_id' => $product->id,
-                            'sync_status' => 'linked'
+                            'sync_status' => 'linked',
                         ]);
                     }
                 }
@@ -442,7 +448,7 @@ class PreOrderService
                 'payment_status' => ($due <= 0 && $held <= 0) ? 'paid' : (($cashPaid > 0 || $held > 0) ? 'partial' : 'unpaid'),
                 'payment_method' => $firstMethod,
                 'sale_type' => 'sale',
-                'notes' => trim('Completed from ' . $preOrder->pre_order_number . '. ' . $preOrder->notes),
+                'notes' => trim('Completed from '.$preOrder->pre_order_number.'. '.$preOrder->notes),
             ]);
 
             $taxPairs = [];
@@ -466,6 +472,7 @@ class PreOrderService
                         'customer_id' => $preOrder->customer_id,
                         'user_id' => $userId,
                         'cheque_date' => $paymentData['cheque_date'],
+                        'bank_account_id' => \App\Support\PaymentBankAccount::resolve('cheque', $paymentData['bank_account_id'] ?? null)?->id,
                         'cheque_number' => $paymentData['cheque_number'],
                         'bank_name' => $paymentData['bank_name'] ?? null,
                         'account_name' => $paymentData['account_name'] ?? null,
@@ -481,6 +488,7 @@ class PreOrderService
                         'user_id' => $userId,
                         'amount' => $paymentData['amount'],
                         'payment_method' => $paymentData['method'],
+                        'bank_account_id' => $paymentData['bank_account_id'] ?? null,
                         'reference_no' => $paymentData['reference'] ?? null,
                         'payment_date' => $paymentData['date'] ?? now()->toDateString(),
                         'notes' => $paymentData['notes'] ?? null,
@@ -507,7 +515,7 @@ class PreOrderService
                 $preOrder,
                 $userId,
                 'completed',
-                'Pre-Order completed as sale ' . $sale->sale_no . '.',
+                'Pre-Order completed as sale '.$sale->sale_no.'.',
                 ['status' => 'pending'],
                 ['status' => 'completed', 'sale_id' => $sale->id, 'sale_no' => $sale->sale_no]
             );
@@ -542,6 +550,7 @@ class PreOrderService
                         'customer_id' => $sale->customer_id,
                         'user_id' => $userId,
                         'cheque_date' => $data['cheque_date'],
+                        'bank_account_id' => \App\Support\PaymentBankAccount::resolve('cheque', $data['bank_account_id'] ?? null)?->id,
                         'cheque_number' => $data['cheque_number'],
                         'bank_name' => $data['bank_name'] ?? null,
                         'account_name' => $data['account_name'] ?? null,
@@ -559,6 +568,7 @@ class PreOrderService
                         'user_id' => $userId,
                         'amount' => $amount,
                         'payment_method' => $data['payment_method'],
+                        'bank_account_id' => $data['bank_account_id'] ?? null,
                         'reference_no' => $data['reference_no'] ?? null,
                         'payment_date' => $data['payment_date'],
                         'notes' => $data['notes'] ?? null,
@@ -577,6 +587,7 @@ class PreOrderService
                         'customer_id' => $preOrder->customer_id,
                         'user_id' => $userId,
                         'cheque_date' => $data['cheque_date'],
+                        'bank_account_id' => \App\Support\PaymentBankAccount::resolve('cheque', $data['bank_account_id'] ?? null)?->id,
                         'cheque_number' => $data['cheque_number'],
                         'bank_name' => $data['bank_name'] ?? null,
                         'account_name' => $data['account_name'] ?? null,
@@ -593,6 +604,7 @@ class PreOrderService
                         'user_id' => $userId,
                         'amount' => $amount,
                         'payment_method' => $data['payment_method'],
+                        'bank_account_id' => $data['bank_account_id'] ?? null,
                         'reference_no' => $data['reference_no'] ?? null,
                         'payment_date' => $data['payment_date'],
                         'notes' => $data['notes'] ?? null,
@@ -617,7 +629,7 @@ class PreOrderService
                 $preOrder,
                 $userId,
                 'payment_added',
-                'Payment of Rs ' . number_format($amount, 2) . ' added via ' . str_replace('_', ' ', $data['payment_method']) . '.',
+                'Payment of Rs '.number_format($amount, 2).' added via '.str_replace('_', ' ', $data['payment_method']).'.',
                 null,
                 ['amount' => $amount, 'method' => $data['payment_method']]
             );
@@ -749,7 +761,7 @@ class PreOrderService
             $tax = $invoice['lines'][$index];
 
             $priceId = $item['product_price_id'] ?? null;
-            if (empty($priceId) && !empty($entry['product'])) {
+            if (empty($priceId) && ! empty($entry['product'])) {
                 $priceId = $entry['product']->prices()->where('status', 'active')->where('is_default', true)->value('id')
                     ?? $entry['product']->prices()->where('status', 'active')->value('id')
                     ?? $entry['product']->prices()->value('id');
@@ -859,7 +871,7 @@ class PreOrderService
     {
         $available = $this->currentStock($item->product, $preOrder->store_id, $item->product_price_id);
         if ($available < (float) $item->quantity) {
-            throw ValidationException::withMessages(['items' => $item->original_product_name . ' has only ' . $available . ' available; ' . $item->quantity . ' required.']);
+            throw ValidationException::withMessages(['items' => $item->original_product_name.' has only '.$available.' available; '.$item->quantity.' required.']);
         }
     }
 
@@ -867,12 +879,12 @@ class PreOrderService
     {
         $product = Product::lockForUpdate()->findOrFail($item->product_id);
         if ((float) $product->stock_quantity < (float) $item->quantity) {
-            throw ValidationException::withMessages(['items' => 'Insufficient total stock for ' . $item->original_product_name . '.']);
+            throw ValidationException::withMessages(['items' => 'Insufficient total stock for '.$item->original_product_name.'.']);
         }
         if ((bool) Setting::get('use_price_wise_stock', true) && $item->product_price_id) {
             $price = ProductPrice::lockForUpdate()->findOrFail($item->product_price_id);
             if ((float) $price->stock_qty < (float) $item->quantity) {
-                throw ValidationException::withMessages(['items' => 'Insufficient price-level stock for ' . $item->original_product_name . '.']);
+                throw ValidationException::withMessages(['items' => 'Insufficient price-level stock for '.$item->original_product_name.'.']);
             }
             $price->decrement('stock_qty', $item->quantity);
         }
@@ -887,17 +899,22 @@ class PreOrderService
                     ->whereNull('product_price_id')->first();
             }
             if (! $stock || (float) $stock->quantity < (float) $item->quantity) {
-                throw ValidationException::withMessages(['items' => 'Insufficient store stock for ' . $item->original_product_name . '.']);
+                throw ValidationException::withMessages(['items' => 'Insufficient store stock for '.$item->original_product_name.'.']);
             }
             $stock->decrement('quantity', $item->quantity);
         }
         $product->decrement('stock_quantity', $item->quantity);
+        $item->update(['stock_deducted' => true]);
         $product->refresh();
         StockAlertService::check($product);
     }
 
     private function restorePreOrderStock(PreOrder $preOrder, PreOrderItem $item): void
     {
+        if (! $item->stock_deducted || ! $item->product_id) {
+            return;
+        }
+        $item->update(['stock_deducted' => false]);
         Product::whereKey($item->product_id)->increment('stock_quantity', $item->quantity);
         if ((bool) Setting::get('use_price_wise_stock', true) && $item->product_price_id) {
             ProductPrice::whereKey($item->product_price_id)->increment('stock_qty', $item->quantity);
@@ -922,30 +939,6 @@ class PreOrderService
             }
         }
         StockAlertService::check(Product::find($item->product_id));
-    }
-
-    private function restoreStock(Sale $sale, SaleItem $item): void
-    {
-        Product::whereKey($item->product_id)->increment('stock_quantity', $item->quantity);
-        if ((bool) Setting::get('use_price_wise_stock', true) && $item->product_price_id) {
-            ProductPrice::whereKey($item->product_price_id)->increment('stock_qty', $item->quantity);
-        }
-        if ($sale->store_id) {
-            $priceId = (bool) Setting::get('use_price_wise_stock', true) ? $item->product_price_id : null;
-            $stock = StoreStock::withoutGlobalScopes()->where('store_id', $sale->store_id)
-                ->where('product_id', $item->product_id)->where('product_price_id', $priceId)->first();
-            if (! $stock && $priceId) {
-                $stock = StoreStock::withoutGlobalScopes()->where('store_id', $sale->store_id)
-                    ->where('product_id', $item->product_id)->whereNull('product_price_id')->first();
-            }
-            $stock ??= StoreStock::withoutGlobalScopes()->create([
-                'store_id' => $sale->store_id,
-                'product_id' => $item->product_id,
-                'product_price_id' => $priceId,
-                'quantity' => 0,
-            ]);
-            $stock->increment('quantity', $item->quantity);
-        }
     }
 
     private function refreshSaleBalance(Sale $sale): void

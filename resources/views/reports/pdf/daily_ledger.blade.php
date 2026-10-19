@@ -1,162 +1,36 @@
 <!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Daily Ledger</title>
-    <style>
-        body { font-family: DejaVu Sans, sans-serif; }
-        .container { width: 100%; padding: 16px; }
-        .header { text-align: center; margin-bottom: 24px; }
-        .title { font-size: 22px; font-weight: bold; margin-bottom: 4px; }
-        .meta { font-size: 13px; color: #555; }
-        
-        .kpi-container { width: 100%; margin-bottom: 24px; display: table; }
-        .kpi-box { display: table-cell; width: 25%; padding: 10px; border: 1px solid #ddd; text-align: center; background-color: #f9f9f9; }
-        .kpi-label { font-size: 11px; color: #555; text-transform: uppercase; margin-bottom: 5px; }
-        .kpi-value { font-size: 16px; font-weight: bold; color: #333; }
-        
-        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-        th, td { border: 1px solid #ddd; padding: 8px; font-size: 11px; }
-        th { background: #f3f3f3; text-align: left; }
-        .right { text-align: right; }
-        .text-green { color: #047857; }
-        .text-red { color: #b91c1c; }
-        .type-badge { padding: 2px 6px; background: #eee; border-radius: 4px; font-size: 10px; }
-    </style>
-</head>
+<html lang="en">
+<head><meta charset="utf-8"><title>Daily Ledger</title>
+<style>
+    @page { margin: 28px 26px 38px; }
+    body {font-family:DejaVu Sans,sans-serif;font-size:9px;color:#172033}
+    h3 {font-size:14px;margin:20px 0 10px;padding-bottom:6px;border-bottom:1px solid #cbd5e1}
+    table {width:100%;border-collapse:collapse;table-layout:fixed}
+    .dl-table th,.dl-table td {border:1px solid #d1d5db;padding:6px 5px;vertical-align:top;word-wrap:break-word;font-size:8px}
+    .dl-table th {font-size:7px;text-align:left}
+    .dl-table .dl-money {text-align:right;white-space:nowrap}
+    .ledger-table th:nth-child(1){width:8%}.ledger-table th:nth-child(2){width:10%}.ledger-table th:nth-child(3){width:10%}.ledger-table th:nth-child(4){width:10%}.ledger-table th:nth-child(5){width:10%}.ledger-table th:nth-child(6){width:22%}.ledger-table th:nth-child(7),.ledger-table th:nth-child(8),.ledger-table th:nth-child(9){width:10%}
+    .sales-table th:nth-child(1){width:9%}.sales-table th:nth-child(2){width:14%}.sales-table th:nth-child(3){width:22%}.sales-table th:nth-child(n+4){width:11%}
+    .dl-table thead {display:table-header-group}.dl-table tr{page-break-inside:avoid}.dl-balance td{background:#edf2f7;font-weight:bold}.dl-empty{text-align:center;padding:18px!important;color:#667085}
+    .dl-in{color:#15803d}.dl-out{color:#b91c1c}.summary td{border:1px solid #e2e8f0;background:#f8fafc;padding:9px;font-size:9px}.summary strong{display:block;margin-top:3px;font-size:11px}.note{font-size:8px;color:#667085;line-height:1.6;margin:8px 0 12px}
+    .page-footer{position:fixed;bottom:-22px;left:0;right:0;text-align:right;color:#667085;font-size:8px}.page-number:after{content:counter(page)}
+</style></head>
 <body>
-    <div class="container">
-        @php
-            $maskMoney = function ($value) {
-                if (\App\Services\PrivacyModeService::isActiveForUser(auth()->user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage()) {
-                    return \App\Services\PrivacyModeService::maskAmount((float) $value);
-                }
-                return number_format((float) $value, 2, '.', ',');
-            };
-            
-            $businessName = \App\Models\Setting::get('shop_name') ?? \App\Models\Setting::get('business_name') ?? config('app.name', 'Vehicle POS');
-            $businessAddress = \App\Models\Setting::get('shop_address') ?? \App\Models\Setting::get('business_address') ?? '';
-            $businessPhone = \App\Models\Setting::get('shop_phone') ?? \App\Models\Setting::get('business_phone') ?? '';
-        @endphp
-        
-        @include('pdf.partials.letterhead', [
-            'documentTitle' => 'Accounting Daily Ledger',
-            'documentMeta' => ['Period' => ($from ?? 'All').' to '.($to ?? 'All')],
-        ])
-        
-        <div class="kpi-container">
-            <div class="kpi-box">
-                <div class="kpi-label">Main Account (Cash)</div>
-                <div class="kpi-value">{{ $maskMoney($mainAccountBalance) }}</div>
-            </div>
-            <div class="kpi-box">
-                <div class="kpi-label">Petty Cash Balance</div>
-                <div class="kpi-value">{{ $maskMoney($pettyCashBalance) }}</div>
-            </div>
-            <div class="kpi-box">
-                <div class="kpi-label">Sales Revenue</div>
-                <div class="kpi-value text-green">{{ $maskMoney($salesRevenue) }}</div>
-            </div>
-            <div class="kpi-box">
-                <div class="kpi-label">Period Expenses (Out)</div>
-                <div class="kpi-value text-red">{{ $maskMoney($totalExpensePeriod) }}</div>
-            </div>
-        </div>
-
-        <div class="kpi-container">
-            <div class="kpi-box">
-                <div class="kpi-label">Total Sales</div>
-                <div class="kpi-value">{{ $maskMoney($totalSales) }}</div>
-            </div>
-            <div class="kpi-box">
-                <div class="kpi-label">Total Cash Received</div>
-                <div class="kpi-value">{{ $maskMoney($totalCashReceived) }}</div>
-            </div>
-            <div class="kpi-box">
-                <div class="kpi-label">Total Cheque Received</div>
-                <div class="kpi-value">{{ $maskMoney($totalChequeReceived) }}</div>
-            </div>
-            <div class="kpi-box">
-                <div class="kpi-label">Total Due Amount</div>
-                <div class="kpi-value text-red">{{ $maskMoney($totalDueAmount) }}</div>
-            </div>
-        </div>
-
-        @php
-            $renderPdfTable = function($transactions, $title, $openingBalance, $closingBalance) use ($maskMoney, $from, $to) {
-                $html = '<h3 style="font-size: 14px; margin-top: 20px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 4px;">' . $title . '</h3>';
-                $html .= '<table><thead><tr>';
-                $html .= '<th>Date</th><th>Type</th><th>Account</th><th>Related Account</th><th>Reference</th><th>Description & Details</th><th class="right">Money In</th><th class="right">Money Out</th><th class="right">Balance</th>';
-                $html .= '</tr></thead><tbody>';
-                
-                // Opening Balance Row
-                $html .= '<tr style="background-color: #eff6ff;">';
-                $html .= '<td>' . ($from ?? '') . '</td>';
-                $html .= '<td><span class="type-badge" style="background:#bfdbfe;color:#1d4ed8;">Balance</span></td>';
-                $html .= '<td style="color:#666;">—</td>';
-                $html .= '<td style="color:#666;">—</td>';
-                $html .= '<td style="color:#666;">—</td>';
-                $html .= '<td style="font-style:italic;color:#333;">Opening Balance</td>';
-                $html .= '<td style="color:#666;text-align:center;">—</td>';
-                $html .= '<td style="color:#666;text-align:center;">—</td>';
-                $html .= '<td class="right" style="font-weight:bold; color:#1d4ed8;">' . $maskMoney($openingBalance) . '</td>';
-                $html .= '</tr>';
-                
-                if ($transactions->isEmpty()) {
-                    $html .= '<tr><td colspan="9" style="text-align: center; padding: 20px; color: #777;">No transactions found.</td></tr>';
-                } else {
-                    foreach ($transactions as $t) {
-                        $date = $t->transaction_date ? $t->transaction_date->format('Y-m-d') : '';
-                        $type = ucfirst(str_replace('_', ' ', $t->source_type));
-                        $accName = htmlspecialchars($t->account?->name ?? '—');
-                        $relAccName = htmlspecialchars($t->relatedAccount?->name ?? '—');
-                        $refNo = htmlspecialchars($t->reference_no ?? '—');
-                        $moneyIn = $t->direction === 'in' ? $maskMoney($t->amount) : '—';
-                        $moneyOut = $t->direction === 'out' ? $maskMoney($t->amount) : '—';
-                        $balance = $maskMoney($t->running_balance);
-                        
-                        $desc = htmlspecialchars($t->description ?? '—');
-                        if ($t->source_type === 'payment' && $t->cheque_details && $t->cheque_details->count() > 0) {
-                            foreach ($t->cheque_details as $cheque) {
-                                $desc .= '<br><span style="font-size: 9px; color: #555;">[Cheque: ' . htmlspecialchars($cheque->bank_name) . ' - ' . htmlspecialchars($cheque->cheque_number) . ' - ' . $maskMoney($cheque->amount) . ']</span>';
-                            }
-                        }
-                        
-                        $html .= '<tr>';
-                        $html .= '<td>' . $date . '</td>';
-                        $html .= '<td><span class="type-badge">' . $type . '</span></td>';
-                        $html .= '<td>' . $accName . '</td>';
-                        $html .= '<td>' . $relAccName . '</td>';
-                        $html .= '<td>' . $refNo . '</td>';
-                        $html .= '<td>' . $desc . '</td>';
-                        $html .= '<td class="right text-green">' . $moneyIn . '</td>';
-                        $html .= '<td class="right text-red">' . $moneyOut . '</td>';
-                        $html .= '<td class="right" style="font-weight:bold; color:#0e7490;">' . $balance . '</td>';
-                        $html .= '</tr>';
-                    }
-                }
-                
-                // Closing Balance Row
-                $html .= '<tr style="background-color: #f3f4f6; border-top: 2px solid #ccc;">';
-                $html .= '<td>' . ($to ?? '') . '</td>';
-                $html .= '<td><span class="type-badge" style="background:#e5e7eb;color:#374151;">Balance</span></td>';
-                $html .= '<td style="color:#666;">—</td>';
-                $html .= '<td style="color:#666;">—</td>';
-                $html .= '<td style="color:#666;">—</td>';
-                $html .= '<td style="font-style:italic;color:#333;">Closing Balance</td>';
-                $html .= '<td style="color:#666;text-align:center;">—</td>';
-                $html .= '<td style="color:#666;text-align:center;">—</td>';
-                $html .= '<td class="right" style="font-weight:bold; color:#1d4ed8; font-size:12px;">' . $maskMoney($closingBalance) . '</td>';
-                $html .= '</tr>';
-                
-                $html .= '</tbody></table>';
-                return $html;
-            };
-        @endphp
-
-        {!! $renderPdfTable($mainTransactions, 'Main Account (Cash) Transactions', $mainOpeningBalance, $mainClosingBalance) !!}
-        {!! $renderPdfTable($chequeTransactions, 'Customer Receivable (Cheques)', $chequeOpeningBalance, $chequeClosingBalance) !!}
-        {!! $renderPdfTable($pettyTransactions, 'Petty Cash Transactions', $pettyOpeningBalance, $pettyClosingBalance) !!}
-    </div>
-</body>
-</html>
+@php $maskMoney = fn ($value) => \App\Services\PrivacyModeService::isActiveForUser(auth()->user()) && \App\Services\PrivacyModeService::shouldMaskForCurrentPage() ? \App\Services\PrivacyModeService::maskAmount((float)$value) : number_format((float)$value, 2); @endphp
+@include('pdf.partials.letterhead', ['documentTitle' => 'Daily Ledger', 'documentMeta' => ['From Date' => $from, 'To Date' => $to, 'Currency' => $currency]])
+@foreach($selectedSections as $key)
+@if(!$loop->first)<div style="page-break-before: always;"></div>@endif
+<h3>{{ $sectionLabels[$key] }}</h3>
+@if($key === 'sales')
+    <table class="summary"><tr>@foreach(['cash' => 'Total Cash Sales', 'cheque' => 'Total Cheque Sales', 'credit' => 'Credit Sales'] as $field => $label)<td>{{ $label }}<strong>{{ $maskMoney($salesTotals[$field]) }}</strong></td>@endforeach</tr><tr><td>Bank / Other Payments<strong>{{ $maskMoney($salesTotals['other']) }}</strong></td><td>Total Sales Value<strong>{{ $maskMoney($salesTotals['total']) }}</strong></td><td>Total Transactions<strong>{{ $salesTotals['count'] }}</strong></td></tr></table>
+    <p class="note">Sales dated within this period, excluding quotations. Amounts split each invoice as at {{ $to }}; credit is unpaid, cheques include held and cleared cheques once, and bank/other includes transfers, cards and advance credit used. These are sales classifications, not additional cash movements.</p>
+    @include('reports.partials.daily_sales_table', ['pdf' => true])
+@else
+    @php $section = $ledgerSections[$key]; @endphp
+    <table class="summary"><tr>@foreach(['opening' => 'Balance Brought Forward', 'in' => 'Money In', 'out' => 'Money Out', 'closing' => 'Balance Carried Forward'] as $field => $label)<td>{{ $label }}<strong>{{ $maskMoney($section[$field]) }}</strong></td>@endforeach</tr></table>
+    <p class="note">Sales-related receipts / cheque holds: {{ $maskMoney($section['revenue']) }} | Period expenses: {{ $maskMoney($section['expenses']) }}</p>
+    @include('reports.partials.daily_ledger_table', ['pdf' => true])
+@endif
+@endforeach
+<div class="page-footer">Daily Ledger | {{ $from }} to {{ $to }} | Page <span class="page-number"></span></div>
+</body></html>
