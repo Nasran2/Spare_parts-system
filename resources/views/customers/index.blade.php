@@ -747,13 +747,13 @@ function renderCustomerHeader(c) {
     const el = document.getElementById('customerHeader');
     el.innerHTML = `
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-            <div><span class="font-semibold text-gray-700">Name</span><div>${c.name}</div></div>
-            <div><span class="font-semibold text-gray-700">Phone</span><div>${c.phone || 'N/A'}</div></div>
-            <div><span class="font-semibold text-gray-700">Email</span><div>${c.email || 'N/A'}</div></div>
-            <div><span class="font-semibold text-gray-700">City</span><div>${c.city || 'N/A'}</div></div>
-            <div><span class="font-semibold text-gray-700">Country</span><div>${c.country || 'N/A'}</div></div>
+            <div><span class="font-semibold text-gray-700">Name</span><div>${securityEscapeHtml(c.name)}</div></div>
+            <div><span class="font-semibold text-gray-700">Phone</span><div>${securityEscapeHtml(c.phone || 'N/A')}</div></div>
+            <div><span class="font-semibold text-gray-700">Email</span><div>${securityEscapeHtml(c.email || 'N/A')}</div></div>
+            <div><span class="font-semibold text-gray-700">City</span><div>${securityEscapeHtml(c.city || 'N/A')}</div></div>
+            <div><span class="font-semibold text-gray-700">Country</span><div>${securityEscapeHtml(c.country || 'N/A')}</div></div>
             <div><span class="font-semibold text-gray-700">Opening Balance</span><div>${CURRENCY}${Number(c.opening_balance||0).toFixed(2)}</div></div>
-            <div class="sm:col-span-2 md:col-span-3"><span class="font-semibold text-gray-700">Address</span><div>${c.address || 'No address'}</div></div>
+            <div class="sm:col-span-2 md:col-span-3"><span class="font-semibold text-gray-700">Address</span><div>${securityEscapeHtml(c.address || 'No address')}</div></div>
             <div><span class="font-semibold text-gray-700">Status</span><div>${c.is_active ? '<span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">Active</span>' : '<span class="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs">Inactive</span>'}</div></div>
         </div>
     `;
@@ -769,7 +769,7 @@ function renderAccountSummary(periodTotals, overallTotals, start, end) {
     }
 
     wrap.innerHTML = `
-        <div class="text-xs text-gray-600 flex items-center gap-2"><i class="fas fa-info-circle text-blue-500"></i>${formatDate(start)} To ${formatDate(end)}</div>
+        <div class="text-xs text-gray-600 flex items-center gap-2"><i class="fas fa-info-circle text-blue-500"></i>${securityEscapeHtml(formatDate(start))} To ${securityEscapeHtml(formatDate(end))}</div>
         <div class="flex justify-between text-sm"><span class="text-gray-600">Total invoice</span><span class="font-semibold">${CURRENCY}${fmt(periodTotals.invoice)}</span></div>
         <div class="flex justify-between text-sm"><span class="text-gray-600">Total paid</span><span class="font-semibold">${CURRENCY}${fmt(periodTotals.paid)}</span></div>
         <div class="border-t pt-2"></div>
@@ -785,15 +785,15 @@ function renderLedger(trans) {
     const tbody = document.getElementById('ledgerTable');
     tbody.innerHTML = (trans || []).map(t => `
         <tr class="hover:bg-gray-50">
-            <td class="px-4 py-2">${formatDate(t.date)}</td>
-            <td class="px-4 py-2">${t.reference}</td>
-            <td class="px-4 py-2">${t.type}</td>
-            <td class="px-4 py-2">${t.location || ''}</td>
+            <td class="px-4 py-2">${securityEscapeHtml(formatDate(t.date))}</td>
+            <td class="px-4 py-2">${securityEscapeHtml(t.reference)}</td>
+            <td class="px-4 py-2">${securityEscapeHtml(t.type)}</td>
+            <td class="px-4 py-2">${securityEscapeHtml(t.location || '')}</td>
             <td class="px-4 py-2 text-center">${badge(t.payment_status)}</td>
             <td class="px-4 py-2 text-right">${t.debit? CURRENCY+fmt(t.debit): '—'}</td>
             <td class="px-4 py-2 text-right">${t.credit? CURRENCY+fmt(t.credit): '—'}</td>
-            <td class="px-4 py-2 text-center">${t.payment_method || '—'}</td>
-            <td class="px-4 py-2">${t.notes || '—'}</td>
+            <td class="px-4 py-2 text-center">${securityEscapeHtml(t.payment_method || '—')}</td>
+            <td class="px-4 py-2">${securityEscapeHtml(t.notes || '—')}</td>
         </tr>
     `).join('');
 }
@@ -803,8 +803,8 @@ function renderSales(trans) {
     const tbody = document.getElementById('salesTable');
     tbody.innerHTML = sales.map(s => `
         <tr class="hover:bg-gray-50">
-            <td class="px-4 py-2">${s.invoice}</td>
-            <td class="px-4 py-2">${formatDate(s.sale_date || s.date)}</td>
+            <td class="px-4 py-2">${securityEscapeHtml(s.invoice)}</td>
+            <td class="px-4 py-2">${securityEscapeHtml(formatDate(s.sale_date || s.date))}</td>
             <td class="px-4 py-2 text-right">${CURRENCY}${fmt(s.debit)}</td>
             <td class="px-4 py-2 text-right">${CURRENCY}${fmt(s.paid || 0)}</td>
             <td class="px-4 py-2 text-right">${CURRENCY}${fmt(s.due || (s.debit - (s.paid||0)))}</td>
@@ -821,12 +821,12 @@ function renderPayments(trans) {
     const tbody = document.getElementById('paymentsTable');
     tbody.innerHTML = pays.map(p => `
         <tr class="hover:bg-gray-50">
-            <td class="px-4 py-2">${formatDate(p.date)}</td>
-            <td class="px-4 py-2">${p.reference}</td>
-            <td class="px-4 py-2">${p.invoice}</td>
+            <td class="px-4 py-2">${securityEscapeHtml(formatDate(p.date))}</td>
+            <td class="px-4 py-2">${securityEscapeHtml(p.reference)}</td>
+            <td class="px-4 py-2">${securityEscapeHtml(p.invoice)}</td>
             <td class="px-4 py-2 text-right">${CURRENCY}${fmt(p.credit)}</td>
-            <td class="px-4 py-2 text-center">${p.payment_method || '—'}</td>
-            <td class="px-4 py-2">${p.notes || '—'}</td>
+            <td class="px-4 py-2 text-center">${securityEscapeHtml(p.payment_method || '—')}</td>
+            <td class="px-4 py-2">${securityEscapeHtml(p.notes || '—')}</td>
         </tr>
     `).join('');
 }

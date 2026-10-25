@@ -445,7 +445,7 @@ class PrivacyModeTest extends TestCase
             'sale_type' => 'sale',
         ]);
 
-        $response = $this->get(route('customer.history.view', $customer->id));
+        $response = $this->get(\Illuminate\Support\Facades\URL::signedRoute('customer.history.view', $customer->id));
 
         $response->assertOk();
         $response->assertSee('INV-OTGWOIJUM01');

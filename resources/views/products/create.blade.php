@@ -1014,7 +1014,7 @@ function updatePerBrandPricing() {
         row.className = 'grid grid-cols-1 md:grid-cols-6 gap-3 p-3 border border-gray-200 rounded-lg bg-gray-50';
         row.setAttribute('data-brand-id', brandId);
         row.innerHTML = `
-            <div class="flex items-center text-sm font-semibold text-gray-700">${brandName}</div>
+            <div class="flex items-center text-sm font-semibold text-gray-700">${securityEscapeHtml(brandName)}</div>
             <div>
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Cost Price</label>
                 <input

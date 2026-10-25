@@ -22,8 +22,8 @@ class LoginController extends Controller
     public function login(Request $request)
     {
         $validated = $request->validate([
-            'username' => ['required', 'string'],
-            'password' => ['required'],
+            'username' => ['required', 'string', 'max:255'],
+            'password' => ['required', 'string', 'max:4096'],
         ]);
 
         $remember = $request->boolean('remember');

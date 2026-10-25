@@ -72,6 +72,9 @@ class User extends Authenticatable
 
     public function hasPermission($permission)
     {
+        if ($this->is_active === false || $this->role?->is_active === false) {
+            return false;
+        }
         if ($this->isSystemAdministrator()) {
             return true;
         }

@@ -115,11 +115,11 @@
 
             <!-- Actions -->
             <div class="flex gap-3">
-                <a href="{{ route('customer.bill.view', [$customer->id, $sale->id]) }}" 
+                <a href="{{ \Illuminate\Support\Facades\URL::signedRoute('customer.bill.view', [$customer->id, $sale->id]) }}"
                    class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-center px-6 py-3 rounded-lg font-semibold">
                     <i class="fas fa-file-invoice mr-2"></i>View Invoice
                 </a>
-                <a href="{{ route('customer.history.view', [$customer->id]) }}" 
+                <a href="{{ \Illuminate\Support\Facades\URL::signedRoute('customer.history.view', [$customer->id]) }}"
                    class="flex-1 bg-gray-600 hover:bg-gray-700 text-white text-center px-6 py-3 rounded-lg font-semibold">
                     <i class="fas fa-history mr-2"></i>View History
                 </a>

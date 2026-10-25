@@ -309,8 +309,8 @@
         tbody.innerHTML = data.items.map((item, index) => `
             <tr>
                 <td class="px-4 py-2 text-gray-600">${index + 1}</td>
-                <td class="px-4 py-2 font-medium text-gray-800">${item.name}</td>
-                <td class="px-4 py-2 text-gray-500">${item.sku}</td>
+                <td class="px-4 py-2 font-medium text-gray-800">${securityEscapeHtml(item.name)}</td>
+                <td class="px-4 py-2 text-gray-500">${securityEscapeHtml(item.sku)}</td>
                 <td class="px-4 py-2 text-right font-bold">${item.qty}</td>
             </tr>
         `).join('');
@@ -333,8 +333,8 @@
         tbody.innerHTML = data.items.map((item, index) => `
             <tr>
                 <td class="px-4 py-2">
-                    <div class="font-medium text-gray-800">${item.name}</div>
-                    <div class="text-xs text-gray-500">${item.sku}</div>
+                    <div class="font-medium text-gray-800">${securityEscapeHtml(item.name)}</div>
+                    <div class="text-xs text-gray-500">${securityEscapeHtml(item.sku)}</div>
                     <input type="hidden" name="items[${index}][product_id]" value="${item.id}">
                 </td>
                 <td class="px-4 py-2 text-right">

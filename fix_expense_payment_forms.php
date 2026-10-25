@@ -1,4 +1,9 @@
 <?php
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
+
 
 $expensesCreate = file_get_contents('resources/views/expenses/create.blade.php');
 $storeHtml = '

@@ -307,6 +307,7 @@ class CustomerController extends Controller
                 'reference' => $invoiceLabel,
                 'invoice' => $invoiceLabel,
                 'sale_id' => $sale->id,
+                'bill_url' => \Illuminate\Support\Facades\URL::signedRoute('customer.bill.view', [$customer->id, $sale->id]),
                 'sale_date' => optional($sale->sale_date)->toDateString(),
                 'type' => 'Sell',
                 'location' => config('app.name'),
@@ -366,6 +367,7 @@ class CustomerController extends Controller
             return response()->json([
                 'success' => true,
                 'customer' => $customer,
+                'history_url' => \Illuminate\Support\Facades\URL::signedRoute('customer.history.view', [$customer->id]),
                 'start_date' => $start,
                 'end_date' => $end,
                 'period_totals' => $periodTotals,
@@ -489,7 +491,7 @@ class CustomerController extends Controller
         $validated = $request->validate([
             'channel' => 'required|in:sms,whatsapp',
             'message_type' => 'required|in:due_reminder,bill_link,history_link',
-            'sale_id' => 'nullable|exists:sales,id',
+            'sale_id' => 'required_if:message_type,bill_link|nullable|integer|exists:sales,id',
         ]);
 
         if (empty($customer->phone)) {
@@ -507,11 +509,11 @@ class CustomerController extends Controller
             $message .= "Thank you for your business!\n\n";
             $message .= '- '.config('app.name', 'Vehicle POS');
         } elseif ($validated['message_type'] === 'bill_link' && ! empty($validated['sale_id'])) {
-            $sale = Sale::findOrFail($validated['sale_id']);
+            $sale = Sale::where('customer_id', $customer->id)->findOrFail($validated['sale_id']);
             if (DashboardVisibilityService::isSaleHiddenForUser((int) $sale->id, $request->user())) {
                 abort(404);
             }
-            $billUrl = route('customer.bill.view', [$customer->id, $sale->id]);
+            $billUrl = \Illuminate\Support\Facades\URL::signedRoute('customer.bill.view', [$customer->id, $sale->id]);
             $displayInvoiceNo = $this->displayInvoiceLabelForSale($sale);
 
             $message = "Dear {$customer->name},\n\n";
@@ -523,7 +525,7 @@ class CustomerController extends Controller
             $message .= "\nView/Download Bill: {$billUrl}\n\n";
             $message .= '- '.config('app.name', 'Vehicle POS');
         } elseif ($validated['message_type'] === 'history_link') {
-            $historyUrl = route('customer.history.view', [$customer->id]);
+            $historyUrl = \Illuminate\Support\Facades\URL::signedRoute('customer.history.view', [$customer->id]);
 
             $message = "Dear {$customer->name},\n\n";
             $message .= "View your complete billing history and account statement:\n";

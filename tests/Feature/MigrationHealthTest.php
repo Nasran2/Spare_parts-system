@@ -14,6 +14,14 @@ class MigrationHealthTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $role = \App\Models\Role::create(['name' => 'Super Admin', 'permissions' => [], 'is_active' => true]);
+        $this->actingAs(\App\Models\User::factory()->create(['role_id' => $role->id, 'is_active' => true]));
+    }
+
+
     public function test_foreign_key_deferral_is_scoped_and_covers_create_and_alter(): void
     {
         try {
@@ -48,8 +56,8 @@ class MigrationHealthTest extends TestCase
                 return ['repairs' => ['Created missing parent table: store_transfers'], 'output' => 'Earlier migrations completed'];
             }
         });
-        $this->get('/migration')->assertStatus(500)
-            ->assertSee('A later step failed')
+        $this->post('/migration')->assertStatus(500)
+            ->assertSee('Maintenance failed. Review the server logs.')->assertDontSee('A later step failed')
             ->assertSee('Created missing parent table: store_transfers')
             ->assertSee('Earlier migrations completed')
             ->assertSee('2026-10-18.3')
@@ -82,9 +90,8 @@ class MigrationHealthTest extends TestCase
         };
         $this->app->instance(MigrationHealthService::class, $service);
         $before = DB::table('migrations')->count();
-        $this->get('/migration')->assertStatus(500)
-            ->assertSee('Migration files are missing from this upload')
-            ->assertSee('2026_01_01_000000_missing_upload');
+        $this->post('/migration')->assertStatus(500)
+            ->assertSee('Maintenance failed. Review the server logs.');
         $this->assertSame($before, DB::table('migrations')->count());
     }
 

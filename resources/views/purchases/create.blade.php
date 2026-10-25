@@ -576,7 +576,7 @@ function updateSelectedStoreChips() {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'inline-flex items-center gap-2 rounded-full border border-yellow-200 bg-yellow-50 px-3 py-1 text-xs font-semibold text-amber-900 hover:bg-yellow-100';
-        button.setAttribute('title', `Remove ${store.name}`);
+        button.setAttribute('title', `Remove ${securityEscapeHtml(store.name)}`);
         button.innerHTML = `
             <span>${escapeHtml(store.name)}${store.isDefault ? ' ⭐' : ''}</span>
             <i class="fas fa-times text-[10px] text-amber-700"></i>
@@ -680,7 +680,7 @@ function buildStoreQuantitiesContainer(tr, selectedStores) {
         const div = document.createElement('div');
         div.className = 'flex items-center justify-between gap-2 text-xs mb-1';
         div.innerHTML = `
-            <span class="text-gray-700 font-medium truncate max-w-[120px]" title="${store.name}">${store.name}:</span>
+            <span class="text-gray-700 font-medium truncate max-w-[120px]" title="${securityEscapeHtml(store.name)}">${securityEscapeHtml(store.name)}:</span>
             <input type="number" min="0" step="any" class="store-qty-input border border-gray-300 rounded px-1 py-0.5 text-right w-16 focus:ring-1 focus:ring-green-500 text-xs" data-store-id="${store.id}" value="${val}" oninput="onStoreQtyInput(this)" />
         `;
         container.appendChild(div);
@@ -766,7 +766,7 @@ function addItemRow(productData = null) {
     tr.dataset.index = rowIndex;
 
     const productOptions = PRODUCTS.map(p => 
-        `<option value="${p.id}" data-cost="${p.cost_price}" data-selling="${p.selling_price}">${p.name}</option>`
+        `<option value="${p.id}" data-cost="${p.cost_price}" data-selling="${p.selling_price}">${securityEscapeHtml(p.name)}</option>`
     ).join('');
     
     const selectedProduct = productData || {};
@@ -1173,7 +1173,7 @@ function recalcGrandTotal() {
         
         let chequeOptions = '<option value="">Select Party Cheque...</option>';
         pendingCustomerCheques.forEach(c => {
-            chequeOptions += `<option value="${c.id}">${c.bank_name} - ${c.cheque_number} - Rs ${parseFloat(c.amount).toFixed(2)} (${c.customer ? c.customer.name : 'Unknown'})</option>`;
+            chequeOptions += `<option value="${c.id}">${securityEscapeHtml(c.bank_name)} - ${securityEscapeHtml(c.cheque_number)} - Rs ${parseFloat(c.amount).toFixed(2)} (${securityEscapeHtml(c.customer ? c.customer.name : 'Unknown')})</option>`;
         });
 
         const rowHtml = `
@@ -1217,7 +1217,7 @@ function recalcGrandTotal() {
         if (method === 'customer_cheque') {
             let chequeOptions = '<option value="">Select Party Cheque...</option>';
             pendingCustomerCheques.forEach(c => {
-                chequeOptions += `<option value="${c.id}" data-amount="${c.amount}">${c.bank_name} - ${c.cheque_number} - Rs ${parseFloat(c.amount).toFixed(2)} (${c.customer ? c.customer.name : 'Unknown'})</option>`;
+                chequeOptions += `<option value="${c.id}" data-amount="${c.amount}">${securityEscapeHtml(c.bank_name)} - ${securityEscapeHtml(c.cheque_number)} - Rs ${parseFloat(c.amount).toFixed(2)} (${securityEscapeHtml(c.customer ? c.customer.name : 'Unknown')})</option>`;
             });
             detailsContainer.innerHTML = `
                 <select name="payments[${index}][cheque_id]" class="w-full border border-gray-300 rounded px-2 py-1.5 focus:ring-2 focus:ring-blue-500" onchange="partyChequeSelected(this, ${index})" required>

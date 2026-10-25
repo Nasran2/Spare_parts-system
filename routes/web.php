@@ -44,7 +44,7 @@ Route::middleware('guest')->group(function () {
         return redirect()->route('login');
     });
     Route::get('/login', [LoginController::class, 'showLoginForm'])->name('login');
-    Route::post('/login', [LoginController::class, 'login']);
+    Route::post('/login', [LoginController::class, 'login'])->middleware('throttle:login');
 });
 
 // Secret POS Information (Public but protected via 4-digit code)
@@ -52,19 +52,19 @@ Route::prefix('information')->group(function () {
     // Visiting card page with logo click to open code login
     Route::get('/', [InformationController::class, 'card'])->name('information.card');
     // Verify 4-digit code and set session
-    Route::post('/login', [InformationController::class, 'login'])->name('information.login');
+    Route::post('/login', [InformationController::class, 'login'])->name('information.login')->middleware(['auth', 'superadmin', 'throttle:secret-login']);
     // Secret page (requires session auth)
-    Route::get('/secret', [InformationController::class, 'secret'])->name('information.secret');
+    Route::get('/secret', [InformationController::class, 'secret'])->name('information.secret')->middleware(['auth', 'superadmin']);
     // Save secret configs
-    Route::post('/secret/save', [InformationController::class, 'save'])->name('information.secret.save');
+    Route::post('/secret/save', [InformationController::class, 'save'])->name('information.secret.save')->middleware(['auth', 'superadmin']);
     // AJAX: bills list for a hidden range (requires secret session)
-    Route::get('/range-bills', [InformationController::class, 'rangeBills'])->name('information.range-bills');
+    Route::get('/range-bills', [InformationController::class, 'rangeBills'])->name('information.range-bills')->middleware(['auth', 'superadmin']);
 });
 
 // Public Routes (No Authentication Required)
-Route::get('/customer/{customer}/bill/{sale}', [CustomerController::class, 'viewBill'])->name('customer.bill.view');
-Route::get('/customer/{customer}/history', [CustomerController::class, 'viewHistory'])->name('customer.history.view')->middleware('privacy_mode');
-Route::get('/customer/{customer}/pay/{sale}', [CustomerController::class, 'paymentPage'])->name('customer.payment.page');
+Route::get('/customer/{customer}/bill/{sale}', [CustomerController::class, 'viewBill'])->name('customer.bill.view')->middleware(['signed', 'throttle:60,1']);
+Route::get('/customer/{customer}/history', [CustomerController::class, 'viewHistory'])->name('customer.history.view')->middleware(['signed', 'throttle:60,1', 'privacy_mode']);
+Route::get('/customer/{customer}/pay/{sale}', [CustomerController::class, 'paymentPage'])->name('customer.payment.page')->middleware(['signed', 'throttle:60,1']);
 
 // Authenticated Routes
 Route::middleware(['auth', 'privacy_mode'])->group(function () {
@@ -332,9 +332,9 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
     Route::post('pos/cart/clear', [POSController::class, 'clearCart'])
         ->middleware('permission:pos.access')
         ->name('pos.cart.clear');
-    Route::get('pos/cancel-edit', [POSController::class, 'cancelEdit'])
+    Route::match(['GET', 'POST'], 'pos/cancel-edit', [POSController::class, 'cancelEdit'])
         ->middleware('permission:pos.access')
-        ->name('pos.cancel_edit');
+        ->middleware('confirm_post')->name('pos.cancel_edit');
     Route::post('pos/cart/discount', [POSController::class, 'setDiscount'])
         ->middleware('permission:pos.access')
         ->name('pos.cart.discount');
@@ -556,6 +556,9 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
     Route::get('settings/barcode', [SettingController::class, 'barcode'])->middleware('permission:settings.view')->name('settings.barcode');
     Route::post('settings/save', [SettingController::class, 'save'])->middleware('permission:settings.edit')->name('settings.save');
 
+    Route::get('settings/security-runtime', \App\Http\Controllers\SecurityRuntimeController::class)
+        ->middleware('superadmin')->name('settings.security-runtime');
+
     // Sri Lanka Tax Management
     Route::prefix('tax')->name('tax.')->group(function () {
         Route::get('/', [TaxManagementController::class, 'dashboard'])
@@ -596,7 +599,7 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
         ->middleware('permission:tax.invoice.print')->name('sales.tax-invoice');
     Route::post('sales/{sale}/tax-invoice/email', [TaxManagementController::class, 'emailTaxInvoice'])
         ->middleware('permission:tax.invoice.print')->name('sales.tax-invoice.email');
-    Route::get('settings/storage-link', function (Request $request) {
+    Route::match(['GET', 'POST'], 'settings/storage-link', function (Request $request) {
         if (! $request->user()?->hasPermission('settings.edit')) {
             abort(403);
         }
@@ -609,7 +612,7 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
         }
 
         return redirect()->route('settings.index')->with('success', $message);
-    })->name('settings.storage-link');
+    })->middleware('confirm_post')->name('settings.storage-link');
 
     // Activity Log
     Route::get('activity-log', [ActivityLogController::class, 'index'])
@@ -650,19 +653,6 @@ Route::middleware(['auth', 'privacy_mode'])->group(function () {
 });
 
 $runMigrationHandler = function (\Illuminate\Http\Request $request) {
-    $expectedKey = env('MIGRATION_KEY');
-    if (! empty($expectedKey) && $request->query('key') !== $expectedKey) {
-        return response()->make(
-            '<html><body style="font-family: Arial, sans-serif; padding: 24px; text-align: center;">'
-            .'<h1 style="color: #b91c1c;">Unauthorized Access</h1>'
-            .'<p>A migration security key is configured on this server.</p>'
-            .'<p>Please provide the valid key in your URL: <code>?key=YOUR_SECRET_KEY</code></p>'
-            .'</body></html>',
-            403,
-            ['Content-Type' => 'text/html; charset=UTF-8']
-        );
-    }
-
     $connectionName = config('database.default');
     $databaseName = config("database.connections.{$connectionName}.database", 'unknown');
     try {
@@ -692,30 +682,17 @@ $runMigrationHandler = function (\Illuminate\Http\Request $request) {
 
         return response()->view('maintenance.migration-result', [
             'success' => false, 'heading' => 'Migration Failed', 'connection' => $connectionName,
-            'database' => $databaseName, 'error' => $exception->getMessage(), 'output' => $progress['output'],
+            'database' => $databaseName, 'error' => 'Maintenance failed. Review the server logs.', 'output' => $progress['output'],
             'repairs' => $progress['repairs'], 'verification' => ['Verification did not complete. Correct the issue above and retry.'],
         ], 500);
     }
 };
 
-Route::get('/migration', $runMigrationHandler);
-Route::get('/migrate', $runMigrationHandler);
-Route::get('/run-migration', $runMigrationHandler);
+Route::match(['GET', 'POST'], '/migration', $runMigrationHandler)->middleware(['auth', 'maintenance_access']);
+Route::match(['GET', 'POST'], '/migrate', $runMigrationHandler)->middleware(['auth', 'maintenance_access']);
+Route::match(['GET', 'POST'], '/run-migration', $runMigrationHandler)->middleware(['auth', 'maintenance_access']);
 
 $runSeedHandler = function (\Illuminate\Http\Request $request) {
-    $expectedKey = env('MIGRATION_KEY');
-    if (! empty($expectedKey) && $request->query('key') !== $expectedKey) {
-        return response()->make(
-            '<html><body style="font-family: Arial, sans-serif; padding: 24px; text-align: center;">'
-            .'<h1 style="color: #b91c1c;">Unauthorized Access</h1>'
-            .'<p>A security key is configured on this server.</p>'
-            .'<p>Please provide the valid key in your URL: <code>?key=YOUR_SECRET_KEY</code></p>'
-            .'</body></html>',
-            403,
-            ['Content-Type' => 'text/html; charset=UTF-8']
-        );
-    }
-
     $connectionName = config('database.default');
     $databaseName = config("database.connections.{$connectionName}.database", 'unknown');
 
@@ -746,23 +723,15 @@ $runSeedHandler = function (\Illuminate\Http\Request $request) {
             'exception' => $e,
         ]);
 
-        $logPath = storage_path('logs/laravel.log');
-        $recentLog = 'Log file not found.';
-
-        if (is_file($logPath)) {
-            $logLines = preg_split('/\R/', trim((string) file_get_contents($logPath))) ?: [];
-            $recentLog = implode(PHP_EOL, array_slice($logLines, -80));
-        }
-
         return response()->make(
             '<html><body style="font-family: Arial, sans-serif; padding: 24px;">'
             .'<h1 style="color: #b91c1c;">Seeding Failed</h1>'
             .'<p><strong>Connection:</strong> '.e($connectionName).'</p>'
             .'<p><strong>Database:</strong> '.e($databaseName).'</p>'
             .'<p><strong>Seeder:</strong> DatabaseSeeder</p>'
-            .'<p><strong>Error:</strong> '.e($e->getMessage()).'</p>'
+            .'<p><strong>Error:</strong> '.e('Seeding failed. Review the server logs.').'</p>'
             .'<h2>Recent Error Log</h2>'
-            .'<pre style="background: #f5f5f5; padding: 16px; white-space: pre-wrap;">'.e($recentLog).'</pre>'
+            .'<pre style="background: #f5f5f5; padding: 16px; white-space: pre-wrap;">'.e('Detailed logs are available only on the server.').'</pre>'
             .'</body></html>',
             500,
             ['Content-Type' => 'text/html; charset=UTF-8']
@@ -770,5 +739,5 @@ $runSeedHandler = function (\Illuminate\Http\Request $request) {
     }
 };
 
-Route::get('/run-seed', $runSeedHandler);
-Route::get('/seed', $runSeedHandler);
+Route::match(['GET', 'POST'], '/run-seed', $runSeedHandler)->middleware(['auth', 'maintenance_access']);
+Route::match(['GET', 'POST'], '/seed', $runSeedHandler)->middleware(['auth', 'maintenance_access']);

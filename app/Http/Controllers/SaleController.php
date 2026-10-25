@@ -461,7 +461,7 @@ class SaleController extends Controller
 
         $callback = function () use ($query, $isActive) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['Invoice No', 'Date', 'Customer', 'Amount', 'Paid', 'Due', 'Pay Status', 'Pay Method']);
+            \App\Support\SafeCsv::write($out, ['Invoice No', 'Date', 'Customer', 'Amount', 'Paid', 'Due', 'Pay Status', 'Pay Method']);
             $dailyCounters = [];
             $query->chunk(500, function ($rows) use ($out, $isActive, &$dailyCounters) {
                 foreach ($rows as $sale) {
@@ -472,7 +472,7 @@ class SaleController extends Controller
                         $invoiceNo = PrivacyModeService::orderedInvoiceLabel((string) $sale->sale_no, $dailyCounters[$dateKey]);
                     }
 
-                    fputcsv($out, [
+                    \App\Support\SafeCsv::write($out, [
                         $invoiceNo,
                         optional($sale->sale_date)->format('Y-m-d') ?? $sale->created_at->format('Y-m-d'),
                         $sale->customer->name ?? 'Walk-in Customer',

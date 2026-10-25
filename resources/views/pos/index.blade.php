@@ -1466,7 +1466,7 @@
                 </div>
                 <div class="p-1.5">
                     <div class="text-[11px] font-semibold text-indigo-700 truncate leading-tight">${escapeHtml(product.name)}</div>
-                    <div class="mt-0.5 text-sm font-extrabold text-slate-900 leading-tight">${displayMoney(product)}</div>
+                    <div class="mt-0.5 text-sm font-extrabold text-slate-900 leading-tight">${securityEscapeHtml(displayMoney(product))}</div>
                     <div class="text-[10px] mt-0.5 ${isOutOfStock ? 'text-rose-600 font-bold' : 'text-slate-400'} leading-tight">
                         Stk: ${displayStock(product)}${isOutOfStock ? ' <span class="uppercase font-extrabold">OUT</span>' : ''}
                     </div>
@@ -1756,14 +1756,14 @@
         holdListEl.innerHTML = holds.map(hold => `
             <div class="border border-gray-200 rounded-lg p-4 flex justify-between space-x-4 bg-white shadow-sm">
                 <div>
-                    <p class="text-sm font-semibold text-gray-800">${hold.label}</p>
-                    <p class="text-xs text-gray-500">${hold.item_count} item(s) · ${new Date(hold.created_at).toLocaleString()}</p>
+                    <p class="text-sm font-semibold text-gray-800">${securityEscapeHtml(hold.label)}</p>
+                    <p class="text-xs text-gray-500">${securityEscapeHtml(hold.item_count)} item(s) · ${new Date(hold.created_at).toLocaleString()}</p>
                 </div>
                 <div class="text-right space-y-1">
                     <p class="font-semibold text-blue-600">${currency(hold.total)}</p>
                     <div class="flex justify-end gap-2">
-                        <button class="text-xs text-white bg-blue-600 rounded px-3 py-1 hover:bg-blue-700 load-hold" data-id="${hold.id}" type="button">Continue</button>
-                        <button class="text-xs text-red-600 border border-red-200 rounded px-3 py-1 hover:bg-red-50 delete-hold" data-id="${hold.id}" type="button">Delete</button>
+                        <button class="text-xs text-white bg-blue-600 rounded px-3 py-1 hover:bg-blue-700 load-hold" data-id="${securityEscapeHtml(hold.id)}" type="button">Continue</button>
+                        <button class="text-xs text-red-600 border border-red-200 rounded px-3 py-1 hover:bg-red-50 delete-hold" data-id="${securityEscapeHtml(hold.id)}" type="button">Delete</button>
                     </div>
                 </div>
             </div>

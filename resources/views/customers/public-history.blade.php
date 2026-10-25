@@ -121,7 +121,7 @@
                                 @endif
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-center text-sm print:hidden">
-                                <a href="{{ route('customer.bill.view', [$customer->id, $sale->id]) }}" 
+                                <a href="{{ \Illuminate\Support\Facades\URL::signedRoute('customer.bill.view', [$customer->id, $sale->id]) }}"
                                    class="text-blue-600 hover:text-blue-900" target="_blank">
                                     <i class="fas fa-eye mr-1"></i>View
                                 </a>

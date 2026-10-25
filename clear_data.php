@@ -1,4 +1,9 @@
 <?php
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
+
 use Illuminate\Support\Facades\DB;
 
 DB::statement('SET FOREIGN_KEY_CHECKS=0;');

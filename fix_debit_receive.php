@@ -1,4 +1,9 @@
 <?php
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
+
 $content = file_get_contents('resources/views/reports/debit.blade.php');
 $form = '
     <form method="get" class="bg-white p-4 rounded shadow flex flex-wrap gap-4 items-end mb-6">

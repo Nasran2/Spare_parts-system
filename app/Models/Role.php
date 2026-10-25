@@ -28,6 +28,9 @@ class Role extends Model
 
     public function hasPermission($permission)
     {
+        if ($this->is_active === false) {
+            return false;
+        }
         if ($this->isProtectedSystemRole()) {
             return true;
         }

@@ -15,6 +15,18 @@ class UserController extends Controller
         return auth()->user()?->isSuperAdmin() === true;
     }
 
+    private function assertAssignableRole(int $roleId): void
+    {
+        $actor = auth()->user();
+        $role = Role::findOrFail($roleId);
+        if (! $actor->isSystemAdministrator()) {
+            abort_if($role->isProtectedSystemRole(), 403);
+            foreach ($role->permissions ?? [] as $permission) {
+                abort_unless($actor->hasPermission($permission), 403);
+            }
+        }
+    }
+
     private function visibleRolesQuery()
     {
         $query = Role::query();
@@ -94,7 +106,7 @@ class UserController extends Controller
             'name' => 'required|string|max:255',
             'username' => 'required|string|max:255|unique:users,username',
             'email' => 'required|email|unique:users,email',
-            'password' => 'required|min:6|confirmed',
+            'password' => 'required|string|min:12|max:4096|confirmed',
             'phone' => 'nullable|string|max:20',
             'role_id' => [
                 'required',
@@ -110,6 +122,7 @@ class UserController extends Controller
             'stores.*' => 'exists:stores,id',
         ]);
 
+        $this->assertAssignableRole((int) $validated['role_id']);
         $validated['password'] = Hash::make($validated['password']);
         $validated['is_active'] = $request->has('is_active');
 
@@ -161,7 +174,7 @@ class UserController extends Controller
             'name' => 'required|string|max:255',
             'username' => 'required|string|max:255|unique:users,username,'.$id,
             'email' => 'required|email|unique:users,email,'.$id,
-            'password' => 'nullable|min:6|confirmed',
+            'password' => 'nullable|string|min:12|max:4096|confirmed',
             'phone' => 'nullable|string|max:20',
             'role_id' => [
                 'required',
@@ -176,6 +189,8 @@ class UserController extends Controller
             'stores' => 'nullable|array',
             'stores.*' => 'exists:stores,id',
         ]);
+
+        $this->assertAssignableRole((int) $validated['role_id']);
 
         if (! empty($validated['password'])) {
             $validated['password'] = Hash::make($validated['password']);

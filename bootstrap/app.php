@@ -14,12 +14,16 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         // Global middleware
         $middleware->append(\App\Http\Middleware\LockdownIfDbError::class);
+        $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
+        $middleware->web(append: [\App\Http\Middleware\EnsureActiveAccount::class]);
 
         // Route middleware aliases
         $middleware->alias([
             'permission' => \App\Http\Middleware\RequirePermission::class,
             'superadmin' => \App\Http\Middleware\EnsureSuperAdmin::class,
             'privacy_mode' => \App\Http\Middleware\CheckPrivacyMode::class,
+            'maintenance_access' => \App\Http\Middleware\MaintenanceAccess::class,
+            'confirm_post' => \App\Http\Middleware\ConfirmPostAction::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

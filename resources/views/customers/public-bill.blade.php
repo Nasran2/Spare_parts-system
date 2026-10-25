@@ -261,7 +261,7 @@
         <div class="bg-white rounded-lg shadow p-6 print:hidden">
             <h3 class="font-semibold text-gray-800 mb-4">Quick Actions</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <a href="{{ route('customer.history.view', [$customer->id]) }}" class="px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-center transition">
+                <a href="{{ \Illuminate\Support\Facades\URL::signedRoute('customer.history.view', [$customer->id]) }}" class="px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-center transition">
                     <i class="fas fa-history mr-2"></i>View All Bills
                 </a>
                 <button onclick="window.print()" class="px-4 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition">

@@ -45,6 +45,12 @@ class RoleController extends Controller
 
     private function sanitizeAssignablePermissions(array $permissions): array
     {
+        $actor = auth()->user();
+        if (! $actor->isSystemAdministrator()) {
+            foreach ($permissions as $permission) {
+                abort_unless($actor->hasPermission($permission), 403);
+            }
+        }
         if ($this->canSeeSuperAdmin()) {
             return $permissions;
         }

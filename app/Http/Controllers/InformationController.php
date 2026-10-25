@@ -36,11 +36,12 @@ class InformationController extends Controller
             'code' => 'required|digits:4',
         ]);
 
-        $secretCode = (string) Setting::get('secretpos.code', '0000');
-        if ($request->input('code') !== $secretCode) {
-            return back()->withErrors(['code' => 'Invalid code'])->withInput();
+        $secretCode = (string) Setting::get('secretpos.code', '');
+        if ($secretCode === '' || ! hash_equals($secretCode, (string) $request->input('code'))) {
+            return back()->withErrors(['code' => 'Invalid code']);
         }
 
+        $request->session()->regenerate();
         Session::put('secretpos.auth', true);
         return redirect()->route('information.secret');
     }

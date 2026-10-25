@@ -24,6 +24,18 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        \Illuminate\Support\Facades\RateLimiter::for('login', function (\Illuminate\Http\Request $request) {
+            $username = $request->input('username');
+            $username = is_string($username) ? mb_strtolower(trim($username)) : '';
+            return [
+                \Illuminate\Cache\RateLimiting\Limit::perMinute(30)->by($request->ip()),
+                \Illuminate\Cache\RateLimiting\Limit::perMinute(5)->by(hash('sha256', $username.'|'.$request->ip())),
+            ];
+        });
+        \Illuminate\Support\Facades\RateLimiter::for('secret-login', fn (\Illuminate\Http\Request $request) =>
+            \Illuminate\Cache\RateLimiting\Limit::perMinute(5)->by($request->user()?->id.'|'.$request->ip())
+        );
+
         Schema::defaultStringLength(191);
 
         // Share currency symbol with all views so Blade templates can use $currency

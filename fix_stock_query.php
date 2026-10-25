@@ -1,4 +1,9 @@
 <?php
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
+
 
 $file = 'app/Http/Controllers/ReportController.php';
 $content = file_get_contents($file);

@@ -354,6 +354,7 @@ class POSController extends Controller
      */
     public function searchSale(Request $request)
     {
+        abort_unless($request->user()?->hasPermission('sales.edit'), 403);
         $term = $request->input('term');
         if (! $term) {
             return response()->json(['message' => 'Please enter a Sale ID or Invoice Number'], 422);
@@ -411,6 +412,7 @@ class POSController extends Controller
      */
     public function addReturnItem(Request $request)
     {
+        abort_unless($request->user()?->hasPermission('sales.edit'), 403);
         $request->validate([
             'sale_item_id' => 'required|exists:sale_items,id',
             'quantity' => 'required|integer|min:1',
@@ -461,7 +463,13 @@ class POSController extends Controller
      */
     public function checkout(Request $request)
     {
+        if ($request->filled('edit_sale_id')) {
+            abort_unless($request->user()?->hasPermission('sales.edit'), 403);
+        }
         $cart = $this->cart();
+        if (collect($cart['items'])->contains(fn ($item) => (float) ($item['qty'] ?? 0) < 0)) {
+            abort_unless($request->user()?->hasPermission('sales.edit'), 403);
+        }
         if (empty($cart['items'])) {
             return response()->json(['message' => 'Cart is empty'], 422);
         }

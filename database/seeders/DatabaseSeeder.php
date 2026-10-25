@@ -47,6 +47,9 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        if (! app()->environment(['local', 'testing'])) {
+            throw new \RuntimeException('Demo seeding is disabled outside local/testing environments.');
+        }
         echo "🚗 Seeding Vehicle POS Database...\n\n";
 
         // Create Admin Role with ALL Permissions

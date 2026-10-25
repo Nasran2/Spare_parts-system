@@ -465,8 +465,8 @@ function renderSearchResults(products) {
             const div = document.createElement('div');
             div.className = 'p-3 hover:bg-blue-50 cursor-pointer border-b last:border-b-0';
             div.innerHTML = `
-                <div class="font-semibold text-sm text-gray-800">${p.name}</div>
-                <div class="text-xs text-gray-500">Price: ${p.display_selling_price ?? displayMoney(p.selling_price)} | Stock: ${p.display_stock_quantity ?? displayStockQty(p.stock_quantity)}</div>
+                <div class="font-semibold text-sm text-gray-800">${securityEscapeHtml(p.name)}</div>
+                <div class="text-xs text-gray-500">Price: ${securityEscapeHtml(p.display_selling_price ?? displayMoney(p.selling_price))} | Stock: ${securityEscapeHtml(p.display_stock_quantity ?? displayStockQty(p.stock_quantity))}</div>
             `;
             div.onclick = () => addExchangeItem(p);
             searchResults.appendChild(div);
@@ -502,11 +502,11 @@ function renderExchangeTable() {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td class="px-4 py-2 text-sm text-gray-800">
-                ${item.name}
+                ${securityEscapeHtml(item.name)}
                 <input type="hidden" name="exchange_items[${index}][id]" value="${item.id}">
                 <input type="hidden" name="exchange_items[${index}][price]" value="${item.price}">
             </td>
-            <td class="px-4 py-2 text-sm text-right text-gray-600">${item.display_price ?? displayMoney(item.price)}</td>
+            <td class="px-4 py-2 text-sm text-right text-gray-600">${securityEscapeHtml(item.display_price ?? displayMoney(item.price))}</td>
             <td class="px-4 py-2 text-right">
                 <input type="number" name="exchange_items[${index}][qty]" value="${item.qty}" min="1" 
                     class="w-16 px-2 py-1 border border-gray-300 rounded text-right"

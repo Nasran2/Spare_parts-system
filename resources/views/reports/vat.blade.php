@@ -171,9 +171,9 @@ async function openVatDay(date) {
         body.innerHTML = '';
         (data.items || []).forEach(i => {
             body.insertAdjacentHTML('beforeend', `<tr class='border-t'>
-                <td class='px-3 py-2'>${i.invoice ?? '-'}</td>
-                <td class='px-3 py-2'>${i.product}</td>
-                <td class='px-3 py-2'>${i.quantity_display ?? i.quantity ?? '—'}</td>
+                <td class='px-3 py-2'>${securityEscapeHtml(i.invoice ?? '-')}</td>
+                <td class='px-3 py-2'>${securityEscapeHtml(i.product)}</td>
+                <td class='px-3 py-2'>${securityEscapeHtml(i.quantity_display ?? i.quantity ?? '—')}</td>
                 <td class='px-3 py-2'>${formatMoneyValue(i.unit_price_display, i.unit_price)}</td>
                 <td class='px-3 py-2'>${formatMoneyValue(i.line_total_display, i.line_total)}</td>
                 <td class='px-3 py-2'>${formatMoneyValue(i.vat_exclusive_display, i.vat_exclusive)}</td>

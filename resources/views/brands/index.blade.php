@@ -176,12 +176,12 @@ document.getElementById('createBrandForm')?.addEventListener('submit', async fun
             card.innerHTML = `
                 <div>
                     <div class="flex justify-between items-start">
-                        <h4 class="text-lg font-semibold text-gray-800">${data.brand.name}</h4>
+                        <h4 class="text-lg font-semibold text-gray-800">${securityEscapeHtml(data.brand.name)}</h4>
                         <span class="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
                             0 Products
                         </span>
                     </div>
-                    ${data.brand.description ? `<p class="text-sm text-gray-500 mt-2">${data.brand.description}</p>` : ''}
+                    ${data.brand.description ? `<p class="text-sm text-gray-500 mt-2">${securityEscapeHtml(data.brand.description)}</p>` : ''}
                     <div class="mt-3 space-y-1 text-xs text-gray-600">
                         <p>Total Cost: <span class="font-semibold text-gray-800">{{ $currency }}0.00</span></p>
                         <p>Total Selling: <span class="font-semibold text-gray-800">{{ $currency }}0.00</span></p>

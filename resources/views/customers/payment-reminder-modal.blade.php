@@ -93,6 +93,7 @@ function openPaymentReminderModal(customerId) {
         .then(data => {
             if (data.success) {
                 currentCustomer = data.customer;
+                currentCustomer.history_url = data.history_url;
                 customerSales = data.transactions.filter(t => t.type === 'Sell');
                 updateReminderOptions();
                 document.getElementById('paymentReminderModal').classList.remove('hidden');
@@ -111,9 +112,9 @@ function updateReminderOptions() {
     
     if (messageType === 'bill_link') {
         billSelection.classList.remove('hidden');
-        saleSelect.innerHTML = customerSales.map(s => 
-            `<option value="${s.sale_id}">Invoice #${s.invoice} - {{ $currency }} ${s.debit.toFixed(2)} (Due: {{ $currency }} ${(s.due || 0).toFixed(2)})</option>`
-        ).join('');
+        saleSelect.replaceChildren(...customerSales.map(s => new Option(
+            `Invoice #${s.invoice} - {{ $currency }} ${s.debit.toFixed(2)} (Due: {{ $currency }} ${(s.due || 0).toFixed(2)})`, s.sale_id
+        )));
     } else {
         billSelection.classList.add('hidden');
     }
@@ -143,7 +144,7 @@ function updateMessagePreview() {
         const saleId = document.getElementById('sale_id').value;
         const sale = customerSales.find(s => s.sale_id == saleId);
         if (sale) {
-            const billUrl = `${window.location.origin}/customer/${currentCustomer.id}/bill/${sale.sale_id}`;
+            const billUrl = sale.bill_url;
             message = `Dear ${currentCustomer.name},\n\n`;
             message += `Your invoice #${sale.invoice} is ready.\n`;
             message += `Amount: ${currency}${sale.debit.toFixed(2)}\n`;
@@ -154,7 +155,7 @@ function updateMessagePreview() {
             message += `- ${appName}`;
         }
     } else if (messageType === 'history_link') {
-        const historyUrl = `${window.location.origin}/customer/${currentCustomer.id}/history`;
+        const historyUrl = currentCustomer.history_url;
         message = `Dear ${currentCustomer.name},\n\n`;
         message += `View your complete billing history and account statement:\n`;
         message += `${historyUrl}\n\n`;

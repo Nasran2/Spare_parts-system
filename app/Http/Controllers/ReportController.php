@@ -464,7 +464,7 @@ class ReportController extends Controller
         }
         $csv = fopen('php://temp', 'r+');
         foreach ($rows as $r) {
-            fputcsv($csv, $r);
+            \App\Support\SafeCsv::write($csv, $r);
         } rewind($csv);
 
         return response(stream_get_contents($csv), 200, [
@@ -502,9 +502,9 @@ class ReportController extends Controller
             foreach ($section['rows'] as $row) {
                 // CSV has no string cell type; prevent user text becoming Excel formulas.
                 $row = array_map(fn ($value) => is_string($value) && preg_match('/^[=+@-]/', $value) ? "'".$value : $value, $row);
-                fputcsv($csv, $row);
+                \App\Support\SafeCsv::write($csv, $row);
             }
-            fputcsv($csv, []);
+            \App\Support\SafeCsv::write($csv, []);
         }
         rewind($csv);
         $content = stream_get_contents($csv);
@@ -672,7 +672,7 @@ class ReportController extends Controller
         }
         $csv = fopen('php://temp', 'r+');
         foreach ($rows as $r) {
-            fputcsv($csv, $r);
+            \App\Support\SafeCsv::write($csv, $r);
         } rewind($csv);
 
         return response(stream_get_contents($csv), 200, [
@@ -766,7 +766,7 @@ class ReportController extends Controller
         }
         $csv = fopen('php://temp', 'r+');
         foreach ($rows as $r) {
-            fputcsv($csv, $r);
+            \App\Support\SafeCsv::write($csv, $r);
         } rewind($csv);
 
         return response(stream_get_contents($csv), 200, [
@@ -946,7 +946,7 @@ class ReportController extends Controller
         }
         $csv = fopen('php://temp', 'r+');
         foreach ($rows as $r) {
-            fputcsv($csv, $r);
+            \App\Support\SafeCsv::write($csv, $r);
         } rewind($csv);
 
         return response(stream_get_contents($csv), 200, [
@@ -1149,7 +1149,7 @@ class ReportController extends Controller
         ];
         $csv = fopen('php://temp', 'r+');
         foreach ($rows as $r) {
-            fputcsv($csv, $r);
+            \App\Support\SafeCsv::write($csv, $r);
         } rewind($csv);
 
         return response(stream_get_contents($csv), 200, [
@@ -1500,7 +1500,7 @@ class ReportController extends Controller
         }
         $csv = fopen('php://temp', 'r+');
         foreach ($rows as $r) {
-            fputcsv($csv, $r);
+            \App\Support\SafeCsv::write($csv, $r);
         }
         rewind($csv);
 
@@ -1704,7 +1704,7 @@ class ReportController extends Controller
         }
         $csv = fopen('php://temp', 'r+');
         foreach ($rows as $r) {
-            fputcsv($csv, $r);
+            \App\Support\SafeCsv::write($csv, $r);
         } rewind($csv);
 
         return response(stream_get_contents($csv), 200, [
@@ -1789,7 +1789,7 @@ class ReportController extends Controller
         }
         $csv = fopen('php://temp', 'r+');
         foreach ($rows as $r) {
-            fputcsv($csv, $r);
+            \App\Support\SafeCsv::write($csv, $r);
         } rewind($csv);
 
         return response(stream_get_contents($csv), 200, [
@@ -1919,7 +1919,7 @@ class ReportController extends Controller
         }
         $csv = fopen('php://temp', 'r+');
         foreach ($rows as $r) {
-            fputcsv($csv, $r);
+            \App\Support\SafeCsv::write($csv, $r);
         } rewind($csv);
 
         return response(stream_get_contents($csv), 200, [
@@ -2037,7 +2037,7 @@ class ReportController extends Controller
 
         $csv = fopen('php://temp', 'r+');
         foreach ($rows as $r) {
-            fputcsv($csv, $r);
+            \App\Support\SafeCsv::write($csv, $r);
         } rewind($csv);
 
         return response(stream_get_contents($csv), 200, [
